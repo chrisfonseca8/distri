@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/chrisfonseca08/distri/order-service/database"
 
-func main(){
-	fmt.Println("Hello form the order-service")
+func main() {
+	database.TestDbHealth()
 }

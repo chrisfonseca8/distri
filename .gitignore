@@ -35,7 +35,9 @@ go.work.sum
 # .vscode/
 
 #bin
-bin/
+/loadgen/loadgen
+/order-service/order-service
+/payment-service/payment-service
 
 #claud 
 CLAUDE.md

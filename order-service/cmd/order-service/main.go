@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -14,11 +13,15 @@ import (
 
 	"github.com/chrisfonseca08/distri/order-service/pkg/config"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
+	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	if err := run(); err != nil {
-		log.Printf("order-service: %v", err)
+		slog.Error("order-service stopped", "error", err)
 		os.Exit(1)
 	}
 }
@@ -37,6 +40,7 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
+	routes.RegisterProductRoutes(mux, applicationConfig.DB)
 
 	server, err := config.NewServer(mux)
 	if err != nil {
@@ -58,7 +62,7 @@ func run() error {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("order-service listening on %s", server.Addr)
+		slog.Info("order-service listening", "addr", server.Addr)
 		serverErrors <- server.Serve(listener)
 	}()
 
@@ -70,11 +74,7 @@ func run() error {
 	)
 	cancelHealthCheck()
 
-	encodedStatus, err := json.Marshal(status)
-	if err != nil {
-		return fmt.Errorf("encode health status: %w", err)
-	}
-	log.Printf("health check: %s", encodedStatus)
+	slog.Info("health check", "healthy", status.Healthy, "checks", status.Checks)
 	if !status.Healthy {
 		return fmt.Errorf("startup health check failed")
 	}
@@ -86,7 +86,7 @@ func run() error {
 		}
 		return nil
 	case <-shutdownContext.Done():
-		log.Print("shutting down order-service")
+		slog.Info("shutting down order-service")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

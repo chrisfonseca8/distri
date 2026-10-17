@@ -11,14 +11,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// OpenDB opens the order service's application database.
+func OpenDB() (*gorm.DB, error) {
+	return openDB("DATABASE_URL")
+}
+
+// OpenTestDB opens the database reserved for tests.
 func OpenTestDB() (*gorm.DB, error) {
+	return openDB("DATABASE_TEST_URL")
+}
+
+func openDB(environmentVariable string) (*gorm.DB, error) {
 	if err := loadEnvFile(); err != nil {
 		return nil, fmt.Errorf("load .env: %w", err)
 	}
 
-	dsn := os.Getenv("DATABASE_TEST_URL")
+	dsn := os.Getenv(environmentVariable)
 	if dsn == "" {
-		return nil, fmt.Errorf("DATABASE_TEST_URL is not set")
+		return nil, fmt.Errorf("%s is not set", environmentVariable)
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -30,10 +40,6 @@ func OpenTestDB() (*gorm.DB, error) {
 }
 
 func loadEnvFile() error {
-	if _, exists := os.LookupEnv("DATABASE_TEST_URL"); exists {
-		return nil
-	}
-
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)

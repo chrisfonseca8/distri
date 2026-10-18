@@ -21,6 +21,11 @@ var (
 	ErrInsufficientStock       = errors.New("insufficient stock")
 )
 
+const (
+	maxReservationLines = 20
+	maxQuantityPerLine  = 100
+)
+
 type ReservationItemInput struct {
 	ProductID uuid.UUID `json:"product_id"`
 	Quantity  int64     `json:"quantity"`
@@ -45,6 +50,7 @@ type CreateReservationResult struct {
 	TotalPaise    int64          `json:"total_paise"`
 	Currency      string         `json:"currency"`
 	Items         []ReservedItem `json:"items"`
+	Created       bool           `json:"-"`
 }
 
 type ReservationService struct {
@@ -72,6 +78,7 @@ func (s *ReservationService) CreateReservation(
 		}
 		if !created {
 			result, err = loadReservationResult(tx, reservation)
+			result.Created = created
 			return err
 		}
 
@@ -91,6 +98,7 @@ func (s *ReservationService) CreateReservation(
 
 		reservation.Status = "RESERVED"
 		result, err = loadReservationResult(tx, reservation)
+		result.Created = created
 		return err
 	})
 
@@ -98,7 +106,10 @@ func (s *ReservationService) CreateReservation(
 }
 
 func prepareReservationItems(input CreateReservationInput) ([]ReservationItemInput, error) {
-	if input.OrderID == uuid.Nil() || strings.TrimSpace(input.RequestHash) == "" || len(input.Items) == 0 {
+	if input.OrderID == uuid.Nil() || strings.TrimSpace(input.RequestHash) == "" {
+		return nil, ErrInvalidReservationInput
+	}
+	if len(input.Items) == 0 || len(input.Items) > maxReservationLines {
 		return nil, ErrInvalidReservationInput
 	}
 
@@ -107,7 +118,7 @@ func prepareReservationItems(input CreateReservationInput) ([]ReservationItemInp
 		return strings.Compare(left.ProductID.String(), right.ProductID.String())
 	})
 	for index, item := range items {
-		if item.ProductID == uuid.Nil() || item.Quantity <= 0 {
+		if item.ProductID == uuid.Nil() || item.Quantity <= 0 || item.Quantity > maxQuantityPerLine {
 			return nil, ErrInvalidReservationInput
 		}
 		if index > 0 && item.ProductID == items[index-1].ProductID {

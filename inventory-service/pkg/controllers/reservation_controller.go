@@ -31,7 +31,11 @@ func (c *ReservationController) CreateReservation(w http.ResponseWriter, r *http
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, result)
+	status := http.StatusOK
+	if result.Created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, result)
 }
 
 func writeReservationError(w http.ResponseWriter, err error) {

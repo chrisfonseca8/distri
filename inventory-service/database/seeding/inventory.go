@@ -4,21 +4,19 @@ import (
 	"fmt"
 	"uuid"
 
-	"github.com/chrisfonseca08/distri/order-service/database/models"
+	"github.com/chrisfonseca08/distri/inventory-service/database/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-const ProductInventorySeedCount = 50
+const InventorySeedCount = 50
 
 type productSpec struct {
 	name       string
 	pricePaise int64
 }
 
-// SeedProductInventory inserts or updates the test products and their
-// inventory records. Fixed IDs make the seed safe to run more than once.
-func SeedProductInventory(db *gorm.DB) error {
+func SeedInventory(db *gorm.DB) error {
 	specs := []productSpec{
 		{name: "Wireless Mouse", pricePaise: 149900},
 		{name: "Mechanical Keyboard", pricePaise: 499900},
@@ -71,62 +69,77 @@ func SeedProductInventory(db *gorm.DB) error {
 		{name: "USB Flash Drive 128GB", pricePaise: 99900},
 		{name: "Memory Card 256GB", pricePaise: 189900},
 	}
-
-	if len(specs) != ProductInventorySeedCount {
-		return fmt.Errorf("expected %d product specs, got %d", ProductInventorySeedCount, len(specs))
+	if len(specs) != InventorySeedCount {
+		return fmt.Errorf("expected %d product specs, got %d", InventorySeedCount, len(specs))
 	}
 
-	products := make([]models.Product, 0, len(specs))
-	inventories := make([]models.Inventory, 0, len(specs))
-	ids := make([]uuid.UUID, 0, len(specs))
+	products := make([]models.Product, 0, InventorySeedCount)
+	inventories := make([]models.Inventory, 0, InventorySeedCount)
+	productIDs := make([]uuid.UUID, 0, InventorySeedCount)
+
 	for index, spec := range specs {
-		id := uuid.MustParse(fmt.Sprintf("10000000-0000-4000-8000-%012d", index+1))
+		productID := uuid.MustParse(fmt.Sprintf(
+			"10000000-0000-4000-8000-%012d",
+			index+1,
+		))
 		products = append(products, models.Product{
-			ID:         id,
+			ID:         productID,
 			Name:       spec.name,
 			PricePaise: spec.pricePaise,
 			Currency:   "INR",
 		})
 		inventories = append(inventories, models.Inventory{
-			ProductID: id,
+			ProductID: productID,
 			OnHand:    int64(40 + (index*13)%161),
-			Reserved:  int64((index * 3) % 15),
-			Allocated: int64((index * 2) % 10),
+			Reserved:  0,
+			Allocated: 0,
 		})
-		ids = append(ids, id)
+		productIDs = append(productIDs, productID)
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SET LOCAL search_path TO orders").Error; err != nil {
-			return fmt.Errorf("select orders schema: %w", err)
+		if err := tx.Exec("SET LOCAL search_path TO inventory").Error; err != nil {
+			return fmt.Errorf("select inventory schema: %w", err)
 		}
 
 		if err := tx.Omit("Inventory").Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"name", "price_paise", "currency", "updated_at"}),
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"name",
+				"price_paise",
+				"currency",
+				"updated_at",
+			}),
 		}).Create(&products).Error; err != nil {
 			return fmt.Errorf("seed products: %w", err)
 		}
 
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "product_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"on_hand", "reserved", "allocated", "updated_at"}),
+			DoNothing: true,
 		}).Create(&inventories).Error; err != nil {
 			return fmt.Errorf("seed inventories: %w", err)
 		}
 
 		var productCount int64
-		if err := tx.Model(&models.Product{}).Where("id IN ?", ids).Count(&productCount).Error; err != nil {
+		if err := tx.Model(&models.Product{}).
+			Where("id IN ?", productIDs).
+			Count(&productCount).Error; err != nil {
 			return fmt.Errorf("verify products: %w", err)
 		}
 
 		var inventoryCount int64
-		if err := tx.Model(&models.Inventory{}).Where("product_id IN ?", ids).Count(&inventoryCount).Error; err != nil {
+		if err := tx.Model(&models.Inventory{}).
+			Where("product_id IN ?", productIDs).
+			Count(&inventoryCount).Error; err != nil {
 			return fmt.Errorf("verify inventories: %w", err)
 		}
-
-		if productCount != int64(len(products)) || inventoryCount != int64(len(inventories)) {
-			return fmt.Errorf("verify seed: got %d products and %d inventories", productCount, inventoryCount)
+		if productCount != InventorySeedCount || inventoryCount != InventorySeedCount {
+			return fmt.Errorf(
+				"verify seed: got %d products and %d inventories",
+				productCount,
+				inventoryCount,
+			)
 		}
 
 		return nil

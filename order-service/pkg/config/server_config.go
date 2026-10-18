@@ -37,6 +37,3 @@ func ServerPort() (string, error) {
 
 	return port, nil
 }
-
-
-

@@ -13,6 +13,5 @@ type OrderItem struct {
 	UnitPricePaise int64     `gorm:"not null;check:chk_order_items_unit_price_positive,unit_price_paise > 0"`
 	CreatedAt      time.Time `gorm:"type:timestamptz;not null;autoCreateTime"`
 
-	Order   Order   `gorm:"foreignKey:OrderID;references:ID;constraint:OnDelete:RESTRICT"`
-	Product Product `gorm:"foreignKey:ProductID;references:ID;constraint:OnDelete:RESTRICT"`
+	Order Order `gorm:"foreignKey:OrderID;references:ID;constraint:OnDelete:RESTRICT"`
 }

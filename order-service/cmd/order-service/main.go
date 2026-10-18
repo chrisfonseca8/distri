@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/chrisfonseca08/distri/order-service/pkg/config"
+	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
+	"github.com/chrisfonseca08/distri/order-service/pkg/services"
 )
 
 func main() {
@@ -40,7 +42,10 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
-	routes.RegisterProductRoutes(mux, applicationConfig.DB)
+
+	checkoutService := services.NewCheckoutService(applicationConfig.DB)
+	checkoutController := controllers.NewCheckoutController(checkoutService)
+	routes.RegisterCheckoutRoutes(mux, checkoutController)
 
 	server, err := config.NewServer(mux)
 	if err != nil {

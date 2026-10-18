@@ -53,10 +53,6 @@ func run() error {
 
 		slog.Info("running migration", "schema", schema)
 
-		if err := migrations.MigrateProductInventory(tx); err != nil {
-			return fmt.Errorf("migrate product and inventory: %w", err)
-		}
-
 		if err := migrations.MigrateOrders(tx); err != nil {
 			return fmt.Errorf("migrate orders: %w", err)
 		}

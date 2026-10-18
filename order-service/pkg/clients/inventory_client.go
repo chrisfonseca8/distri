@@ -16,10 +16,11 @@ import (
 const defaultInventoryTimeout = 3 * time.Second
 
 var (
-	ErrInvalidRequest       = errors.New("inventory rejected the request")
-	ErrProductNotFound      = errors.New("inventory product not found")
-	ErrInsufficientStock    = errors.New("insufficient inventory stock")
-	ErrInventoryUnavailable = errors.New("inventory service unavailable")
+	ErrInvalidRequest         = errors.New("inventory rejected the request")
+	ErrProductNotFound        = errors.New("inventory product not found")
+	ErrInsufficientStock      = errors.New("insufficient inventory stock")
+	ErrReservationNotReserved = errors.New("inventory reservation is not reserved")
+	ErrInventoryUnavailable   = errors.New("inventory service unavailable")
 )
 
 type ReserveItem struct {
@@ -36,6 +37,7 @@ type ReservedLine struct {
 
 type ReserveResult struct {
 	ReservationID uuid.UUID      `json:"reservation_id"`
+	Status        string         `json:"status"`
 	TotalPaise    int64          `json:"total_paise"`
 	Currency      string         `json:"currency"`
 	Items         []ReservedLine `json:"items"`
@@ -148,6 +150,13 @@ func (c *HTTPInventoryClient) Reserve(
 				"decode inventory reservation response: %v: %w",
 				err,
 				ErrInventoryUnavailable,
+			)
+		}
+		if result.Status != "RESERVED" {
+			return ReserveResult{}, fmt.Errorf(
+				"inventory returned reservation status %q: %w",
+				result.Status,
+				ErrReservationNotReserved,
 			)
 		}
 		return result, nil

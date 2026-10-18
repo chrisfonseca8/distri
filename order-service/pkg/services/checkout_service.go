@@ -11,12 +11,12 @@ import (
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/order-service/database/models"
+	"github.com/chrisfonseca08/distri/order-service/pkg/clients"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrInvalidCheckoutInput   = errors.New("invalid checkout input")
-	ErrCheckoutNotImplemented = errors.New("checkout saga is not implemented")
+	ErrInvalidCheckoutInput = errors.New("invalid checkout input")
 )
 
 type CheckoutItemInput struct {
@@ -34,6 +34,7 @@ type CreateCheckoutResult struct {
 	Status     string    `json:"status"`
 	TotalPaise int64     `json:"total_paise"`
 	Currency   string    `json:"currency"`
+	Created    bool      `json:"-"`
 }
 
 type preparedCheckoutRequest struct {
@@ -42,22 +43,43 @@ type preparedCheckoutRequest struct {
 }
 
 type CheckoutService struct {
-	db *gorm.DB
+	db              *gorm.DB
+	inventoryClient clients.InventoryClient
 }
 
-func NewCheckoutService(db *gorm.DB) *CheckoutService {
-	return &CheckoutService{db: db}
+func NewCheckoutService(db *gorm.DB, inventoryClient clients.InventoryClient) *CheckoutService {
+	return &CheckoutService{
+		db:              db,
+		inventoryClient: inventoryClient,
+	}
 }
 
 func (s *CheckoutService) CreateCheckout(
-	_ context.Context,
+	ctx context.Context,
 	request CreateCheckoutInput,
 ) (CreateCheckoutResult, error) {
-	if _, err := prepareCheckoutRequest(request); err != nil {
+	prepared, err := prepareCheckoutRequest(request)
+	if err != nil {
 		return CreateCheckoutResult{}, err
 	}
 
-	return CreateCheckoutResult{}, ErrCheckoutNotImplemented
+	attempt, _, err := s.claimCheckoutAttempt(ctx, prepared)
+	if err != nil {
+		return CreateCheckoutResult{}, err
+	}
+	if attempt.Status == "completed" {
+		return checkoutResultFromAttempt(attempt)
+	}
+	if attempt.Status != "in_progress" {
+		return CreateCheckoutResult{}, fmt.Errorf("unexpected checkout attempt status %q", attempt.Status)
+	}
+
+	reservation, err := s.reserveCheckoutInventory(ctx, attempt, prepared.Items)
+	if err != nil {
+		return CreateCheckoutResult{}, err
+	}
+
+	return s.createOrderFromReservation(ctx, attempt, reservation)
 }
 
 func prepareCheckoutRequest(input CreateCheckoutInput) (preparedCheckoutRequest, error) {

@@ -29,7 +29,11 @@ func (c *CheckoutController) CreateCheckout(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, result)
+	status := http.StatusOK
+	if result.Created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, result)
 }
 
 func decodeCheckoutInput(r *http.Request) (services.CreateCheckoutInput, error) {
@@ -50,8 +54,15 @@ func writeCheckoutError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, services.ErrInvalidCheckoutInput):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-	case errors.Is(err, services.ErrCheckoutNotImplemented):
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": err.Error()})
+	case errors.Is(err, services.ErrIdempotencyKeyConflict):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+	case errors.Is(err, services.ErrCheckoutProductNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	case errors.Is(err, services.ErrCheckoutInsufficientStock),
+		errors.Is(err, services.ErrCheckoutReservationInactive):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	case errors.Is(err, services.ErrCheckoutInventoryUnavailable):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create checkout"})
 	}

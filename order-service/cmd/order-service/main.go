@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrisfonseca08/distri/order-service/pkg/clients"
 	"github.com/chrisfonseca08/distri/order-service/pkg/config"
 	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
@@ -43,7 +44,12 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
 
-	checkoutService := services.NewCheckoutService(applicationConfig.DB)
+	inventoryClient, err := clients.NewInventoryClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("set up inventory client: %w", err)
+	}
+
+	checkoutService := services.NewCheckoutService(applicationConfig.DB, inventoryClient)
 	checkoutController := controllers.NewCheckoutController(checkoutService)
 	routes.RegisterCheckoutRoutes(mux, checkoutController)
 

@@ -48,10 +48,18 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up inventory client: %w", err)
 	}
+	paymentClient, err := clients.NewPaymentClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("set up payment client: %w", err)
+	}
 
 	checkoutService := services.NewCheckoutService(applicationConfig.DB, inventoryClient)
 	checkoutController := controllers.NewCheckoutController(checkoutService)
 	routes.RegisterCheckoutRoutes(mux, checkoutController)
+
+	orderService := services.NewOrderService(applicationConfig.DB, paymentClient, inventoryClient)
+	orderController := controllers.NewOrderController(orderService)
+	routes.RegisterOrderRoutes(mux, orderController)
 
 	server, err := config.NewServer(mux)
 	if err != nil {

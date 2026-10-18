@@ -20,6 +20,8 @@ var (
 	ErrProductNotFound        = errors.New("inventory product not found")
 	ErrInsufficientStock      = errors.New("insufficient inventory stock")
 	ErrReservationNotReserved = errors.New("inventory reservation is not reserved")
+	ErrReservationNotFound    = errors.New("inventory reservation not found")
+	ErrReservationConflict    = errors.New("inventory reservation status conflict")
 	ErrInventoryUnavailable   = errors.New("inventory service unavailable")
 )
 
@@ -43,6 +45,12 @@ type ReserveResult struct {
 	Items         []ReservedLine `json:"items"`
 }
 
+type ChangeReservationResult struct {
+	ReservationID uuid.UUID `json:"reservation_id"`
+	OrderID       uuid.UUID `json:"order_id"`
+	Status        string    `json:"status"`
+}
+
 type InventoryClient interface {
 	Reserve(
 		ctx context.Context,
@@ -50,6 +58,8 @@ type InventoryClient interface {
 		requestHash string,
 		items []ReserveItem,
 	) (ReserveResult, error)
+	Confirm(ctx context.Context, orderID uuid.UUID) (ChangeReservationResult, error)
+	Release(ctx context.Context, orderID uuid.UUID) (ChangeReservationResult, error)
 }
 
 type HTTPInventoryClient struct {
@@ -181,6 +191,95 @@ func (c *HTTPInventoryClient) Reserve(
 	default:
 		return ReserveResult{}, fmt.Errorf(
 			"inventory returned status %d: %w",
+			response.StatusCode,
+			ErrInventoryUnavailable,
+		)
+	}
+}
+
+func (c *HTTPInventoryClient) Confirm(
+	ctx context.Context,
+	orderID uuid.UUID,
+) (ChangeReservationResult, error) {
+	return c.changeReservation(ctx, orderID, "confirm")
+}
+
+func (c *HTTPInventoryClient) Release(
+	ctx context.Context,
+	orderID uuid.UUID,
+) (ChangeReservationResult, error) {
+	return c.changeReservation(ctx, orderID, "release")
+}
+
+func (c *HTTPInventoryClient) changeReservation(
+	ctx context.Context,
+	orderID uuid.UUID,
+	action string,
+) (ChangeReservationResult, error) {
+	url := fmt.Sprintf(
+		"%s/internal/v1/reservations/%s/%s",
+		c.baseURL,
+		orderID,
+		action,
+	)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return ChangeReservationResult{}, fmt.Errorf(
+			"build inventory %s request: %v: %w",
+			action,
+			err,
+			ErrInventoryUnavailable,
+		)
+	}
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return ChangeReservationResult{}, fmt.Errorf(
+			"send inventory %s request: %v: %w",
+			action,
+			err,
+			ErrInventoryUnavailable,
+		)
+	}
+	defer response.Body.Close()
+
+	switch response.StatusCode {
+	case http.StatusOK, http.StatusCreated:
+		var result ChangeReservationResult
+		if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+			return ChangeReservationResult{}, fmt.Errorf(
+				"decode inventory %s response: %v: %w",
+				action,
+				err,
+				ErrInventoryUnavailable,
+			)
+		}
+		return result, nil
+	case http.StatusBadRequest:
+		return ChangeReservationResult{}, fmt.Errorf(
+			"inventory %s returned status %d: %w",
+			action,
+			response.StatusCode,
+			ErrInvalidRequest,
+		)
+	case http.StatusNotFound:
+		return ChangeReservationResult{}, fmt.Errorf(
+			"inventory %s returned status %d: %w",
+			action,
+			response.StatusCode,
+			ErrReservationNotFound,
+		)
+	case http.StatusConflict:
+		return ChangeReservationResult{}, fmt.Errorf(
+			"inventory %s returned status %d: %w",
+			action,
+			response.StatusCode,
+			ErrReservationConflict,
+		)
+	default:
+		return ChangeReservationResult{}, fmt.Errorf(
+			"inventory %s returned status %d: %w",
+			action,
 			response.StatusCode,
 			ErrInventoryUnavailable,
 		)

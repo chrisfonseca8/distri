@@ -1,0 +1,12 @@
+package routes
+
+import (
+	"net/http"
+
+	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
+)
+
+func RegisterOrderRoutes(mux *http.ServeMux, controller *controllers.OrderController) {
+	mux.HandleFunc("GET /v1/orders/{orderID}", controller.GetOrder)
+	mux.HandleFunc("POST /v1/orders/{orderID}/pay", controller.PayOrder)
+}

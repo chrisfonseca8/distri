@@ -1,9 +1,13 @@
 package config
 
-import "gorm.io/gorm"
+import (
+	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
+	"gorm.io/gorm"
+)
 
 type Config struct {
-	DB *gorm.DB
+	DB      *gorm.DB
+	Gateway paymentgateway.Gateway
 }
 
 func Setup() (*Config, error) {
@@ -12,5 +16,14 @@ func Setup() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{DB: db}, nil
+	gateway, err := paymentgateway.NewSimulatorFromEnv()
+	if err != nil {
+		sqlDB, dbErr := db.DB()
+		if dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return nil, err
+	}
+
+	return &Config{DB: db, Gateway: gateway}, nil
 }

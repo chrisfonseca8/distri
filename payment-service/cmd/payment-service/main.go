@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,13 +13,21 @@ import (
 	"time"
 
 	"github.com/chrisfonseca08/distri/payment-service/pkg/config"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/health"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
+)
+
+const (
+	gatewayTimeout        = 3 * time.Second
+	healthCheckTimeout    = 3 * time.Second
+	serverShutdownTimeout = 10 * time.Second
+	workerShutdownTimeout = 30 * time.Second
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	if err := run(); err != nil {
 		slog.Error("payment-service stopped", "error", err)
@@ -38,21 +47,16 @@ func run() error {
 	}
 	defer sqlDB.Close()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", health.ServerHandler)
-	routes.RegisterPaymentRoutes(mux, applicationConfig.DB)
+	paymentProcessor := services.NewPaymentProcessor(
+		applicationConfig.DB,
+		applicationConfig.Gateway,
+		gatewayTimeout,
+	)
 
-	server, err := config.NewServer(mux)
+	server, err := config.NewServer(newHandler(applicationConfig, paymentProcessor))
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}
-
-	shutdownContext, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
 
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
@@ -60,40 +64,91 @@ func run() error {
 	}
 	defer listener.Close()
 
+	shutdownSignal, stopSignals := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stopSignals()
+
+	serverErrors := startServer(server, listener)
+	if err := verifyStartupHealth(applicationConfig, server.Addr); err != nil {
+		return errors.Join(err, stopServer(server, paymentProcessor))
+	}
+
+	var runErr error
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			runErr = fmt.Errorf("serve HTTP: %w", err)
+		}
+	case <-shutdownSignal.Done():
+		slog.Info("shutting down payment-service")
+	}
+
+	return errors.Join(runErr, stopServer(server, paymentProcessor))
+}
+
+func newHandler(
+	applicationConfig *config.Config,
+	paymentProcessor *services.PaymentProcessor,
+) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", health.ServerHandler)
+
+	paymentService := services.NewPaymentService(applicationConfig.DB)
+	paymentController := controllers.NewPaymentController(paymentService, paymentProcessor)
+	routes.RegisterPaymentRoutes(mux, paymentController)
+
+	return mux
+}
+
+func startServer(server *http.Server, listener net.Listener) <-chan error {
 	serverErrors := make(chan error, 1)
 	go func() {
 		slog.Info("payment-service listening", "addr", server.Addr)
 		serverErrors <- server.Serve(listener)
 	}()
+	return serverErrors
+}
 
-	healthContext, cancelHealthCheck := context.WithTimeout(context.Background(), 3*time.Second)
-	status := health.Check(
-		healthContext,
-		applicationConfig.DB,
-		"http://127.0.0.1"+server.Addr+"/health",
-	)
-	cancelHealthCheck()
-
-	slog.Info("health check", "healthy", status.Healthy, "checks", status.Checks)
-	if !status.Healthy {
-		return fmt.Errorf("startup health check failed")
-	}
-
-	select {
-	case err := <-serverErrors:
-		if err != nil && err != http.ErrServerClosed {
-			return fmt.Errorf("serve HTTP: %w", err)
-		}
-		return nil
-	case <-shutdownContext.Done():
-		slog.Info("shutting down payment-service")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func verifyStartupHealth(applicationConfig *config.Config, serverAddress string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shut down HTTP server: %w", err)
+
+	status := health.Check(
+		ctx,
+		applicationConfig.DB,
+		"http://127.0.0.1"+serverAddress+"/health",
+	)
+	slog.Info("startup health check", "healthy", status.Healthy, "checks", status.Checks)
+
+	if !status.Healthy {
+		return errors.New("startup health check failed")
+	}
+	return nil
+}
+
+func stopServer(server *http.Server, paymentProcessor *services.PaymentProcessor) error {
+	shutdownCtx, cancelShutdown := context.WithTimeout(
+		context.Background(),
+		serverShutdownTimeout,
+	)
+	serverErr := server.Shutdown(shutdownCtx)
+	cancelShutdown()
+	if serverErr != nil {
+		serverErr = fmt.Errorf("shut down HTTP server: %w", serverErr)
 	}
 
-	return nil
+	workerCtx, cancelWorkers := context.WithTimeout(
+		context.Background(),
+		workerShutdownTimeout,
+	)
+	workerErr := paymentProcessor.Wait(workerCtx)
+	cancelWorkers()
+	if workerErr != nil {
+		workerErr = fmt.Errorf("wait for in-flight payments: %w", workerErr)
+	}
+
+	return errors.Join(serverErr, workerErr)
 }

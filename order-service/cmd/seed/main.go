@@ -18,7 +18,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	slog.Info("seeding completed", "products", 3, "inventories", 3)
+	slog.Info(
+		"seeding completed",
+		"products", seeding.ProductInventorySeedCount,
+		"inventories", seeding.ProductInventorySeedCount,
+	)
 }
 
 func run() error {

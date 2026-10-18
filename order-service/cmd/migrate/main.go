@@ -57,6 +57,10 @@ func run() error {
 			return fmt.Errorf("migrate product and inventory: %w", err)
 		}
 
+		if err := migrations.MigrateOrders(tx); err != nil {
+			return fmt.Errorf("migrate orders: %w", err)
+		}
+
 		return nil
 	})
 }

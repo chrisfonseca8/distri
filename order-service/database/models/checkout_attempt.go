@@ -16,6 +16,4 @@ type CheckoutAttempt struct {
 	ResponseBody   datatypes.JSON `gorm:"type:jsonb"`
 	CreatedAt      time.Time      `gorm:"type:timestamptz;not null;autoCreateTime"`
 	UpdatedAt      time.Time      `gorm:"type:timestamptz;not null;autoUpdateTime"`
-
-	Order *Order `gorm:"foreignKey:OrderID;references:ID"`
 }

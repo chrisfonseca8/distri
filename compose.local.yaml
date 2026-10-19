@@ -1,0 +1,157 @@
+name: distri-local
+
+x-order-environment: &order-environment
+  DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=orders
+  DB_MAX_OPEN_CONNS: "10"
+  DB_MAX_IDLE_CONNS: "5"
+  DB_CONN_MAX_LIFETIME: 30m
+
+x-inventory-environment: &inventory-environment
+  DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=inventory
+  DB_MAX_OPEN_CONNS: "10"
+  DB_MAX_IDLE_CONNS: "5"
+  DB_CONN_MAX_LIFETIME: 30m
+
+x-payment-environment: &payment-environment
+  DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=payments
+  DB_MAX_OPEN_CONNS: "10"
+  DB_MAX_IDLE_CONNS: "5"
+  DB_CONN_MAX_LIFETIME: 30m
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: distri
+      POSTGRES_USER: distri
+      POSTGRES_PASSWORD: distri
+    ports:
+      - "${LOCAL_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U distri -d distri"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  order-migrate:
+    image: distri-local/order-service:dev
+    pull_policy: never
+    entrypoint: ["/app/migrate"]
+    environment: *order-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  inventory-migrate:
+    image: distri-local/inventory-service:dev
+    pull_policy: never
+    entrypoint: ["/app/migrate"]
+    environment: *inventory-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  payment-migrate:
+    image: distri-local/payment-service:dev
+    pull_policy: never
+    entrypoint: ["/app/migrate"]
+    environment: *payment-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  inventory-seed:
+    image: distri-local/inventory-service:dev
+    pull_policy: never
+    entrypoint: ["/app/seed"]
+    environment: *inventory-environment
+    depends_on:
+      inventory-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  payment-seed:
+    image: distri-local/payment-service:dev
+    pull_policy: never
+    entrypoint: ["/app/seed"]
+    environment: *payment-environment
+    depends_on:
+      payment-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  inventory-service:
+    image: distri-local/inventory-service:dev
+    build:
+      context: ./inventory-service
+    environment:
+      <<: *inventory-environment
+      INVENTORY_PORT: "8081"
+    ports:
+      - "${LOCAL_INVENTORY_PORT:-8081}:8081"
+    depends_on:
+      inventory-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8081"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
+  payment-service:
+    image: distri-local/payment-service:dev
+    build:
+      context: ./payment-service
+    environment:
+      <<: *payment-environment
+      PAYMENT_PORT: "8082"
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
+    ports:
+      - "${LOCAL_PAYMENT_PORT:-8082}:8082"
+    depends_on:
+      payment-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8082/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
+  order-service:
+    image: distri-local/order-service:dev
+    build:
+      context: ./order-service
+    environment:
+      <<: *order-environment
+      PORT: "8080"
+      INVENTORY_URL: http://inventory-service:8081
+      INVENTORY_TIMEOUT: 3s
+      PAYMENT_URL: http://payment-service:8082
+      PAYMENT_TIMEOUT: 3s
+    ports:
+      - "${LOCAL_ORDER_PORT:-8080}:8080"
+    depends_on:
+      order-migrate:
+        condition: service_completed_successfully
+      inventory-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

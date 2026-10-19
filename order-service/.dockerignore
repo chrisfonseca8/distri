@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+.gitignore
+Dockerfile*
+*.test
+*.out
+coverage.*
+migrate
+order-service

@@ -1,0 +1,11 @@
+.env
+.env.*
+.git
+.gitignore
+Dockerfile*
+*.test
+*.out
+coverage.*
+payment-service
+migrate
+seed

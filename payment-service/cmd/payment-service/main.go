@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/chrisfonseca08/distri/payment-service/pkg/health"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/telemetry"
 )
 
 const (
@@ -53,7 +55,7 @@ func run() error {
 		gatewayTimeout,
 	)
 
-	server, err := config.NewServer(newHandler(applicationConfig, paymentProcessor))
+	server, err := config.NewServer(newHandler(applicationConfig, paymentProcessor, sqlDB))
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}
@@ -92,6 +94,7 @@ func run() error {
 func newHandler(
 	applicationConfig *config.Config,
 	paymentProcessor *services.PaymentProcessor,
+	sqlDB *sql.DB,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
@@ -100,6 +103,11 @@ func newHandler(
 	paymentController := controllers.NewPaymentController(paymentService, paymentProcessor)
 	routes.RegisterPaymentRoutes(mux, paymentController)
 
+	telemetryRecorder := telemetry.New(sqlDB)
+	if telemetry.Enabled() {
+		telemetryRecorder.Register(mux)
+		return telemetryRecorder.Middleware(mux)
+	}
 	return mux
 }
 

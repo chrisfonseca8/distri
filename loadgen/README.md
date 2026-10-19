@@ -1,5 +1,9 @@
 # Load generator and correctness testing
 
+The load-testing metric contract and run design are documented in
+[`loadtesting/README.md`](loadtesting/README.md). Correctness testing remains
+separate below.
+
 The local correctness suite is a destructive integration test. It is intentionally run only against the disposable development database created by `compose.local.yaml`. Every run starts from migrations plus the inventory seed; there is no payment seed.
 
 The implementation is in [`correctnesstesting/local`](correctnesstesting/local). Every numbered phase has its own Go file, and the comment at the top of that file states the property being tested.

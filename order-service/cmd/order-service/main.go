@@ -17,6 +17,7 @@ import (
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/order-service/pkg/services"
+	"github.com/chrisfonseca08/distri/order-service/pkg/telemetry"
 )
 
 func main() {
@@ -43,6 +44,10 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
+	telemetryRecorder := telemetry.New(sqlDB)
+	if telemetry.Enabled() {
+		telemetryRecorder.Register(mux)
+	}
 
 	inventoryClient, err := clients.NewInventoryClientFromEnv()
 	if err != nil {
@@ -61,7 +66,11 @@ func run() error {
 	orderController := controllers.NewOrderController(orderService)
 	routes.RegisterOrderRoutes(mux, orderController)
 
-	server, err := config.NewServer(mux)
+	var handler http.Handler = mux
+	if telemetry.Enabled() {
+		handler = telemetryRecorder.Middleware(mux)
+	}
+	server, err := config.NewServer(handler)
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}

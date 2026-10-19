@@ -2,21 +2,24 @@ name: distri-local
 
 x-order-environment: &order-environment
   DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=orders
-  DB_MAX_OPEN_CONNS: "10"
-  DB_MAX_IDLE_CONNS: "5"
+  DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-10}"
+  DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-5}"
   DB_CONN_MAX_LIFETIME: 30m
+  LOAD_TEST_TELEMETRY: "true"
 
 x-inventory-environment: &inventory-environment
   DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=inventory
-  DB_MAX_OPEN_CONNS: "10"
-  DB_MAX_IDLE_CONNS: "5"
+  DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-10}"
+  DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-5}"
   DB_CONN_MAX_LIFETIME: 30m
+  LOAD_TEST_TELEMETRY: "true"
 
 x-payment-environment: &payment-environment
   DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=payments
-  DB_MAX_OPEN_CONNS: "10"
-  DB_MAX_IDLE_CONNS: "5"
+  DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-10}"
+  DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-5}"
   DB_CONN_MAX_LIFETIME: 30m
+  LOAD_TEST_TELEMETRY: "true"
 
 services:
   postgres:
@@ -153,6 +156,38 @@ services:
       order-service:
         condition: service_healthy
     profiles: ["loadtest"]
+    restart: "no"
+
+  local-loadtest:
+    image: distri-local/loadgen:dev
+    build:
+      context: ./loadgen
+    entrypoint: ["/app/local-loadtest"]
+    environment:
+      ORDER_URL: http://order-service:8080
+      INVENTORY_URL: http://inventory-service:8081
+      PAYMENT_URL: http://payment-service:8082
+      DATABASE_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable
+      RESULTS_DIR: /results/load-test
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
+      LOAD_CASE: "${LOAD_CASE:-C1}"
+      LOAD_CLIENTS: "${LOAD_CLIENTS:-}"
+      LOAD_RUNS: "${LOAD_RUNS:-}"
+      LOAD_ORDERS: "${LOAD_ORDERS:-}"
+      LOAD_DURATION: "${LOAD_DURATION:-}"
+      DB_POOL_SIZE: "${DB_POOL_SIZE:-}"
+      DB_IDLE_SIZE: "${DB_IDLE_SIZE:-}"
+    volumes:
+      - ./test-results:/results
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${LOCAL_DOCKER_GID:-0}"
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    depends_on:
+      order-service:
+        condition: service_healthy
+    profiles: ["local-loadtest"]
     restart: "no"
 
   local-correctness:

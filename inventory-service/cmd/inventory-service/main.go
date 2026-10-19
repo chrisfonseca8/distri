@@ -17,6 +17,7 @@ import (
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/health"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/services"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/telemetry"
 )
 
 func main() {
@@ -48,8 +49,14 @@ func run() error {
 	reservationService := services.NewReservationService(applicationConfig.DB)
 	reservationController := controllers.NewReservationController(reservationService)
 	routes.RegisterReservationRoutes(mux, reservationController)
+	telemetryRecorder := telemetry.New(sqlDB)
+	var handler http.Handler = mux
+	if telemetry.Enabled() {
+		telemetryRecorder.Register(mux)
+		handler = telemetryRecorder.Middleware(mux)
+	}
 
-	server, err := config.NewServer(mux)
+	server, err := config.NewServer(handler)
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}

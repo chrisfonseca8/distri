@@ -1,0 +1,313 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+type loadClient struct {
+	baseURL  string
+	http     *http.Client
+	metrics  *collector
+	behavior string
+	sequence atomic.Uint64
+}
+type cartItem struct {
+	ProductID string `json:"product_id"`
+	Quantity  int64  `json:"quantity"`
+}
+type checkoutResponse struct {
+	OrderID string `json:"order_id"`
+	Status  string `json:"status"`
+}
+type orderResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+func (c *loadClient) workflow(parent context.Context, productID string) {
+	c.workflowCart(parent, []cartItem{{ProductID: productID, Quantity: 1}})
+}
+
+func (c *loadClient) workflowCart(parent context.Context, items []cartItem) {
+	sequence := c.sequence.Add(1) - 1
+	switch c.behavior {
+	case "duplicate-checkout":
+		c.duplicateCheckoutWorkflow(parent, items, sequence)
+	case "duplicate-pay":
+		c.duplicatePayWorkflow(parent, items)
+	default:
+		c.standardWorkflow(parent, items)
+	}
+}
+
+func (c *loadClient) standardWorkflow(parent context.Context, items []cartItem) {
+	c.metrics.beginWorkflow()
+	defer c.metrics.endWorkflow()
+	started := time.Now()
+	c.metrics.offeredOne()
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	checkoutStatus, checkout, latency, transport, decode := c.checkout(ctx, items)
+	c.metrics.checkoutResult(checkoutStatus, latency, transport, decode)
+	if transport != nil || decode != nil || checkoutStatus < 200 || checkoutStatus >= 300 || checkout.OrderID == "" {
+		return
+	}
+	c.metrics.acceptedOne()
+	payStatus, order, payLatency, transport, decode := c.pay(ctx, checkout.OrderID)
+	c.metrics.payResult(payStatus, payLatency, transport, decode)
+	if transport != nil || decode != nil || payStatus < 200 || payStatus >= 300 {
+		return
+	}
+	if payStatus == http.StatusAccepted {
+		c.metrics.pendingOne()
+		return
+	}
+	if order.Status != "PAID" && order.Status != "CANCELLED" {
+		order = c.waitTerminal(ctx, checkout.OrderID)
+	}
+	if order.Status == "PAID" || order.Status == "CANCELLED" {
+		c.metrics.completedOne(order.Status, time.Since(started))
+	} else {
+		c.metrics.pendingOne()
+	}
+}
+
+type checkoutCall struct {
+	status    int
+	result    checkoutResponse
+	latency   time.Duration
+	transport error
+	decode    error
+}
+
+func (c *loadClient) duplicateCheckoutWorkflow(parent context.Context, items []cartItem, sequence uint64) {
+	c.metrics.beginWorkflow()
+	defer c.metrics.endWorkflow()
+	started := time.Now()
+	c.metrics.offeredOne()
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	key := "load-" + newUUID()
+	first := func() checkoutCall {
+		status, result, latency, transport, decode := c.checkoutWithKey(ctx, items, key)
+		c.metrics.checkoutResult(status, latency, transport, decode)
+		return checkoutCall{status, result, latency, transport, decode}
+	}
+	var calls []checkoutCall
+	if sequence%5 == 0 {
+		c.metrics.duplicate(1, 1, 0, 0)
+		if sequence%10 == 0 {
+			calls = make([]checkoutCall, 2)
+			var wait sync.WaitGroup
+			start := make(chan struct{})
+			wait.Add(2)
+			for index := range calls {
+				go func(index int) { defer wait.Done(); <-start; calls[index] = first() }(index)
+			}
+			close(start)
+			wait.Wait()
+		} else {
+			calls = []checkoutCall{first(), first()}
+		}
+	} else {
+		calls = []checkoutCall{first()}
+	}
+	c.finishCheckoutCalls(ctx, started, calls)
+}
+
+func (c *loadClient) finishCheckoutCalls(ctx context.Context, started time.Time, calls []checkoutCall) {
+	var chosen checkoutResponse
+	valid, replay200, mismatch := 0, int64(0), int64(0)
+	for _, call := range calls {
+		if call.transport == nil && call.decode == nil && call.status >= 200 && call.status < 300 && call.result.OrderID != "" {
+			valid++
+			if call.status == http.StatusOK {
+				replay200++
+			}
+			if chosen.OrderID == "" {
+				chosen = call.result
+			} else if chosen.OrderID != call.result.OrderID {
+				mismatch++
+			}
+		}
+	}
+	if len(calls) > 1 {
+		c.metrics.duplicate(0, 0, replay200, mismatch)
+	}
+	if valid == 0 || mismatch > 0 {
+		return
+	}
+	c.metrics.acceptedOne()
+	c.finishPayment(ctx, started, chosen.OrderID)
+}
+
+func (c *loadClient) duplicatePayWorkflow(parent context.Context, items []cartItem) {
+	c.metrics.beginWorkflow()
+	defer c.metrics.endWorkflow()
+	started := time.Now()
+	c.metrics.offeredOne()
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	status, checkout, latency, transport, decode := c.checkout(ctx, items)
+	c.metrics.checkoutResult(status, latency, transport, decode)
+	if transport != nil || decode != nil || status < 200 || status >= 300 || checkout.OrderID == "" {
+		return
+	}
+	c.metrics.acceptedOne()
+	c.metrics.duplicate(1, 1, 0, 0)
+	type payCall struct {
+		status            int
+		order             orderResponse
+		transport, decode error
+	}
+	calls := make([]payCall, 2)
+	start := make(chan struct{})
+	var wait sync.WaitGroup
+	wait.Add(2)
+	for index := range calls {
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			status, order, latency, transport, decode := c.pay(ctx, checkout.OrderID)
+			c.metrics.payResult(status, latency, transport, decode)
+			calls[index] = payCall{status, order, transport, decode}
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	mismatch := int64(0)
+	for _, call := range calls {
+		if call.status < 200 || call.status >= 300 || call.transport != nil || call.decode != nil {
+			mismatch++
+		}
+	}
+	order := calls[0].order
+	if calls[0].order.Status != calls[1].order.Status {
+		mismatch++
+	}
+	if mismatch > 0 {
+		c.metrics.duplicate(0, 0, 0, mismatch)
+		return
+	}
+	if order.Status != "PAID" && order.Status != "CANCELLED" {
+		order = c.waitTerminal(ctx, checkout.OrderID)
+	}
+	if order.Status == "PAID" || order.Status == "CANCELLED" {
+		c.metrics.completedOne(order.Status, time.Since(started))
+	} else {
+		c.metrics.pendingOne()
+	}
+}
+
+func (c *loadClient) finishPayment(ctx context.Context, started time.Time, orderID string) {
+	payStatus, order, payLatency, transport, decode := c.pay(ctx, orderID)
+	c.metrics.payResult(payStatus, payLatency, transport, decode)
+	if transport != nil || decode != nil || payStatus < 200 || payStatus >= 300 {
+		return
+	}
+	if payStatus == http.StatusAccepted {
+		c.metrics.pendingOne()
+		return
+	}
+	if order.Status != "PAID" && order.Status != "CANCELLED" {
+		order = c.waitTerminal(ctx, orderID)
+	}
+	if order.Status == "PAID" || order.Status == "CANCELLED" {
+		c.metrics.completedOne(order.Status, time.Since(started))
+	} else {
+		c.metrics.pendingOne()
+	}
+}
+
+func (c *loadClient) checkout(ctx context.Context, items []cartItem) (int, checkoutResponse, time.Duration, error, error) {
+	return c.checkoutWithKey(ctx, items, "load-"+newUUID())
+}
+
+func (c *loadClient) checkoutWithKey(ctx context.Context, items []cartItem, key string) (int, checkoutResponse, time.Duration, error, error) {
+	body := map[string]any{"items": items}
+	var result checkoutResponse
+	status, latency, transport, decode := c.do(ctx, http.MethodPost, c.baseURL+"/v1/checkouts", body, map[string]string{"Idempotency-Key": key}, &result)
+	return status, result, latency, transport, decode
+}
+
+func (c *loadClient) pay(ctx context.Context, orderID string) (int, orderResponse, time.Duration, error, error) {
+	var result orderResponse
+	status, latency, transport, decode := c.do(ctx, http.MethodPost, c.baseURL+"/v1/orders/"+orderID+"/pay", nil, nil, &result)
+	return status, result, latency, transport, decode
+}
+
+func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResponse {
+	for {
+		select {
+		case <-ctx.Done():
+			return orderResponse{}
+		case <-time.After(100 * time.Millisecond):
+		}
+		var result orderResponse
+		status, _, transport, decode := c.do(ctx, http.MethodGet, c.baseURL+"/v1/orders/"+orderID, nil, nil, &result)
+		if transport == nil && decode == nil && status == 200 && (result.Status == "PAID" || result.Status == "CANCELLED") {
+			return result
+		}
+	}
+}
+
+func (c *loadClient) do(ctx context.Context, method, url string, body any, headers map[string]string, out any) (int, time.Duration, error, error) {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return 0, 0, err, nil
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		return 0, 0, err, nil
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	c.metrics.beginRequest()
+	started := time.Now()
+	response, err := c.http.Do(req)
+	latency := time.Since(started)
+	c.metrics.endRequest()
+	if err != nil {
+		return 0, latency, err, nil
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
+		return response.StatusCode, latency, nil, err
+	}
+	if out != nil && len(raw) > 0 {
+		if err := json.Unmarshal(raw, out); err != nil {
+			return response.StatusCode, latency, nil, err
+		}
+	}
+	return response.StatusCode, latency, nil, nil
+}
+
+func newUUID() string {
+	data := make([]byte, 16)
+	if _, err := rand.Read(data); err != nil {
+		panic(err)
+	}
+	data[6] = (data[6] & 15) | 64
+	data[8] = (data[8] & 63) | 128
+	v := hex.EncodeToString(data)
+	return fmt.Sprintf("%s-%s-%s-%s-%s", v[:8], v[8:12], v[12:16], v[16:20], v[20:])
+}

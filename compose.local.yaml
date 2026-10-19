@@ -155,5 +155,26 @@ services:
     profiles: ["loadtest"]
     restart: "no"
 
+  local-correctness:
+    image: distri-local/loadgen:dev
+    build:
+      context: ./loadgen
+    entrypoint: ["/app/local-correctness"]
+    environment:
+      ORDER_URL: http://order-service:8080
+      INVENTORY_URL: http://inventory-service:8081
+      PAYMENT_URL: http://payment-service:8082
+      DATABASE_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable
+      RESULTS_DIR: /results/correctness-local
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+    volumes:
+      - ./test-results:/results
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    depends_on:
+      order-service:
+        condition: service_healthy
+    profiles: ["correctness"]
+    restart: "no"
+
 volumes:
   postgres-data:

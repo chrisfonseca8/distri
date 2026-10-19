@@ -41,6 +41,8 @@ go.work.sum
 
 #claud 
 CLAUDE.md
+/test-results/*
+!/test-results/.gitkeep
 memory.md
 plan.md
 plan.txt

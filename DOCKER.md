@@ -52,7 +52,8 @@ Every correctness or load-test run starts with a fresh PostgreSQL volume:
 ```bash
 docker compose -f compose.local.yaml down --volumes
 docker compose -f compose.local.yaml up --build --wait
-docker compose -f compose.local.yaml --profile loadtest run --rm --build loadgen
+docker compose -f compose.local.yaml --profile loadtest build loadgen
+docker compose -f compose.local.yaml --profile loadtest run --rm --no-deps loadgen
 ```
 
 After collecting the result, remove the test database:
@@ -65,6 +66,29 @@ The loadgen binary is currently only a containerized stub. The next step is to
 implement its checkout workload, completion polling, latency histograms, error
 counts, and open-loop/closed-loop modes. `ORDER_URL` is already wired so that
 the workload code will not need Docker-specific addressing.
+
+## Local correctness suite
+
+The phase-based black-box correctness suite lives in
+`loadgen/correctnesstesting/local`. Its full test list and report format are
+documented in `loadgen/README.md`. Run it against a freshly created local
+database:
+
+```bash
+docker compose -f compose.local.yaml down --volumes
+docker compose -f compose.local.yaml up --build --wait
+docker compose -f compose.local.yaml --profile correctness build local-correctness
+LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) \
+  docker compose -f compose.local.yaml --profile correctness \
+  run --rm --no-deps local-correctness
+docker compose -f compose.local.yaml down --volumes
+```
+
+Markdown and JSON results are written to
+`test-results/correctness-local/`. Each phase reports its purpose, assertions,
+request/error counts, duration, and HTTP latency min/mean/p50/p95/p99/max.
+Outcome-specific phases can be selected by rebuilding the fresh stack with
+`GATEWAY_MODE=success`, `decline`, or `timeout`.
 
 ## Production environment
 

@@ -41,6 +41,31 @@ GATEWAY_MODE=decline GATEWAY_LATENCY=500ms \
 
 Supported modes are `success`, `decline`, `timeout`, and `random`.
 
+## Local load-test environment
+
+The load generator is an opt-in Compose profile and reaches the Order Service
+through the private Compose network at `http://order-service:8080`. It is not
+started during normal local development.
+
+Every correctness or load-test run starts with a fresh PostgreSQL volume:
+
+```bash
+docker compose -f compose.local.yaml down --volumes
+docker compose -f compose.local.yaml up --build --wait
+docker compose -f compose.local.yaml --profile loadtest run --rm --build loadgen
+```
+
+After collecting the result, remove the test database:
+
+```bash
+docker compose -f compose.local.yaml down --volumes
+```
+
+The loadgen binary is currently only a containerized stub. The next step is to
+implement its checkout workload, completion polling, latency histograms, error
+counts, and open-loop/closed-loop modes. `ORDER_URL` is already wired so that
+the workload code will not need Docker-specific addressing.
+
 ## Production environment
 
 Production Compose does not run PostgreSQL and does not seed data. Supply

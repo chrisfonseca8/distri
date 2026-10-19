@@ -143,5 +143,17 @@ services:
       retries: 20
     restart: unless-stopped
 
+  loadgen:
+    image: distri-local/loadgen:dev
+    build:
+      context: ./loadgen
+    environment:
+      ORDER_URL: http://order-service:8080
+    depends_on:
+      order-service:
+        condition: service_healthy
+    profiles: ["loadtest"]
+    restart: "no"
+
 volumes:
   postgres-data:

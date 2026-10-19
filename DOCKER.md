@@ -3,7 +3,7 @@
 ## Local environment
 
 The local stack starts PostgreSQL, runs all schema migrations, seeds the
-inventory and payment schemas, and then starts the three APIs.
+inventory schema, and then starts the three APIs. Payment data is never seeded.
 
 ```bash
 docker compose -f compose.local.yaml up --build --wait
@@ -16,8 +16,8 @@ Endpoints:
 - Payment API: `http://localhost:8082`
 - PostgreSQL: `localhost:5432` (`distri` / `distri`, database `distri`)
 
-The migration and seed containers are expected to exit successfully. Their
-completed state is what allows the API containers to start.
+The migration containers and the inventory seed container are expected to exit
+successfully. Their completed state is what allows the API containers to start.
 
 Stop the stack while retaining local data:
 

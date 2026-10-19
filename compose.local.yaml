@@ -76,16 +76,6 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
-  payment-seed:
-    image: distri-local/payment-service:dev
-    pull_policy: never
-    entrypoint: ["/app/seed"]
-    environment: *payment-environment
-    depends_on:
-      payment-migrate:
-        condition: service_completed_successfully
-    restart: "no"
-
   inventory-service:
     image: distri-local/inventory-service:dev
     build:
@@ -117,7 +107,7 @@ services:
     ports:
       - "${LOCAL_PAYMENT_PORT:-8082}:8082"
     depends_on:
-      payment-seed:
+      payment-migrate:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8082/health"]

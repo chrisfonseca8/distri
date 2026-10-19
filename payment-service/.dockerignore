@@ -8,4 +8,3 @@ Dockerfile*
 coverage.*
 payment-service
 migrate
-seed

@@ -10,8 +10,7 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/payment-service ./cmd/payment-service \
-    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
-    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata \
@@ -19,7 +18,7 @@ RUN apk add --no-cache ca-certificates tzdata \
     && adduser -S -G app app
 
 WORKDIR /app
-COPY --from=build /out/payment-service /out/migrate /out/seed ./
+COPY --from=build /out/payment-service /out/migrate ./
 
 USER app
 EXPOSE 8082

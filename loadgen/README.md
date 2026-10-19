@@ -13,7 +13,7 @@ The implementation is in [`correctnesstesting/local`](correctnesstesting/local).
 5. **Confirm and release transitions** — terminal inventory operations are idempotent and contradictory transitions fail.
 6. **Checkout validation** — checkout inputs and inventory errors map to the expected public behavior.
 7. **Checkout idempotency and concurrency** — sequential and concurrent retries create one order and reserve once.
-8. **Checkout crash recovery** — reserved for a deterministic crash failpoint; currently reported as skipped.
+8. **Checkout crash recovery** — stops inventory to resume an `in_progress` claim and also verifies a pre-reserved crash fixture resumes without duplicates.
 9. **Payment gateway outcome** — asynchronous processing reaches the outcome selected by `GATEWAY_MODE`.
 10. **Payment idempotency and concurrency** — concurrent payment creates yield one attempt and one ID.
 11. **Order/payment consistency** — wrong amount or currency cannot settle an order.
@@ -21,7 +21,7 @@ The implementation is in [`correctnesstesting/local`](correctnesstesting/local).
 13. **Successful checkout end to end** — success produces `PAID`, `SUCCEEDED`, `CONFIRMED`, and one stock movement.
 14. **Declined payment end to end** — decline produces `CANCELLED`, `FAILED`, `RELEASED`, and no consumed stock.
 15. **Ambiguous payment timeout** — timeout produces `UNKNOWN` while the order and reservation stay pending/held.
-16. **Inventory settlement recovery** — reserved for deterministic inventory fault injection; currently skipped.
+16. **Inventory settlement recovery** — stops inventory after checkout, proves payment/order success survives failed confirmation, and verifies retry repairs settlement exactly once.
 17. **Concurrent limited-stock checkout** — 50 buyers compete for ten units without overselling.
 18. **Multi-item deadlock resistance** — reversed carts complete under contention without deadlock.
 19. **Terminal order idempotency** — retrying settlement creates no second payment or stock movement.
@@ -49,9 +49,41 @@ The default gateway mode is `success`. Run the suite on a newly rebuilt database
 Each run writes both Markdown and machine-readable JSON to:
 
 ```text
-test-results/correctness-local/
+test-results/correctness-test/
 ```
+
+This folder always contains exactly `correctness-test.md` and
+`correctness-test.json`. Both files aggregate every labeled scenario. Rerunning
+the same label replaces that scenario inside the aggregate instead of creating
+another timestamped file.
 
 The report contains the description, assertions, notes, status, wall-clock duration, request count, transport/decode error count, and HTTP latency `min`, `mean`, `p50`, `p95`, `p99`, and `max` for every phase. Percentiles use the nearest ranked observed request duration. These latency samples make regressions visible, but this suite is for correctness—not capacity sizing; sustained throughput belongs in the load-test suite.
 
 The process exits non-zero when any phase fails. Skips are documented in the report and do not make the run fail.
+
+Phases 08 and 16 need permission to stop and restart the local Inventory
+Service. Run the correctness binary from the host while the Docker services are
+up to activate them:
+
+```sh
+cd loadgen
+ORDER_URL=http://127.0.0.1:8080 \
+INVENTORY_URL=http://127.0.0.1:8081 \
+PAYMENT_URL=http://127.0.0.1:8082 \
+DATABASE_URL='postgres://distri:distri@127.0.0.1:5432/distri?sslmode=disable' \
+RESULTS_DIR=../test-results/correctness-test \
+GATEWAY_MODE=success RUN_LABEL=success \
+COMPOSE_FILE="$(cd .. && pwd)/compose.local.yaml" \
+go run ./correctnesstesting/local
+```
+
+Without `COMPOSE_FILE`, these two outage-orchestration phases safely report
+`SKIP`; the runner never receives Docker control implicitly.
+
+For a focused regression or mutation run, set `PHASES` to a comma-separated
+list and give the report a label:
+
+```sh
+PHASES=17,18 RUN_LABEL=concurrency-regression \
+  docker compose -f compose.local.yaml --profile correctness run --rm --no-deps local-correctness
+```

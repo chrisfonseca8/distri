@@ -165,8 +165,10 @@ services:
       INVENTORY_URL: http://inventory-service:8081
       PAYMENT_URL: http://payment-service:8082
       DATABASE_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable
-      RESULTS_DIR: /results/correctness-local
+      RESULTS_DIR: /results/correctness-test
       GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      PHASES: "${PHASES:-}"
+      RUN_LABEL: "${RUN_LABEL:-${GATEWAY_MODE:-success}}"
     volumes:
       - ./test-results:/results
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"

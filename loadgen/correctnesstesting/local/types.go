@@ -47,11 +47,18 @@ type correctnessReport struct {
 	Phases      []phaseResult `json:"phases"`
 }
 
+type correctnessReportCollection struct {
+	Suite     string              `json:"suite"`
+	UpdatedAt time.Time           `json:"updated_at"`
+	Runs      []correctnessReport `json:"runs"`
+}
+
 type reportEnv struct {
 	OrderURL     string `json:"order_url"`
 	InventoryURL string `json:"inventory_url"`
 	PaymentURL   string `json:"payment_url"`
 	GatewayMode  string `json:"gateway_mode"`
+	RunLabel     string `json:"run_label,omitempty"`
 }
 
 type reportSummary struct {

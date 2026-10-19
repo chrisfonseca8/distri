@@ -85,7 +85,8 @@ docker compose -f compose.local.yaml down --volumes
 ```
 
 Markdown and JSON results are written to
-`test-results/correctness-local/`. Each phase reports its purpose, assertions,
+`test-results/correctness-test/correctness-test.md` and
+`test-results/correctness-test/correctness-test.json`. Each phase reports its purpose, assertions,
 request/error counts, duration, and HTTP latency min/mean/p50/p95/p99/max.
 Outcome-specific phases can be selected by rebuilding the fresh stack with
 `GATEWAY_MODE=success`, `decline`, or `timeout`.

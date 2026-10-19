@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,8 @@ type suite struct {
 	inventoryURL string
 	paymentURL   string
 	gatewayMode  string
+	runLabel     string
+	composeFile  string
 	resultsDir   string
 	runID        string
 }
@@ -45,9 +48,27 @@ func newSuite(ctx context.Context) (*suite, error) {
 		ctx: ctx, db: db, client: &http.Client{Timeout: 12 * time.Second},
 		orderURL: requiredEnv("ORDER_URL"), inventoryURL: requiredEnv("INVENTORY_URL"),
 		paymentURL: requiredEnv("PAYMENT_URL"), gatewayMode: envOr("GATEWAY_MODE", "success"),
-		resultsDir: envOr("RESULTS_DIR", "test-results/correctness-local"),
-		runID:      time.Now().UTC().Format("20060102T150405.000000000Z"),
+		runLabel:    envOr("RUN_LABEL", envOr("GATEWAY_MODE", "success")),
+		composeFile: strings.TrimSpace(os.Getenv("COMPOSE_FILE")),
+		resultsDir:  envOr("RESULTS_DIR", "test-results/correctness-test"),
+		runID:       time.Now().UTC().Format("20060102T150405.000000000Z"),
 	}, nil
+}
+
+func (s *suite) canControlServices() bool { return s.composeFile != "" }
+
+func (s *suite) compose(action, service string) error {
+	if !s.canControlServices() {
+		return fmt.Errorf("COMPOSE_FILE is not set")
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, 45*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "docker", "compose", "-f", s.composeFile, action, service)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker compose %s %s: %w: %s", action, service, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func requiredEnv(name string) string {

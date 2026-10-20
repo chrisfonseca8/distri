@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -15,22 +17,39 @@ import (
 	"github.com/chrisfonseca08/distri/order-service/pkg/config"
 	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
+	"github.com/chrisfonseca08/distri/order-service/pkg/jobs"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/order-service/pkg/services"
 	"github.com/chrisfonseca08/distri/order-service/pkg/telemetry"
+)
+
+type serviceRole string
+
+const (
+	roleAPI    serviceRole = "api"
+	roleWorker serviceRole = "worker"
+	roleAll    serviceRole = "all"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	if err := run(); err != nil {
+	role := flag.String("role", string(roleAll), "process role: api, worker, or all")
+	flag.Parse()
+
+	if err := run(*role); err != nil {
 		slog.Error("order-service stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(roleValue string) error {
+	role, err := parseRole(roleValue)
+	if err != nil {
+		return err
+	}
+
 	applicationConfig, err := config.Config_setup()
 	if err != nil {
 		return fmt.Errorf("set up configuration: %w", err)
@@ -42,13 +61,6 @@ func run() error {
 	}
 	defer sqlDB.Close()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", health.ServerHandler)
-	telemetryRecorder := telemetry.New(sqlDB)
-	if telemetry.Enabled() {
-		telemetryRecorder.Register(mux)
-	}
-
 	inventoryClient, err := clients.NewInventoryClientFromEnv()
 	if err != nil {
 		return fmt.Errorf("set up inventory client: %w", err)
@@ -58,11 +70,53 @@ func run() error {
 		return fmt.Errorf("set up payment client: %w", err)
 	}
 
+	orderService := services.NewOrderService(applicationConfig.DB, paymentClient, inventoryClient)
+
+	shutdownContext, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	var workerWaitGroup sync.WaitGroup
+	defer func() {
+		stop()
+		workerWaitGroup.Wait()
+	}()
+
+	if role == roleWorker || role == roleAll {
+		worker, err := jobs.NewWorker(
+			jobs.NewStore(applicationConfig.DB),
+			orderService,
+			applicationConfig.Worker,
+		)
+		if err != nil {
+			return fmt.Errorf("set up job worker: %w", err)
+		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			worker.Run(shutdownContext)
+		}()
+	}
+
+	if role == roleWorker {
+		slog.Info("order-service worker running")
+		<-shutdownContext.Done()
+		slog.Info("shutting down order-service worker")
+		return nil
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", health.ServerHandler)
+	telemetryRecorder := telemetry.New(sqlDB)
+	if telemetry.Enabled() {
+		telemetryRecorder.Register(mux)
+	}
+
 	checkoutService := services.NewCheckoutService(applicationConfig.DB, inventoryClient)
 	checkoutController := controllers.NewCheckoutController(checkoutService)
 	routes.RegisterCheckoutRoutes(mux, checkoutController)
 
-	orderService := services.NewOrderService(applicationConfig.DB, paymentClient, inventoryClient)
 	orderController := controllers.NewOrderController(orderService)
 	routes.RegisterOrderRoutes(mux, orderController)
 
@@ -74,13 +128,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}
-
-	shutdownContext, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
 
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
@@ -124,4 +171,14 @@ func run() error {
 	}
 
 	return nil
+}
+
+func parseRole(value string) (serviceRole, error) {
+	role := serviceRole(value)
+	switch role {
+	case roleAPI, roleWorker, roleAll:
+		return role, nil
+	default:
+		return "", fmt.Errorf("invalid role %q: must be api, worker, or all", value)
+	}
 }

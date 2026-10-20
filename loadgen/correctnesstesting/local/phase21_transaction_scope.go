@@ -8,6 +8,8 @@ import (
 // Phase 21 samples PostgreSQL while external payment I/O is in progress.
 func phase21() phaseDefinition {
 	return phaseDefinition{21, "Transaction boundary", "Samples pg_stat_activity during checkout/payment and fails if an application connection waits on network I/O while idle inside a database transaction.", func(p *phaseContext) {
+		drained := p.waitForActionableJobs(10 * time.Second)
+		p.check("actionable background jobs drain before sampling", drained, "timed out waiting for the worker backlog")
 		_, checkout, _ := p.checkout("phase21-"+newUUID(), []map[string]any{item(p.productID(25), 1)})
 		var wg sync.WaitGroup
 		wg.Add(1)

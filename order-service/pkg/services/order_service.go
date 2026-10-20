@@ -120,6 +120,14 @@ func (s *OrderService) SettleOrder(ctx context.Context, orderID uuid.UUID) (Orde
 	return s.GetOrder(ctx, order.ID)
 }
 
+func (s *OrderService) SettleForJob(
+	ctx context.Context,
+	orderID uuid.UUID,
+) (SettleOutcome, error) {
+	_, outcome, err := s.settleOrder(ctx, orderID, 0)
+	return outcome, err
+}
+
 func (s *OrderService) settleOrder(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -271,6 +279,7 @@ func (s *OrderService) transitionOrder(
 	}
 
 	update := s.db.WithContext(ctx).
+		Session(&gorm.Session{SkipDefaultTransaction: true}).
 		Table("orders.orders").
 		Where("id = ? AND status = ?", orderID, state.OrderPendingPayment).
 		Updates(map[string]any{

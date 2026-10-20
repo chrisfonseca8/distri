@@ -47,6 +47,7 @@ func resetFixture(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	defer tx.Rollback(ctx)
 
 	if _, err := tx.Exec(ctx, `TRUNCATE TABLE
+		orders.jobs,
 		orders.order_items,
 		orders.orders,
 		orders.checkout_attempts,

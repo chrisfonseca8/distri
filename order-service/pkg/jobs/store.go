@@ -1,0 +1,140 @@
+package jobs
+
+import (
+	"context"
+	"errors"
+	"time"
+	"uuid"
+
+	"github.com/chrisfonseca08/distri/order-service/database/models"
+	"gorm.io/gorm"
+)
+
+type Store struct {
+	db *gorm.DB
+}
+
+func NewStore(db *gorm.DB) *Store {
+	return &Store{db: db.Session(&gorm.Session{SkipDefaultTransaction: true})}
+}
+
+func (s *Store) Claim(
+	ctx context.Context,
+	workerID string,
+	limit int,
+	lease time.Duration,
+) ([]models.Job, error) {
+	if workerID == "" {
+		return nil, errors.New("worker ID is required")
+	}
+	if limit <= 0 {
+		return nil, errors.New("claim limit must be greater than zero")
+	}
+	if lease < time.Microsecond {
+		return nil, errors.New("claim lease must be at least one microsecond")
+	}
+
+	const query = `
+WITH due AS (
+	SELECT id
+	FROM orders.jobs
+	WHERE next_run_at <= now()
+		AND (
+			status = 'queued'
+			OR (status = 'running' AND locked_until < now())
+		)
+	ORDER BY next_run_at, id
+	FOR UPDATE SKIP LOCKED
+	LIMIT ?
+)
+UPDATE orders.jobs AS jobs
+SET status = 'running',
+	locked_by = ?,
+	locked_until = now() + (? * interval '1 microsecond'),
+	attempts = jobs.attempts + 1
+FROM due
+WHERE jobs.id = due.id
+RETURNING jobs.*`
+
+	var claimed []models.Job
+	result := s.db.WithContext(ctx).
+		Raw(query, limit, workerID, lease.Microseconds()).
+		Scan(&claimed)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return claimed, nil
+}
+
+func (s *Store) Succeed(
+	ctx context.Context,
+	jobID uuid.UUID,
+	workerID string,
+) (bool, error) {
+	result := s.db.WithContext(ctx).
+		Table("orders.jobs").
+		Where("id = ? AND locked_by = ? AND status = ?", jobID, workerID, "running").
+		Updates(map[string]any{
+			"status":       "succeeded",
+			"locked_by":    nil,
+			"locked_until": nil,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (s *Store) Reschedule(
+	ctx context.Context,
+	jobID uuid.UUID,
+	workerID string,
+	delay time.Duration,
+	countAttempt bool,
+	lastError string,
+) (bool, error) {
+	if delay < 0 {
+		return false, errors.New("reschedule delay must not be negative")
+	}
+
+	updates := map[string]any{
+		"status":       "queued",
+		"next_run_at":  gorm.Expr("now() + (? * interval '1 microsecond')", delay.Microseconds()),
+		"locked_by":    nil,
+		"locked_until": nil,
+		"last_error":   lastError,
+	}
+	if !countAttempt {
+		updates["attempts"] = gorm.Expr("attempts - 1")
+	}
+
+	result := s.db.WithContext(ctx).
+		Table("orders.jobs").
+		Where("id = ? AND locked_by = ? AND status = ?", jobID, workerID, "running").
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (s *Store) Kill(
+	ctx context.Context,
+	jobID uuid.UUID,
+	workerID string,
+	lastError string,
+) (bool, error) {
+	result := s.db.WithContext(ctx).
+		Table("orders.jobs").
+		Where("id = ? AND locked_by = ? AND status = ?", jobID, workerID, "running").
+		Updates(map[string]any{
+			"status":       "dead",
+			"locked_by":    nil,
+			"locked_until": nil,
+			"last_error":   lastError,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}

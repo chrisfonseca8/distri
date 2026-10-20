@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 func (p *phaseContext) scalar(query string, args ...any) int64 {
 	var value int64
@@ -45,6 +48,24 @@ func (p *phaseContext) setStock(productID string, onHand int64) {
 		productID, onHand)
 	if err != nil {
 		panic(fmt.Errorf("set stock fixture: %w", err))
+	}
+}
+
+func (p *phaseContext) waitForActionableJobs(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := p.scalar(`SELECT count(*)
+			FROM orders.jobs j
+			LEFT JOIN payments.payment_attempts payment ON payment.order_id=j.order_id
+			WHERE j.status IN ('queued','running')
+				AND COALESCE(payment.status, '') <> 'UNKNOWN'`)
+		if remaining == 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

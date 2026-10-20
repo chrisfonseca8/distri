@@ -1,0 +1,36 @@
+# Runs on the LOAD_TEST host. The runner calls the services on the SERVER by private
+# IP, talks to the managed TEST database directly, and samples the SERVER's
+# containers through its Docker socket, forwarded over SSH to a local unix socket
+# (see README). It truncates tables, so it refuses any database host that is not
+# named in LOAD_TEST_ALLOWED_DB_HOST.
+name: distri-loadgen
+
+services:
+  loadtest:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:loadgen-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/local-loadtest"]
+    environment:
+      ORDER_URL: "${ORDER_URL:?set ORDER_URL}"
+      INVENTORY_URL: "${INVENTORY_URL:?set INVENTORY_URL}"
+      PAYMENT_URL: "${PAYMENT_URL:?set PAYMENT_URL}"
+      DATABASE_URL: "${LOADTEST_DATABASE_URL:?set LOADTEST_DATABASE_URL}"
+      LOAD_TEST_ALLOWED_DB_HOST: "${LOAD_TEST_ALLOWED_DB_HOST:?set LOAD_TEST_ALLOWED_DB_HOST}"
+      LOAD_TEST_ENVIRONMENT: "${LOAD_TEST_ENVIRONMENT:-}"
+      RESULTS_DIR: "/results/${RESULTS_SUBDIR:-cloud-load-test}"
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
+      LOAD_CASE: "${LOAD_CASE:-C1}"
+      LOAD_CLIENTS: "${LOAD_CLIENTS:-}"
+      LOAD_RUNS: "${LOAD_RUNS:-}"
+      LOAD_ORDERS: "${LOAD_ORDERS:-}"
+      LOAD_DURATION: "${LOAD_DURATION:-}"
+      LOAD_MAX_CONNS: "${LOAD_MAX_CONNS:-}"
+      LOAD_CLIENT_STEPS: "${LOAD_CLIENT_STEPS:-}"
+      LOAD_RATE_STEPS: "${LOAD_RATE_STEPS:-}"
+      DB_POOL_SIZE: "${DB_POOL_SIZE:-}"
+      DB_IDLE_SIZE: "${DB_IDLE_SIZE:-}"
+    volumes:
+      - ../../test-results:/results   # relative to this file (deploy/cloud/), i.e. ~/distri/test-results
+      - "${SERVER_DOCKER_SOCK:?set SERVER_DOCKER_SOCK}:/var/run/docker.sock"
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    restart: "no"

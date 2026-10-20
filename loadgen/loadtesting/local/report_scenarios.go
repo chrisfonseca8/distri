@@ -35,7 +35,7 @@ func calculateScenarioPoints(reports []Report, cases ...string) []ScenarioPoint 
 		points = append(points, ScenarioPoint{
 			Label: report.Label, Case: report.Config.Case, GatewayMode: report.Config.GatewayMode,
 			GatewayLatencyMS: report.Config.GatewayLatency.Milliseconds(), DBPoolSize: report.Config.DBPoolSize,
-			DBIdleSize: report.Config.DBIdleSize, SessionsOpened: db.SessionsOpened,
+			DBIdleSize: report.Config.DBIdleSize, Clients: report.Config.Clients, SessionsOpened: db.SessionsOpened,
 			PoolWaitMSPerOrder: perOrder(poolWaitMS), PaymentReqPerOrder: perOrder(float64(paymentRequests)),
 			Offered: client.Offered, Paid: client.Paid, Cancelled: client.Cancelled, Pending: client.PendingAtDrain,
 			CompletedRate: client.CompletedRate, CheckoutP99MS: client.CheckoutLatency.P99MS,
@@ -68,11 +68,11 @@ func renderBehaviourSummary(out *strings.Builder, points []ScenarioPoint) {
 		return
 	}
 	out.WriteString("## C9–C12 behaviour wave\n\n")
-	out.WriteString("| Case | Gateway | Offered | Paid / cancelled / pending | Completed/s | Checkout p99 ms | Pay p99 ms | End-to-end p99 ms | Order / inventory / payment pool waits | Pool wait ms / order | New PG sessions | Idle-in-tx max | 5xx | Deadlocks |\n")
-	out.WriteString("|---|---|---:|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|\n")
+	out.WriteString("| Case | Clients | Gateway | Offered | Paid / cancelled / pending | Completed/s | Checkout p99 ms | Pay p99 ms | End-to-end p99 ms | Order / inventory / payment pool waits | Pool wait ms / order | New PG sessions | Idle-in-tx max | 5xx | Deadlocks |\n")
+	out.WriteString("|---|---:|---|---:|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|\n")
 	for _, p := range points {
-		fmt.Fprintf(out, "| %s | %s %dms | %d | %d / %d / %d | %.2f | %.2f | %.2f | %.2f | %s | %.1f | %s | %d | %d | %d |\n",
-			p.Label, p.GatewayMode, p.GatewayLatencyMS, p.Offered, p.Paid, p.Cancelled, p.Pending, p.CompletedRate,
+		fmt.Fprintf(out, "| %s | %d | %s %dms | %d | %d / %d / %d | %.2f | %.2f | %.2f | %.2f | %s | %.1f | %s | %d | %d | %d |\n",
+			p.Label, p.Clients, p.GatewayMode, p.GatewayLatencyMS, p.Offered, p.Paid, p.Cancelled, p.Pending, p.CompletedRate,
 			p.CheckoutP99MS, p.PayP99MS, p.EndToEndP99MS, waitTriple(p), p.PoolWaitMSPerOrder, sessionsText(p.SessionsOpened), p.IdleInTransactionMax, p.Server5xx+p.TransportErrors, p.DeadlocksDelta)
 	}
 	out.WriteString("\n")
@@ -83,11 +83,11 @@ func renderGatewayLatencySummary(out *strings.Builder, points []ScenarioPoint) {
 		return
 	}
 	out.WriteString("## C13 gateway latency sweep\n\n")
-	out.WriteString("| Gateway latency ms | Completed/s | Pay p50 ms | Pay p99 ms | End-to-end p99 ms | Max in-flight requests | Payment requests / order | Pool wait ms / order | New PG sessions | Order / inventory / payment pool waits | Postgres active max | 5xx / transport |\n")
-	out.WriteString("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|\n")
+	out.WriteString("| Gateway latency ms | Clients | Completed/s | Pay p50 ms | Pay p99 ms | End-to-end p99 ms | Max in-flight requests | Payment requests / order | Pool wait ms / order | New PG sessions | Order / inventory / payment pool waits | Postgres active max | 5xx / transport |\n")
+	out.WriteString("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|\n")
 	for _, p := range points {
-		fmt.Fprintf(out, "| %d | %.2f | %.2f | %.2f | %.2f | %d | %.1f | %.1f | %s | %s | %d | %d / %d |\n",
-			p.GatewayLatencyMS, p.CompletedRate, p.PayP50MS, p.PayP99MS, p.EndToEndP99MS, p.MaxInFlightRequests,
+		fmt.Fprintf(out, "| %d | %d | %.2f | %.2f | %.2f | %.2f | %d | %.1f | %.1f | %s | %s | %d | %d / %d |\n",
+			p.GatewayLatencyMS, p.Clients, p.CompletedRate, p.PayP50MS, p.PayP99MS, p.EndToEndP99MS, p.MaxInFlightRequests,
 			p.PaymentReqPerOrder, p.PoolWaitMSPerOrder, sessionsText(p.SessionsOpened), waitTriple(p), p.PostgresActiveMax, p.Server5xx, p.TransportErrors)
 	}
 	out.WriteString("\n")
@@ -98,11 +98,11 @@ func renderPoolSizeSummary(out *strings.Builder, points []ScenarioPoint) {
 		return
 	}
 	out.WriteString("## C14 pool-size sweep\n\n")
-	out.WriteString("| Gateway latency ms | Max open | Max idle | Completed/s | Checkout p99 ms | End-to-end p99 ms | Pool wait ms / order | New PG sessions | Order / inventory / payment pool waits | Postgres connections max | Postgres active max | Idle-in-tx max | 5xx / transport |\n")
-	out.WriteString("|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|\n")
+	out.WriteString("| Gateway latency ms | Clients | Max open | Max idle | Completed/s | Checkout p99 ms | End-to-end p99 ms | Pool wait ms / order | New PG sessions | Order / inventory / payment pool waits | Postgres connections max | Postgres active max | Idle-in-tx max | 5xx / transport |\n")
+	out.WriteString("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|\n")
 	for _, p := range points {
-		fmt.Fprintf(out, "| %d | %d | %d | %.2f | %.2f | %.2f | %.1f | %s | %s | %d | %d | %d | %d / %d |\n",
-			p.GatewayLatencyMS, p.DBPoolSize, p.DBIdleSize, p.CompletedRate, p.CheckoutP99MS, p.EndToEndP99MS,
+		fmt.Fprintf(out, "| %d | %d | %d | %d | %.2f | %.2f | %.2f | %.1f | %s | %s | %d | %d | %d | %d / %d |\n",
+			p.GatewayLatencyMS, p.Clients, p.DBPoolSize, p.DBIdleSize, p.CompletedRate, p.CheckoutP99MS, p.EndToEndP99MS,
 			p.PoolWaitMSPerOrder, sessionsText(p.SessionsOpened), waitTriple(p),
 			p.PostgresConnectionsMax, p.PostgresActiveMax, p.IdleInTransactionMax, p.Server5xx, p.TransportErrors)
 	}

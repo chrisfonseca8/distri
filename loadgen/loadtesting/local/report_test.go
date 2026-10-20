@@ -149,3 +149,94 @@ func TestRepeatHistoryKeepsEarlierRunsAndSpread(t *testing.T) {
 		t.Fatalf("unexpected spread: %#v", points[0].Stats)
 	}
 }
+
+func TestCheckDatabaseTargetRefusesUnlistedRemoteHosts(t *testing.T) {
+	cases := []struct {
+		name, url, allowed string
+		wantErr            bool
+	}{
+		{"local compose database", "postgres://u:p@postgres:5432/distri", "", false},
+		{"localhost", "postgres://u:p@localhost/distri", "", false},
+		{"remote host without allow-list", "postgres://u:p@ep-test.neon.tech/neondb?sslmode=require", "", true},
+		{"remote host matching allow-list", "postgres://u:p@ep-test.neon.tech/neondb", "ep-test.neon.tech", false},
+		{"remote host not matching allow-list", "postgres://u:p@ep-other-pooler.neon.tech/neondb", "ep-test.neon.tech", true},
+		{"garbage", "not a url", "", true},
+	}
+	for _, c := range cases {
+		err := checkDatabaseTarget(c.url, c.allowed)
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: err=%v, wantErr=%v", c.name, err, c.wantErr)
+		}
+	}
+}
+
+func TestCustomSweepSteps(t *testing.T) {
+	c3 := config{CaseName: "C3", ClientSteps: []int{1, 100, 400}}
+	if got := c3.experiment(3).Clients; got != 400 {
+		t.Fatalf("C3 custom step 3: got %d clients, want 400", got)
+	}
+	c4 := config{CaseName: "C4", RateSteps: []float64{50, 500}}
+	if got := c4.experiment(2).OfferedRate; got != 500 {
+		t.Fatalf("C4 custom step 2: got %.0f/s, want 500", got)
+	}
+	t.Setenv("LOAD_CLIENT_STEPS", "1, 5,20")
+	steps, err := envIntList("LOAD_CLIENT_STEPS")
+	if err != nil || len(steps) != 3 || steps[2] != 20 {
+		t.Fatalf("unexpected parsed steps %v (err %v)", steps, err)
+	}
+	t.Setenv("LOAD_CLIENT_STEPS", "1,zero")
+	if _, err := envIntList("LOAD_CLIENT_STEPS"); err == nil {
+		t.Fatal("expected an error for a non-numeric step")
+	}
+}
+
+// C3 takes its client count from each sweep step, so the case itself has no client
+// count; this must not be rejected as "load parameters must be positive".
+func TestLoadConfigAcceptsC3SweepSteps(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://u:p@postgres:5432/distri")
+	t.Setenv("LOAD_CASE", "C3")
+	t.Setenv("LOAD_CLIENT_STEPS", "1,50,200")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("C3 with custom steps must be accepted: %v", err)
+	}
+	if cfg.Runs != 3 || cfg.experiment(3).Clients != 200 {
+		t.Fatalf("expected 3 runs ending at 200 clients, got runs=%d clients=%d", cfg.Runs, cfg.experiment(3).Clients)
+	}
+	t.Setenv("LOAD_CLIENT_STEPS", "")
+	cfg, err = loadConfig()
+	if err != nil || cfg.Runs != 6 || cfg.experiment(6).Clients != 50 {
+		t.Fatalf("default C3 sweep must still be 6 steps ending at 50 clients: runs=%d err=%v", cfg.Runs, err)
+	}
+}
+
+func TestClientOverrideAndConnectionCap(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://u:p@postgres:5432/distri")
+	t.Setenv("LOAD_CASE", "C10")
+	t.Setenv("LOAD_CLIENTS", "150")
+	t.Setenv("LOAD_MAX_CONNS", "1500")
+	cfg, err := loadConfig()
+	if err != nil || cfg.Clients != 150 || cfg.MaxConns != 1500 {
+		t.Fatalf("C10 should take 150 clients and a 1500 connection cap: %+v err=%v", cfg, err)
+	}
+	t.Setenv("LOAD_MAX_CONNS", "")
+	t.Setenv("LOAD_CLIENTS", "")
+	cfg, err = loadConfig()
+	if err != nil || cfg.Clients != 50 || cfg.MaxConns != 200 {
+		t.Fatalf("defaults must stay 50 clients and a 200 connection cap: %+v err=%v", cfg, err)
+	}
+	t.Setenv("LOAD_MAX_CONNS", "0")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("a zero connection cap must be rejected")
+	}
+}
+
+func TestParseCPUStatUsage(t *testing.T) {
+	content := "usage_usec 123456\nuser_usec 100000\nsystem_usec 23456\nnr_periods 0\n"
+	if value, ok := parseCPUStatUsage(content); !ok || value != 123456 {
+		t.Fatalf("expected 123456, got %d (ok=%v)", value, ok)
+	}
+	if _, ok := parseCPUStatUsage("user_usec 5\n"); ok {
+		t.Fatal("missing usage_usec must not parse")
+	}
+}

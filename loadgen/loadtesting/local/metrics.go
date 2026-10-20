@@ -56,6 +56,7 @@ type ScenarioPoint struct {
 	GatewayLatencyMS       int64   `json:"gateway_latency_ms"`
 	DBPoolSize             int     `json:"db_pool_size,omitempty"`
 	DBIdleSize             int     `json:"db_idle_size,omitempty"`
+	Clients                int     `json:"clients,omitempty"`
 	SessionsOpened         *int64  `json:"sessions_opened,omitempty"`
 	PoolWaitMSPerOrder     float64 `json:"pool_wait_ms_per_order"`
 	PaymentReqPerOrder     float64 `json:"payment_requests_per_order"`
@@ -150,6 +151,8 @@ type RunConfig struct {
 	Behavior             string        `json:"behavior,omitempty"`
 	DBPoolSize           int           `json:"db_pool_size,omitempty"`
 	DBIdleSize           int           `json:"db_idle_size,omitempty"`
+	Environment          string        `json:"environment,omitempty"`
+	MaxConnections       int           `json:"max_connections,omitempty"`
 	Hardware             HardwareInfo  `json:"hardware"`
 }
 
@@ -177,6 +180,11 @@ type ClientMetrics struct {
 	InFlight          InFlightSummary  `json:"in_flight"`
 	LittleLaw         LittleLawCheck   `json:"little_law"`
 	Duplicate         DuplicateMetrics `json:"duplicate,omitempty"`
+	// RunnerCPUPercent and RunnerMemoryBytes describe the load generator itself
+	// (percent of one core over the measured window; cgroup memory at the end), so a
+	// saturated generator is visible instead of being mistaken for server limits.
+	RunnerCPUPercent  *float64 `json:"runner_cpu_percent,omitempty"`
+	RunnerMemoryBytes *uint64  `json:"runner_memory_bytes,omitempty"`
 }
 
 type DuplicateMetrics struct {

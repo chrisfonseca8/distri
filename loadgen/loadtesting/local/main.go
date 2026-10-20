@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,6 +52,10 @@ func run() error {
 		return fmt.Errorf("ping PostgreSQL: %w", err)
 	}
 
+	// A run that fails its completion or invariant checks is recorded in the report and
+	// the remaining runs still execute: a sweep that stops at the first overloaded step
+	// would hide what happens beyond the limit. Infrastructure errors still abort.
+	var failedRuns []string
 	for runNumber := 1; runNumber <= cfg.Runs; runNumber++ {
 		experiment := cfg.experiment(runNumber)
 		result, err := executeRun(ctx, pool, experiment, runNumber)
@@ -64,8 +69,11 @@ func run() error {
 			result.Label, result.Client.Offered, result.Client.Accepted, result.Client.Completed,
 			result.Client.AcceptedRate, result.Client.CompletedRate, result.Client.EndToEndLatency.P95MS)
 		if !runPassed(result, experiment) {
-			return fmt.Errorf("%s failed its completion or invariant checks; see the report", result.Label)
+			failedRuns = append(failedRuns, result.Label)
 		}
+	}
+	if len(failedRuns) > 0 {
+		return fmt.Errorf("%d run(s) failed their completion or invariant checks (%s); see the report", len(failedRuns), strings.Join(failedRuns, ", "))
 	}
 	return nil
 }
@@ -79,7 +87,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	if err != nil {
 		return Report{}, err
 	}
-	transport := &http.Transport{MaxIdleConns: 200, MaxIdleConnsPerHost: 200, MaxConnsPerHost: 200}
+	transport := &http.Transport{MaxIdleConns: cfg.MaxConns, MaxIdleConnsPerHost: cfg.MaxConns, MaxConnsPerHost: cfg.MaxConns}
 	if cfg.Warmup > 0 {
 		warmupClient := &loadClient{baseURL: cfg.OrderURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior}
 		warmupSelector := newCartSelector(cfg.Workload, products)
@@ -116,6 +124,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 		containerSampler.run(sampleCtx)
 	}()
 
+	cpuBefore, cpuBeforeOK := readCgroupCPUUsec()
 	started := time.Now().UTC()
 	metrics := newCollector()
 	client := &loadClient{baseURL: cfg.OrderURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior}
@@ -144,7 +153,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	cancelSamples()
 	sampleWG.Wait()
 	containerMetrics := containerSampler.finish()
-	for _, name := range []string{"order", "inventory", "payment", "postgres"} {
+	for _, name := range requiredContainers {
 		if !containerMetrics[name].Available {
 			return Report{}, fmt.Errorf("%s container telemetry unavailable: %s", name, containerMetrics[name].UnavailableReason)
 		}
@@ -161,6 +170,13 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 		return Report{}, err
 	}
 	clientMetrics := metrics.snapshot(measurement)
+	if cpuAfter, ok := readCgroupCPUUsec(); ok && cpuBeforeOK && cpuAfter >= cpuBefore && finished.After(started) {
+		percent := float64(cpuAfter-cpuBefore) / 1e6 / finished.Sub(started).Seconds() * 100
+		clientMetrics.RunnerCPUPercent = &percent
+	}
+	if memory, ok := readCgroupMemoryBytes(); ok {
+		clientMetrics.RunnerMemoryBytes = &memory
+	}
 	strictWorkflowCounts := cfg.CaseName != "C4" && !(cfg.CaseName == "C5" && cfg.ExactOrders > 0)
 	invariants, err := checkInvariants(ctx, pool, clientMetrics, strictWorkflowCounts)
 	if err != nil {
@@ -230,6 +246,8 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 			Behavior:             cfg.Behavior,
 			DBPoolSize:           cfg.DBPoolSize,
 			DBIdleSize:           cfg.DBIdleSize,
+			Environment:          cfg.Environment,
+			MaxConnections:       cfg.MaxConns,
 			Hardware:             hardware,
 		},
 		Client:      clientMetrics,

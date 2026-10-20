@@ -1,0 +1,156 @@
+# Cloud load-test stack: the three services plus the load-test runner on ONE host,
+# against the managed TEST database (Neon). Images are pulled from Docker Hub; see
+# deploy/cloud/README.md.
+#
+# The runner truncates tables and resets inventory. It refuses to run unless
+# LOAD_TEST_ALLOWED_DB_HOST exactly matches the database host it was given.
+#
+# Required (in deploy/cloud/.env.cloud, never committed):
+#   DISTRI_REPO, IMAGE_TAG
+#   ORDER_DATABASE_URL, INVENTORY_DATABASE_URL, PAYMENT_DATABASE_URL
+#   LOADTEST_DATABASE_URL, LOAD_TEST_ALLOWED_DB_HOST
+name: distri
+
+x-pool: &pool
+  DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-10}"
+  # Idle equals open by default: idle < open caused heavy connection churn in the
+  # local runs (about a third of throughput at a 0 ms gateway).
+  DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-${DB_MAX_OPEN_CONNS:-10}}"
+  DB_CONN_MAX_LIFETIME: "${DB_CONN_MAX_LIFETIME:-30m}"
+
+services:
+  inventory-migrate:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:inventory-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/migrate"]
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${INVENTORY_DATABASE_URL:?set INVENTORY_DATABASE_URL}"
+    profiles: ["migrate"]
+    restart: "no"
+
+  payment-migrate:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:payment-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/migrate"]
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${PAYMENT_DATABASE_URL:?set PAYMENT_DATABASE_URL}"
+    profiles: ["migrate"]
+    restart: "no"
+
+  order-migrate:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:order-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/migrate"]
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${ORDER_DATABASE_URL:?set ORDER_DATABASE_URL}"
+    profiles: ["migrate"]
+    restart: "no"
+
+  # Seeds the 50 test products. Run once after migrating; it is safe to repeat.
+  inventory-seed:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:inventory-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/seed"]
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${INVENTORY_DATABASE_URL:?set INVENTORY_DATABASE_URL}"
+    profiles: ["migrate"]
+    restart: "no"
+
+  inventory-service:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:inventory-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${INVENTORY_DATABASE_URL:?set INVENTORY_DATABASE_URL}"
+      INVENTORY_PORT: "8081"
+      LOAD_TEST_TELEMETRY: "true"
+    expose:
+      - "8081"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8081"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  payment-service:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:payment-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${PAYMENT_DATABASE_URL:?set PAYMENT_DATABASE_URL}"
+      PAYMENT_PORT: "8082"
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
+      LOAD_TEST_TELEMETRY: "true"
+    expose:
+      - "8082"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8082/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 40s
+
+  order-service:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:order-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    environment:
+      <<: *pool
+      DATABASE_TEST_URL: "${ORDER_DATABASE_URL:?set ORDER_DATABASE_URL}"
+      PORT: "8080"
+      INVENTORY_URL: http://inventory-service:8081
+      INVENTORY_TIMEOUT: "${INVENTORY_TIMEOUT:-3s}"
+      PAYMENT_URL: http://payment-service:8082
+      PAYMENT_TIMEOUT: "${PAYMENT_TIMEOUT:-3s}"
+      LOAD_TEST_TELEMETRY: "true"
+    # Only the order API is published; restrict 8080 in the security group.
+    ports:
+      - "${ORDER_PORT:-8080}:8080"
+    depends_on:
+      inventory-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+  # The load-test runner. It reaches the services by name on the private network,
+  # reads their /debug/load-metrics, and samples their containers through the
+  # Docker socket.
+  loadtest:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:loadgen-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/local-loadtest"]
+    environment:
+      ORDER_URL: http://order-service:8080
+      INVENTORY_URL: http://inventory-service:8081
+      PAYMENT_URL: http://payment-service:8082
+      DATABASE_URL: "${LOADTEST_DATABASE_URL:?set LOADTEST_DATABASE_URL}"
+      LOAD_TEST_ALLOWED_DB_HOST: "${LOAD_TEST_ALLOWED_DB_HOST:?set LOAD_TEST_ALLOWED_DB_HOST}"
+      RESULTS_DIR: /results/load-test
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
+      LOAD_CASE: "${LOAD_CASE:-C1}"
+      LOAD_CLIENTS: "${LOAD_CLIENTS:-}"
+      LOAD_RUNS: "${LOAD_RUNS:-}"
+      LOAD_ORDERS: "${LOAD_ORDERS:-}"
+      LOAD_DURATION: "${LOAD_DURATION:-}"
+      DB_POOL_SIZE: "${DB_POOL_SIZE:-}"
+      DB_IDLE_SIZE: "${DB_IDLE_SIZE:-}"
+    volumes:
+      - ./test-results:/results
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-0}"
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    depends_on:
+      order-service:
+        condition: service_healthy
+    profiles: ["loadtest"]
+    restart: "no"

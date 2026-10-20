@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +31,41 @@ type config struct {
 	Behavior       string
 	DBPoolSize     int
 	DBIdleSize     int
+	ClientSteps    []int
+	RateSteps      []float64
+	Environment    string
+	MaxConns       int
+}
+
+// closedLoopClientOverride lists the cases whose client count LOAD_CLIENTS may change.
+var closedLoopClientOverride = map[string]bool{
+	"C2": true, "C5": true, "C6": true, "C7": true, "C9": true, "C10": true,
+	"C11": true, "C12": true, "C13": true, "C14": true,
+}
+
+// localDatabaseHosts are the only hosts this destructive runner may target without
+// an explicit allow-list entry. The runner truncates tables and resets inventory.
+var localDatabaseHosts = map[string]bool{"postgres": true, "localhost": true, "127.0.0.1": true, "::1": true}
+
+// checkDatabaseTarget refuses to run against a database host that is neither local
+// nor named in LOAD_TEST_ALLOWED_DB_HOST. It exists so a stray DATABASE_URL (for
+// example the non-test one in a developer .env) cannot be truncated by mistake.
+func checkDatabaseTarget(databaseURL, allowedHost string) error {
+	parsed, err := url.Parse(databaseURL)
+	if err != nil || parsed.Hostname() == "" {
+		return fmt.Errorf("DATABASE_URL is not a valid database URL")
+	}
+	host := parsed.Hostname()
+	if localDatabaseHosts[host] {
+		return nil
+	}
+	if allowedHost == "" {
+		return fmt.Errorf("refusing to run: this runner truncates tables and the database host %q is not local; set LOAD_TEST_ALLOWED_DB_HOST to exactly that host to confirm it is the disposable test database", host)
+	}
+	if host != allowedHost {
+		return fmt.Errorf("refusing to run: database host %q does not match LOAD_TEST_ALLOWED_DB_HOST %q", host, allowedHost)
+	}
+	return nil
 }
 
 func loadConfig() (config, error) {
@@ -46,6 +82,9 @@ func loadConfig() (config, error) {
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")
+	}
+	if err := checkDatabaseTarget(c.DatabaseURL, strings.TrimSpace(os.Getenv("LOAD_TEST_ALLOWED_DB_HOST"))); err != nil {
+		return c, err
 	}
 	switch c.CaseName {
 	case "C1":
@@ -90,10 +129,14 @@ func loadConfig() (config, error) {
 		if c.ExactOrders, err = envInt("LOAD_ORDERS", c.ExactOrders); err != nil {
 			return c, err
 		}
-	} else if c.CaseName == "C2" {
+	} else if closedLoopClientOverride[c.CaseName] {
+		// LOAD_CLIENTS raises the client count of a closed-loop case, for example to
+		// push it past its saturation point. Such a run is not the canonical case.
 		if c.Clients, err = envInt("LOAD_CLIENTS", c.Clients); err != nil {
 			return c, err
 		}
+	}
+	if c.CaseName == "C2" {
 		if c.Runs, err = envInt("LOAD_RUNS", c.Runs); err != nil {
 			return c, err
 		}
@@ -104,7 +147,39 @@ func loadConfig() (config, error) {
 			}
 		}
 	}
-	if (c.CaseName != "C4" && c.Clients <= 0) || c.Runs <= 0 || (c.CaseName == "C1" && c.ExactOrders <= 0) || (c.CaseName != "C1" && c.CaseName != "C5" && c.Duration <= 0) {
+	c.Environment = strings.TrimSpace(os.Getenv("LOAD_TEST_ENVIRONMENT"))
+	// Cap on simultaneous connections from the runner to the order service. Past the
+	// saturation point more requests are in flight than the default cap allows, which
+	// would queue them inside the client instead of loading the server.
+	if c.MaxConns, err = envInt("LOAD_MAX_CONNS", 200); err != nil {
+		return c, err
+	}
+	if c.MaxConns <= 0 {
+		return c, fmt.Errorf("LOAD_MAX_CONNS must be positive")
+	}
+	if c.CaseName == "C3" {
+		steps, err := envIntList("LOAD_CLIENT_STEPS")
+		if err != nil {
+			return c, err
+		}
+		if len(steps) > 0 {
+			c.ClientSteps, c.Runs = steps, len(steps)
+		}
+	}
+	if c.CaseName == "C4" {
+		steps, err := envIntList("LOAD_RATE_STEPS")
+		if err != nil {
+			return c, err
+		}
+		if len(steps) > 0 {
+			c.RateSteps = make([]float64, len(steps))
+			for i, step := range steps {
+				c.RateSteps[i] = float64(step)
+			}
+			c.Runs = len(steps)
+		}
+	}
+	if (c.CaseName != "C3" && c.CaseName != "C4" && c.Clients <= 0) || c.Runs <= 0 || (c.CaseName == "C1" && c.ExactOrders <= 0) || (c.CaseName != "C1" && c.CaseName != "C5" && c.Duration <= 0) {
 		return c, fmt.Errorf("load parameters must be positive")
 	}
 	return c, nil
@@ -113,10 +188,18 @@ func loadConfig() (config, error) {
 func (c config) experiment(runNumber int) config {
 	result := c
 	if c.CaseName == "C3" {
-		result.Clients = []int{1, 2, 5, 10, 20, 50}[runNumber-1]
+		steps := []int{1, 2, 5, 10, 20, 50}
+		if len(c.ClientSteps) > 0 {
+			steps = c.ClientSteps
+		}
+		result.Clients = steps[runNumber-1]
 	}
 	if c.CaseName == "C4" {
-		result.OfferedRate = []float64{10, 20, 40, 80}[runNumber-1]
+		steps := []float64{10, 20, 40, 80}
+		if len(c.RateSteps) > 0 {
+			steps = c.RateSteps
+		}
+		result.OfferedRate = steps[runNumber-1]
 		result.Clients = 0
 	}
 	if c.CaseName == "C5" {
@@ -145,4 +228,23 @@ func envInt(name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}
 	return value, nil
+}
+
+// envIntList parses a comma-separated list of positive integers, for example
+// LOAD_CLIENT_STEPS=1,5,20,100. An unset variable returns an empty list.
+func envIntList(name string) ([]int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]int, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || value <= 0 {
+			return nil, fmt.Errorf("%s must be a comma-separated list of positive integers, got %q", name, raw)
+		}
+		values = append(values, value)
+	}
+	return values, nil
 }

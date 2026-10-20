@@ -47,3 +47,6 @@ memory.md
 plan.md
 plan.txt
 tasks.md
+
+# Private keys must never be committed
+*.pem

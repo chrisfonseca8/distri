@@ -47,7 +47,11 @@ func writeAggregate(resultsDir string, report Report) error {
 	collection.BehaviourWave = calculateScenarioPoints(collection.Runs, "C9", "C10", "C11", "C12")
 	collection.C13LatencySweep = calculateScenarioPoints(collection.Runs, "C13")
 	sort.Slice(collection.C13LatencySweep, func(i, j int) bool {
-		return collection.C13LatencySweep[i].GatewayLatencyMS < collection.C13LatencySweep[j].GatewayLatencyMS
+		a, b := collection.C13LatencySweep[i], collection.C13LatencySweep[j]
+		if a.GatewayLatencyMS != b.GatewayLatencyMS {
+			return a.GatewayLatencyMS < b.GatewayLatencyMS
+		}
+		return a.Clients < b.Clients
 	})
 	collection.C14PoolSweep = calculateScenarioPoints(collection.Runs, "C14")
 	sort.Slice(collection.C14PoolSweep, func(i, j int) bool {
@@ -58,7 +62,10 @@ func writeAggregate(resultsDir string, report Report) error {
 		if a.DBPoolSize != b.DBPoolSize {
 			return a.DBPoolSize < b.DBPoolSize
 		}
-		return a.DBIdleSize < b.DBIdleSize
+		if a.DBIdleSize != b.DBIdleSize {
+			return a.DBIdleSize < b.DBIdleSize
+		}
+		return a.Clients < b.Clients
 	})
 
 	encoded, err := json.MarshalIndent(collection, "", "  ")
@@ -281,14 +288,24 @@ func renderRun(out *strings.Builder, report Report) {
 	fmt.Fprintf(out, "## %s\n\n", report.Label)
 	fmt.Fprintf(out, "**What it does:** %s\n\n", runDescription(report.Config))
 	fmt.Fprintf(out, "**Result:** %s — %d offered, %d accepted, %d completed (%d paid, %d cancelled, %d pending at drain).\n\n", passLabel(report), client.Offered, client.Accepted, client.Completed, client.Paid, client.Cancelled, client.PendingAtDrain)
-	fmt.Fprintf(out, "**Environment:** %d logical CPUs, %d bytes memory; gateway `%s` with %s simulator latency; warm-up %s; measurement %s.\n\n",
+	fmt.Fprintf(out, "**Environment:** %d logical CPUs, %d bytes memory (the host running the runner); gateway `%s` with %s simulator latency; warm-up %s; measurement %s.\n\n",
 		report.Config.Hardware.LogicalCPUs, report.Config.Hardware.MemoryBytes, report.Config.GatewayMode,
 		report.Config.GatewayLatency, report.Config.Warmup, report.Config.Measurement)
+	if report.Config.Environment != "" {
+		fmt.Fprintf(out, "**Deployment:** %s\n\n", report.Config.Environment)
+	}
 	out.WriteString("### Client metrics\n\n")
 	out.WriteString("| Metric | Value |\n|---|---:|\n")
 	fmt.Fprintf(out, "| Offered rate | %.2f/s |\n| Accepted rate | %.2f/s |\n| Completed rate | %.2f/s |\n", client.OfferedRate, client.AcceptedRate, client.CompletedRate)
 	fmt.Fprintf(out, "| Mean/max in-flight requests | %.2f / %d |\n| Mean/max in-flight workflows | %.2f / %d |\n", client.InFlight.MeanRequests, client.InFlight.MaxRequests, client.InFlight.MeanWorkflows, client.InFlight.MaxWorkflows)
-	fmt.Fprintf(out, "| Little's law observed / expected | %.2f / %.2f (%.2f%% difference) |\n\n", client.LittleLaw.ObservedMeanInFlight, client.LittleLaw.ExpectedMeanInFlight, client.LittleLaw.DifferencePercent)
+	fmt.Fprintf(out, "| Little's law observed / expected | %.2f / %.2f (%.2f%% difference) |\n", client.LittleLaw.ObservedMeanInFlight, client.LittleLaw.ExpectedMeanInFlight, client.LittleLaw.DifferencePercent)
+	if client.RunnerCPUPercent != nil {
+		fmt.Fprintf(out, "| Load generator CPU (percent of one core, measured window) | %.1f%% |\n", *client.RunnerCPUPercent)
+	}
+	if client.RunnerMemoryBytes != nil {
+		fmt.Fprintf(out, "| Load generator memory at end | %.1f MB |\n", float64(*client.RunnerMemoryBytes)/1e6)
+	}
+	out.WriteString("\n")
 	out.WriteString("| Latency | Samples | p50 ms | p95 ms | p99 ms | max ms |\n|---|---:|---:|---:|---:|---:|\n")
 	writeLatencyRow(out, "Checkout", client.CheckoutLatency)
 	writeLatencyRow(out, "Pay", client.PayLatency)

@@ -47,6 +47,15 @@ type OrderResult struct {
 	Items      []OrderItemResult `json:"items"`
 }
 
+type SettleOutcome string
+
+const (
+	SettleDone      SettleOutcome = "Done"
+	SettleNotReady  SettleOutcome = "NotReady"
+	SettleRetry     SettleOutcome = "Retry"
+	SettlePermanent SettleOutcome = "Permanent"
+)
+
 type OrderService struct {
 	db              *gorm.DB
 	paymentClient   clients.PaymentClient
@@ -103,32 +112,45 @@ func (s *OrderService) GetOrder(ctx context.Context, orderID uuid.UUID) (OrderRe
 }
 
 func (s *OrderService) SettleOrder(ctx context.Context, orderID uuid.UUID) (OrderResult, error) {
-	order, err := s.loadOrder(ctx, orderID)
+	order, _, err := s.settleOrder(ctx, orderID, paymentWaitTimeout)
 	if err != nil {
 		return OrderResult{}, err
-	}
-
-	switch state.OrderStatus(order.Status) {
-	case state.OrderPaid, state.OrderCancelled, state.OrderExpired:
-		if err := s.settleInventory(ctx, order); err != nil {
-			return OrderResult{}, err
-		}
-	case state.OrderPendingPayment:
-		order, err = s.settlePendingOrder(ctx, order)
-		if err != nil {
-			return OrderResult{}, err
-		}
-	default:
-		return OrderResult{}, fmt.Errorf("unknown order status %q", order.Status)
 	}
 
 	return s.GetOrder(ctx, order.ID)
 }
 
+func (s *OrderService) settleOrder(
+	ctx context.Context,
+	orderID uuid.UUID,
+	waitingTime time.Duration,
+) (models.Order, SettleOutcome, error) {
+	order, err := s.loadOrder(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, ErrOrderNotFound) {
+			return models.Order{}, SettlePermanent, err
+		}
+		return models.Order{}, SettleRetry, err
+	}
+
+	switch state.OrderStatus(order.Status) {
+	case state.OrderPaid, state.OrderCancelled, state.OrderExpired:
+		if err := s.settleInventory(ctx, order); err != nil {
+			return order, SettleRetry, err
+		}
+		return order, SettleDone, nil
+	case state.OrderPendingPayment:
+		return s.settlePendingOrder(ctx, order, waitingTime)
+	default:
+		return order, SettlePermanent, fmt.Errorf("unknown order status %q", order.Status)
+	}
+}
+
 func (s *OrderService) settlePendingOrder(
 	ctx context.Context,
 	order models.Order,
-) (models.Order, error) {
+	waitingTime time.Duration,
+) (models.Order, SettleOutcome, error) {
 	payment, err := s.paymentClient.Create(
 		ctx,
 		order.ID,
@@ -137,25 +159,30 @@ func (s *OrderService) settlePendingOrder(
 	)
 	if err != nil {
 		if errors.Is(err, clients.ErrPaymentUnavailable) {
-			return order, nil
+			return order, SettleRetry, nil
 		}
-		return models.Order{}, fmt.Errorf("%w: %v", ErrOrderPaymentRejected, err)
+		return models.Order{}, SettlePermanent, fmt.Errorf("%w: %v", ErrOrderPaymentRejected, err)
 	}
 	if err := validatePaymentForOrder(payment, order); err != nil {
-		return models.Order{}, err
+		return models.Order{}, SettlePermanent, err
 	}
 
-	payment, err = s.waitForPayment(ctx, payment)
+	payment, err = s.waitForPayment(ctx, payment, waitingTime)
 	if err != nil {
-		if errors.Is(err, clients.ErrPaymentUnavailable) ||
-			errors.Is(err, context.Canceled) ||
-			errors.Is(err, context.DeadlineExceeded) {
-			return order, nil
+		if ctx.Err() != nil {
+			return order, SettleRetry, nil
 		}
-		return models.Order{}, fmt.Errorf("%w: %v", ErrOrderPaymentRejected, err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return order, SettleNotReady, nil
+		}
+		if errors.Is(err, clients.ErrPaymentUnavailable) ||
+			errors.Is(err, context.Canceled) {
+			return order, SettleRetry, nil
+		}
+		return models.Order{}, SettlePermanent, fmt.Errorf("%w: %v", ErrOrderPaymentRejected, err)
 	}
 	if err := validatePaymentForOrder(payment, order); err != nil {
-		return models.Order{}, err
+		return models.Order{}, SettlePermanent, err
 	}
 
 	var target state.OrderStatus
@@ -165,30 +192,38 @@ func (s *OrderService) settlePendingOrder(
 	case "FAILED":
 		target = state.OrderCancelled
 	case "UNKNOWN", "CREATED", "PENDING":
-		return order, nil
+		return order, SettleNotReady, nil
 	default:
-		return models.Order{}, fmt.Errorf("unknown payment status %q", payment.Status)
+		return models.Order{}, SettlePermanent, fmt.Errorf("unknown payment status %q", payment.Status)
 	}
 
 	order, err = s.transitionOrder(ctx, order.ID, target, payment.Status)
 	if err != nil {
-		return models.Order{}, err
+		if errors.Is(err, ErrOrderStatusConflict) {
+			return models.Order{}, SettlePermanent, err
+		}
+		return models.Order{}, SettleRetry, err
 	}
 	if err := s.settleInventory(ctx, order); err != nil {
-		return models.Order{}, err
+		return order, SettleRetry, err
 	}
-	return order, nil
+	return order, SettleDone, nil
 }
 
 func (s *OrderService) waitForPayment(
 	ctx context.Context,
 	payment clients.Payment,
+	waitingTime time.Duration,
 ) (clients.Payment, error) {
 	if payment.Status != "CREATED" && payment.Status != "PENDING" {
 		return payment, nil
 	}
 
-	waitContext, cancel := context.WithTimeout(ctx, paymentWaitTimeout)
+	if waitingTime <= 0 {
+		return s.paymentClient.Get(ctx, payment.ID)
+	}
+
+	waitContext, cancel := context.WithTimeout(ctx, waitingTime)
 	defer cancel()
 
 	ticker := time.NewTicker(paymentPollInterval)

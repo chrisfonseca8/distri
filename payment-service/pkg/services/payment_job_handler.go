@@ -8,10 +8,11 @@ import (
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/payment-service/database/models"
-	"github.com/chrisfonseca08/distri/payment-service/pkg/jobtypes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
 	"gorm.io/gorm"
 )
+
+const paymentResultWriteTimeout = 5 * time.Second
 
 type ProcessOutcome string
 
@@ -55,7 +56,7 @@ func (h *PaymentJobHandler) ProcessForJob(
 		if attempts <= 1 {
 			return ProcessRetry, errors.New("payment is pending on its first job attempt")
 		}
-		if err := h.writeResultAndNotify(ctx, payment.ID, map[string]any{
+		if err := h.writeResult(payment.ID, map[string]any{
 			"status":       "UNKNOWN",
 			"failure_code": nil,
 		}); err != nil {
@@ -93,29 +94,28 @@ func (h *PaymentJobHandler) processCreated(
 	)
 	cancelGateway()
 
-	if err := h.writeResultAndNotify(ctx, payment.ID, paymentResultUpdates(ref, gatewayErr)); err != nil {
+	if err := h.writeResult(payment.ID, paymentResultUpdates(ref, gatewayErr)); err != nil {
 		return ProcessRetry, err
 	}
 	return ProcessDone, nil
 }
 
-func (h *PaymentJobHandler) writeResultAndNotify(
-	ctx context.Context,
+func (h *PaymentJobHandler) writeResult(
 	paymentID uuid.UUID,
 	updates map[string]any,
 ) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Table("payments.payment_attempts").
-			Where("id = ? AND status = ?", paymentID, "PENDING").
-			Updates(updates)
-		if result.Error != nil {
-			return fmt.Errorf("persist payment gateway result: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
-		return enqueueJob(tx, jobtypes.NotifyOrder, paymentID)
-	})
+	writeContext, cancelWrite := context.WithTimeout(context.Background(), paymentResultWriteTimeout)
+	defer cancelWrite()
+
+	result := h.db.WithContext(writeContext).
+		Session(&gorm.Session{SkipDefaultTransaction: true}).
+		Table("payments.payment_attempts").
+		Where("id = ? AND status = ?", paymentID, "PENDING").
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("persist payment gateway result: %w", result.Error)
+	}
+	return nil
 }
 
 func (h *PaymentJobHandler) loadPayment(

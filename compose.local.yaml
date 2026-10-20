@@ -6,6 +6,9 @@ x-order-environment: &order-environment
   DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-5}"
   DB_CONN_MAX_LIFETIME: 30m
   LOAD_TEST_TELEMETRY: "true"
+  RESERVATION_SWEEP_TTL: "${RESERVATION_SWEEP_TTL:-10m}"
+  RESERVATION_SWEEP_INTERVAL: "${RESERVATION_SWEEP_INTERVAL:-1m}"
+  RESERVATION_SWEEP_BATCH_SIZE: "${RESERVATION_SWEEP_BATCH_SIZE:-100}"
 
 x-inventory-environment: &inventory-environment
   DATABASE_TEST_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable&search_path=inventory

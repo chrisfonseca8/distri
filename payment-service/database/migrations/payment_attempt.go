@@ -6,8 +6,16 @@ import (
 )
 
 func MigratePaymentAttempts(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&models.PaymentAttempt{},
 		&models.Job{},
-	)
+	); err != nil {
+		return err
+	}
+
+	// Result notification was deliberately removed from the C6a scope. These
+	// rows never had a handler, so retaining them would leave a false backlog.
+	return db.Table("payments.jobs").
+		Where("type = ?", "notify_order").
+		Delete(&models.Job{}).Error
 }

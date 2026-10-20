@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -51,6 +53,18 @@ type ChangeReservationResult struct {
 	Status        string    `json:"status"`
 }
 
+type ReservationSummary struct {
+	ReservationID uuid.UUID `json:"reservation_id"`
+	OrderID       uuid.UUID `json:"order_id"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type ReservationCursor struct {
+	CreatedAt time.Time
+	ID        uuid.UUID
+}
+
 type InventoryClient interface {
 	Reserve(
 		ctx context.Context,
@@ -60,6 +74,7 @@ type InventoryClient interface {
 	) (ReserveResult, error)
 	Confirm(ctx context.Context, orderID uuid.UUID) (ChangeReservationResult, error)
 	Release(ctx context.Context, orderID uuid.UUID) (ChangeReservationResult, error)
+	ListReserved(ctx context.Context, olderThan time.Time, after *ReservationCursor, limit int) ([]ReservationSummary, error)
 }
 
 type HTTPInventoryClient struct {
@@ -195,6 +210,64 @@ func (c *HTTPInventoryClient) Reserve(
 			ErrInventoryUnavailable,
 		)
 	}
+}
+
+func (c *HTTPInventoryClient) ListReserved(
+	ctx context.Context,
+	olderThan time.Time,
+	after *ReservationCursor,
+	limit int,
+) ([]ReservationSummary, error) {
+	query := url.Values{}
+	query.Set("status", "RESERVED")
+	query.Set("older_than", olderThan.UTC().Format(time.RFC3339Nano))
+	query.Set("limit", strconv.Itoa(limit))
+	if after != nil {
+		query.Set("after_created_at", after.CreatedAt.UTC().Format(time.RFC3339Nano))
+		query.Set("after_id", after.ID.String())
+	}
+
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		c.baseURL+"/internal/v1/reservations?"+query.Encode(),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"build inventory reservation list request: %v: %w",
+			err,
+			ErrInventoryUnavailable,
+		)
+	}
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"send inventory reservation list request: %v: %w",
+			err,
+			ErrInventoryUnavailable,
+		)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"inventory reservation list returned status %d: %w",
+			response.StatusCode,
+			ErrInventoryUnavailable,
+		)
+	}
+
+	var reservations []ReservationSummary
+	if err := json.NewDecoder(response.Body).Decode(&reservations); err != nil {
+		return nil, fmt.Errorf(
+			"decode inventory reservation list response: %v: %w",
+			err,
+			ErrInventoryUnavailable,
+		)
+	}
+	return reservations, nil
 }
 
 func (c *HTTPInventoryClient) Confirm(

@@ -121,6 +121,37 @@ func TestWorkerRecoversPaymentHandlerPanic(t *testing.T) {
 	}
 }
 
+func TestWorkerDrainsClaimedJobAfterShutdownSignal(t *testing.T) {
+	store := &recordingStore{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	worker := testWorker(store, processForJobFunc(func(ctx context.Context, _ uuid.UUID, _ int) (services.ProcessOutcome, error) {
+		close(started)
+		<-release
+		if err := ctx.Err(); err != nil {
+			return services.ProcessRetry, err
+		}
+		return services.ProcessDone, nil
+	}))
+
+	shutdownContext, cancelShutdown := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		worker.runJob(shutdownContext, "worker-1", models.Job{
+			ID: uuid.New(), Type: jobtypes.ProcessPayment, PaymentID: uuid.New(), MaxAttempts: 5,
+		})
+	}()
+	<-started
+	cancelShutdown()
+	close(release)
+	<-done
+
+	if store.call.method != "succeed" {
+		t.Fatalf("finish method = %q, want succeed", store.call.method)
+	}
+}
+
 func testWorker(store jobStore, processor paymentProcessor) *Worker {
 	return &Worker{
 		store: store, processor: processor,

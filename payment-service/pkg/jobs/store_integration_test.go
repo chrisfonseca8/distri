@@ -13,7 +13,7 @@ import (
 	"github.com/chrisfonseca08/distri/payment-service/pkg/jobtypes"
 )
 
-func TestClaimConcurrentWorkersAndLeavesNotifyQueued(t *testing.T) {
+func TestClaimConcurrentWorkers(t *testing.T) {
 	if os.Getenv("RUN_PAYMENT_JOBS_INTEGRATION") != "1" {
 		t.Skip("set RUN_PAYMENT_JOBS_INTEGRATION=1 to run database integration tests")
 	}
@@ -24,8 +24,8 @@ func TestClaimConcurrentWorkersAndLeavesNotifyQueued(t *testing.T) {
 
 	const processCount = 10
 	testDueAt := time.Unix(1, 0).UTC()
-	testJobs := make([]models.Job, 0, processCount+1)
-	ids := make([]uuid.UUID, 0, processCount+1)
+	testJobs := make([]models.Job, 0, processCount)
+	ids := make([]uuid.UUID, 0, processCount)
 	for range processCount {
 		id := uuid.New()
 		ids = append(ids, id)
@@ -33,11 +33,6 @@ func TestClaimConcurrentWorkersAndLeavesNotifyQueued(t *testing.T) {
 			ID: id, Type: jobtypes.ProcessPayment, PaymentID: uuid.New(), NextRunAt: testDueAt,
 		})
 	}
-	notifyID := uuid.New()
-	ids = append(ids, notifyID)
-	testJobs = append(testJobs, models.Job{
-		ID: notifyID, Type: jobtypes.NotifyOrder, PaymentID: uuid.New(),
-	})
 	if err := db.Table("payments.jobs").Create(&testJobs).Error; err != nil {
 		t.Fatalf("insert jobs: %v", err)
 	}
@@ -85,13 +80,5 @@ func TestClaimConcurrentWorkersAndLeavesNotifyQueued(t *testing.T) {
 	}
 	if len(claimed) != processCount {
 		t.Fatalf("claimed %d process jobs, want %d", len(claimed), processCount)
-	}
-
-	var notify models.Job
-	if err := db.Table("payments.jobs").Where("id = ?", notifyID).First(&notify).Error; err != nil {
-		t.Fatalf("load notify job: %v", err)
-	}
-	if notify.Status != "queued" || notify.Attempts != 0 {
-		t.Fatalf("notify job = status %q attempts %d, want queued/0", notify.Status, notify.Attempts)
 	}
 }

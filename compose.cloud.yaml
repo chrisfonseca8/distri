@@ -103,6 +103,9 @@ services:
       INVENTORY_TIMEOUT: "${INVENTORY_TIMEOUT:-3s}"
       PAYMENT_URL: http://payment-service:8082
       PAYMENT_TIMEOUT: "${PAYMENT_TIMEOUT:-3s}"
+      RESERVATION_SWEEP_TTL: "${RESERVATION_SWEEP_TTL:-10m}"
+      RESERVATION_SWEEP_INTERVAL: "${RESERVATION_SWEEP_INTERVAL:-1m}"
+      RESERVATION_SWEEP_BATCH_SIZE: "${RESERVATION_SWEEP_BATCH_SIZE:-100}"
       LOAD_TEST_TELEMETRY: "true"
     # Only the order API is published; restrict 8080 in the security group.
     ports:

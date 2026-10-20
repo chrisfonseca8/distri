@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/services"
@@ -11,6 +14,48 @@ import (
 
 type ReservationController struct {
 	service *services.ReservationService
+}
+
+func (c *ReservationController) ListReservations(w http.ResponseWriter, r *http.Request) {
+	if strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status"))) != "RESERVED" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be RESERVED"})
+		return
+	}
+
+	olderThan, err := time.Parse(time.RFC3339Nano, r.URL.Query().Get("older_than"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "older_than must be an RFC3339 timestamp"})
+		return
+	}
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be an integer"})
+		return
+	}
+
+	var cursor *services.ReservationCursor
+	afterCreatedAtValue := r.URL.Query().Get("after_created_at")
+	afterIDValue := r.URL.Query().Get("after_id")
+	if (afterCreatedAtValue == "") != (afterIDValue == "") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "after_created_at and after_id must be provided together"})
+		return
+	}
+	if afterCreatedAtValue != "" {
+		afterCreatedAt, timeErr := time.Parse(time.RFC3339Nano, afterCreatedAtValue)
+		afterID, idErr := uuid.Parse(afterIDValue)
+		if timeErr != nil || idErr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid reservation cursor"})
+			return
+		}
+		cursor = &services.ReservationCursor{CreatedAt: afterCreatedAt, ID: afterID}
+	}
+
+	reservations, err := c.service.ListReservedReservations(r.Context(), olderThan, cursor, limit)
+	if err != nil {
+		writeReservationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, reservations)
 }
 
 func NewReservationController(service *services.ReservationService) *ReservationController {

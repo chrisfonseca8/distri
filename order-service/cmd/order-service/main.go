@@ -20,6 +20,7 @@ import (
 	"github.com/chrisfonseca08/distri/order-service/pkg/jobs"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/order-service/pkg/services"
+	"github.com/chrisfonseca08/distri/order-service/pkg/sweeper"
 	"github.com/chrisfonseca08/distri/order-service/pkg/telemetry"
 )
 
@@ -96,6 +97,20 @@ func run(roleValue string) error {
 		go func() {
 			defer workerWaitGroup.Done()
 			worker.Run(shutdownContext)
+		}()
+
+		reservationSweeper, err := sweeper.NewReservationSweeper(
+			inventoryClient,
+			orderService,
+			applicationConfig.Sweeper,
+		)
+		if err != nil {
+			return fmt.Errorf("set up reservation sweeper: %w", err)
+		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			reservationSweeper.Run(shutdownContext)
 		}()
 	}
 

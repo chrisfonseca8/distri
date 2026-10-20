@@ -19,8 +19,6 @@ func NewStore(db *gorm.DB) *Store {
 	return &Store{db: db.Session(&gorm.Session{SkipDefaultTransaction: true})}
 }
 
-// Claim intentionally selects only process_payment jobs in 6a. notify_order
-// rows remain durable and queued until notification delivery is implemented.
 func (s *Store) Claim(
 	ctx context.Context,
 	workerID string,

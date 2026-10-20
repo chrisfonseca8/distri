@@ -20,6 +20,21 @@ type countingGateway struct {
 	calls atomic.Int64
 }
 
+type controlledSuccessGateway struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (g *controlledSuccessGateway) CreateCharge(
+	_ context.Context,
+	orderID uuid.UUID,
+	_ int64,
+) (string, error) {
+	close(g.started)
+	<-g.release
+	return "sim_order_" + orderID.String(), nil
+}
+
 func (g *countingGateway) CreateCharge(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -121,7 +136,6 @@ func TestPaymentFlowOutcomes(t *testing.T) {
 				t.Errorf("gateway_order_id set = %v, want %v", got.GatewayOrderID != nil, test.wantRef)
 			}
 			assertJobCount(t, db, result.Attempt.ID, jobtypes.ProcessPayment, 1)
-			assertJobCount(t, db, result.Attempt.ID, jobtypes.NotifyOrder, 1)
 			if gateway.calls.Load() != 1 {
 				t.Errorf("gateway calls = %d, want 1", gateway.calls.Load())
 			}
@@ -163,7 +177,48 @@ func TestReclaimedPendingPaymentBecomesUnknownWithoutGatewayCall(t *testing.T) {
 	if gateway.calls.Load() != 0 {
 		t.Fatalf("gateway calls = %d, want 0", gateway.calls.Load())
 	}
-	assertJobCount(t, db, result.Attempt.ID, jobtypes.NotifyOrder, 1)
+}
+
+func TestSuccessfulGatewayResultUsesFreshWriteContext(t *testing.T) {
+	db := openTestDB(t)
+	service := NewPaymentService(db)
+	orderID := uuid.New()
+	cleanupOrder(t, db, orderID)
+
+	result, err := service.CreatePayment(context.Background(), CreatePaymentInput{
+		OrderID: orderID, AmountPaise: 1000,
+	})
+	if err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	gateway := &controlledSuccessGateway{started: make(chan struct{}), release: make(chan struct{})}
+	handler := NewPaymentJobHandler(db, gateway, time.Second)
+	handlerContext, cancelHandler := context.WithCancel(context.Background())
+
+	type processResult struct {
+		outcome ProcessOutcome
+		err     error
+	}
+	processed := make(chan processResult, 1)
+	go func() {
+		outcome, err := handler.ProcessForJob(handlerContext, result.Attempt.ID, 1)
+		processed <- processResult{outcome: outcome, err: err}
+	}()
+	<-gateway.started
+	cancelHandler()
+	close(gateway.release)
+
+	gotResult := <-processed
+	if gotResult.err != nil || gotResult.outcome != ProcessDone {
+		t.Fatalf("process payment = %q, %v; want Done, nil", gotResult.outcome, gotResult.err)
+	}
+	stored, err := service.GetPayment(context.Background(), result.Attempt.ID)
+	if err != nil {
+		t.Fatalf("get payment: %v", err)
+	}
+	if stored.Status != "SUCCEEDED" {
+		t.Fatalf("payment status = %q, want SUCCEEDED", stored.Status)
+	}
 }
 
 func TestRepeatedCreateReturnsSameAttemptAndOneProcessJob(t *testing.T) {

@@ -112,8 +112,10 @@ func waitForJobs(ctx context.Context, interval time.Duration) bool {
 	}
 }
 
-func (w *Worker) runJob(ctx context.Context, workerID string, job models.Job) {
-	handlerContext, cancelHandler := context.WithTimeout(ctx, w.config.HandlerTimeout)
+func (w *Worker) runJob(_ context.Context, workerID string, job models.Job) {
+	// A shutdown signal stops new claims, but a job whose lease is already held
+	// gets its own bounded context so it can drain and persist its result.
+	handlerContext, cancelHandler := context.WithTimeout(context.Background(), w.config.HandlerTimeout)
 	outcome, handlerErr := w.handleJob(handlerContext, job)
 	cancelHandler()
 

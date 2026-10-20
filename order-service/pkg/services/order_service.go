@@ -111,6 +111,29 @@ func (s *OrderService) GetOrder(ctx context.Context, orderID uuid.UUID) (OrderRe
 	return result, nil
 }
 
+// GetOrderStatus is the sweeper's cheap lookup path; it deliberately does not
+// load order items.
+func (s *OrderService) GetOrderStatus(
+	ctx context.Context,
+	orderID uuid.UUID,
+) (state.OrderStatus, error) {
+	var order struct {
+		Status string
+	}
+	query := s.db.WithContext(ctx).
+		Table("orders.orders").
+		Select("status").
+		Where("id = ?", orderID).
+		Take(&order)
+	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
+		return "", ErrOrderNotFound
+	}
+	if query.Error != nil {
+		return "", fmt.Errorf("get order status: %w", query.Error)
+	}
+	return state.OrderStatus(order.Status), nil
+}
+
 func (s *OrderService) SettleOrder(ctx context.Context, orderID uuid.UUID) (OrderResult, error) {
 	order, _, err := s.settleOrder(ctx, orderID, paymentWaitTimeout)
 	if err != nil {

@@ -189,6 +189,37 @@ func TestWorkerKeepsCleanDoneAfterHandlerContextExpires(t *testing.T) {
 	}
 }
 
+func TestWorkerDrainsClaimedJobAfterShutdownSignal(t *testing.T) {
+	store := &recordingStore{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	worker := testWorker(store, settleForJobFunc(func(ctx context.Context, _ uuid.UUID) (services.SettleOutcome, error) {
+		close(started)
+		<-release
+		if err := ctx.Err(); err != nil {
+			return services.SettleRetry, err
+		}
+		return services.SettleDone, nil
+	}))
+
+	shutdownContext, cancelShutdown := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		worker.runJob(shutdownContext, "worker-1", models.Job{
+			ID: uuid.New(), Type: utils.JobTypeSettleOrder, OrderID: uuid.New(), MaxAttempts: 5,
+		})
+	}()
+	<-started
+	cancelShutdown()
+	close(release)
+	<-done
+
+	if store.call.method != "succeed" {
+		t.Fatalf("finish method = %q, want succeed", store.call.method)
+	}
+}
+
 func TestWorkerUsesAttemptAndSuppliedRandomnessForRetryBackoff(t *testing.T) {
 	store := &recordingStore{}
 	worker := testWorker(store, settleForJobFunc(func(context.Context, uuid.UUID) (services.SettleOutcome, error) {

@@ -13,7 +13,9 @@ func TestLoadWorkerConfigDefaults(t *testing.T) {
 		"JOB_HANDLER_TIMEOUT",
 		"JOB_POLL_INTERVAL",
 		"JOB_NOT_READY_DELAY",
-		"JOB_RETRY_DELAY",
+		"JOB_RETRY_BASE",
+		"JOB_RETRY_CAP",
+		"JOB_RETRY_JITTER",
 	} {
 		t.Setenv(name, "")
 	}
@@ -37,8 +39,14 @@ func TestLoadWorkerConfigDefaults(t *testing.T) {
 	if workerConfig.NotReadyDelay != time.Second {
 		t.Errorf("not-ready delay = %s, want 1s", workerConfig.NotReadyDelay)
 	}
-	if workerConfig.RetryDelay != 5*time.Second {
-		t.Errorf("retry delay = %s, want 5s", workerConfig.RetryDelay)
+	if workerConfig.RetryBase != 2*time.Second {
+		t.Errorf("retry base = %s, want 2s", workerConfig.RetryBase)
+	}
+	if workerConfig.RetryCap != 60*time.Second {
+		t.Errorf("retry cap = %s, want 60s", workerConfig.RetryCap)
+	}
+	if workerConfig.RetryJitter != 0.25 {
+		t.Errorf("retry jitter = %v, want 0.25", workerConfig.RetryJitter)
 	}
 }
 
@@ -49,7 +57,9 @@ func TestWorkerConfigRejectsHandlerTimeoutAtLeastLease(t *testing.T) {
 		HandlerTimeout: 20 * time.Second,
 		PollInterval:   time.Second,
 		NotReadyDelay:  time.Second,
-		RetryDelay:     time.Second,
+		RetryBase:      time.Second,
+		RetryCap:       time.Minute,
+		RetryJitter:    0.25,
 	}
 
 	err := workerConfig.Validate()

@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -12,7 +14,9 @@ const (
 	defaultJobHandlerTimeout = 20 * time.Second
 	defaultJobPollInterval   = 200 * time.Millisecond
 	defaultJobNotReadyDelay  = time.Second
-	defaultJobRetryDelay     = 5 * time.Second
+	defaultJobRetryBase      = 2 * time.Second
+	defaultJobRetryCap       = 60 * time.Second
+	defaultJobRetryJitter    = 0.25
 )
 
 type WorkerConfig struct {
@@ -21,7 +25,9 @@ type WorkerConfig struct {
 	HandlerTimeout time.Duration
 	PollInterval   time.Duration
 	NotReadyDelay  time.Duration
-	RetryDelay     time.Duration
+	RetryBase      time.Duration
+	RetryCap       time.Duration
+	RetryJitter    float64
 }
 
 func LoadWorkerConfig() (WorkerConfig, error) {
@@ -49,7 +55,15 @@ func LoadWorkerConfig() (WorkerConfig, error) {
 	if err != nil {
 		return WorkerConfig{}, err
 	}
-	retryDelay, err := envDuration("JOB_RETRY_DELAY", defaultJobRetryDelay)
+	retryBase, err := envDuration("JOB_RETRY_BASE", defaultJobRetryBase)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	retryCap, err := envDuration("JOB_RETRY_CAP", defaultJobRetryCap)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	retryJitter, err := envFloat("JOB_RETRY_JITTER", defaultJobRetryJitter)
 	if err != nil {
 		return WorkerConfig{}, err
 	}
@@ -60,7 +74,9 @@ func LoadWorkerConfig() (WorkerConfig, error) {
 		HandlerTimeout: handlerTimeout,
 		PollInterval:   pollInterval,
 		NotReadyDelay:  notReadyDelay,
-		RetryDelay:     retryDelay,
+		RetryBase:      retryBase,
+		RetryCap:       retryCap,
+		RetryJitter:    retryJitter,
 	}
 	if err := workerConfig.Validate(); err != nil {
 		return WorkerConfig{}, err
@@ -77,7 +93,8 @@ func (c WorkerConfig) Validate() error {
 		"JOB_HANDLER_TIMEOUT": c.HandlerTimeout,
 		"JOB_POLL_INTERVAL":   c.PollInterval,
 		"JOB_NOT_READY_DELAY": c.NotReadyDelay,
-		"JOB_RETRY_DELAY":     c.RetryDelay,
+		"JOB_RETRY_BASE":      c.RetryBase,
+		"JOB_RETRY_CAP":       c.RetryCap,
 	} {
 		if value <= 0 {
 			return fmt.Errorf("%s must be greater than zero", name)
@@ -86,5 +103,24 @@ func (c WorkerConfig) Validate() error {
 	if c.HandlerTimeout >= c.Lease {
 		return errors.New("JOB_HANDLER_TIMEOUT must be less than JOB_LEASE")
 	}
+	if c.RetryBase > c.RetryCap {
+		return errors.New("JOB_RETRY_BASE must not exceed JOB_RETRY_CAP")
+	}
+	if c.RetryJitter < 0 || c.RetryJitter >= 1 {
+		return errors.New("JOB_RETRY_JITTER must be at least 0 and less than 1")
+	}
 	return nil
+}
+
+func envFloat(name string, fallback float64) (float64, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a number: %w", name, err)
+	}
+	return parsed, nil
 }

@@ -138,3 +138,39 @@ func (s *Store) Kill(
 	}
 	return result.RowsAffected == 1, nil
 }
+
+func (s *Store) ListDead(ctx context.Context, limit int) ([]models.Job, error) {
+	if limit <= 0 {
+		return nil, errors.New("dead job limit must be greater than zero")
+	}
+
+	var jobs []models.Job
+	result := s.db.WithContext(ctx).
+		Table("orders.jobs").
+		Where("status = ?", "dead").
+		Order("created_at ASC").
+		Order("id ASC").
+		Limit(limit).
+		Find(&jobs)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return jobs, nil
+}
+
+func (s *Store) Requeue(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	result := s.db.WithContext(ctx).
+		Table("orders.jobs").
+		Where("id = ? AND status = ?", jobID, "dead").
+		Updates(map[string]any{
+			"status":       "queued",
+			"attempts":     0,
+			"next_run_at":  gorm.Expr("now()"),
+			"locked_by":    nil,
+			"locked_until": nil,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}

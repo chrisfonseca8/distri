@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type Worker struct {
 	config       config.WorkerConfig
 	hostname     string
 	pid          int
+	randomFloat  func() float64
 }
 
 func NewWorker(
@@ -55,6 +57,7 @@ func NewWorker(
 		config:       workerConfig,
 		hostname:     hostname,
 		pid:          os.Getpid(),
+		randomFloat:  rand.Float64,
 	}, nil
 }
 
@@ -112,10 +115,6 @@ func waitForJobs(ctx context.Context, interval time.Duration) bool {
 func (w *Worker) runJob(ctx context.Context, workerID string, job models.Job) {
 	handlerContext, cancelHandler := context.WithTimeout(ctx, w.config.HandlerTimeout)
 	outcome, handlerErr := w.handleJob(handlerContext, job)
-	if handlerErr == nil && handlerContext.Err() != nil {
-		outcome = services.SettleRetry
-		handlerErr = handlerContext.Err()
-	}
 	cancelHandler()
 
 	lastError := ""
@@ -146,11 +145,28 @@ func (w *Worker) runJob(ctx context.Context, workerID string, job models.Job) {
 		if lastError == "" {
 			lastError = "temporary settlement failure"
 		}
+		if job.Attempts >= job.MaxAttempts {
+			lastError = "retries exhausted: " + lastError
+			finished, finishErr = w.store.Kill(
+				finishContext,
+				job.ID,
+				workerID,
+				lastError,
+			)
+			break
+		}
+		delay := RetryBackoff(
+			job.Attempts,
+			w.config.RetryBase,
+			w.config.RetryCap,
+			w.config.RetryJitter,
+			w.randomFloat(),
+		)
 		finished, finishErr = w.store.Reschedule(
 			finishContext,
 			job.ID,
 			workerID,
-			w.config.RetryDelay,
+			delay,
 			true,
 			lastError,
 		)

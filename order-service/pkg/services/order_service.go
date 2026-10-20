@@ -177,6 +177,9 @@ func (s *OrderService) settlePendingOrder(
 
 	payment, err = s.waitForPayment(ctx, payment, waitingTime)
 	if err != nil {
+		if waitingTime <= 0 {
+			return order, SettleRetry, err
+		}
 		if ctx.Err() != nil {
 			return order, SettleRetry, nil
 		}

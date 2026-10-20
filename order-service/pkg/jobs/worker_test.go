@@ -100,7 +100,7 @@ func TestWorkerMapsSettleOutcomes(t *testing.T) {
 			outcome:          services.SettleRetry,
 			handlerErr:       temporaryErr,
 			wantMethod:       "reschedule",
-			wantDelay:        5 * time.Second,
+			wantDelay:        2 * time.Second,
 			wantCountAttempt: true,
 			wantLastError:    temporaryErr.Error(),
 		},
@@ -121,9 +121,10 @@ func TestWorkerMapsSettleOutcomes(t *testing.T) {
 			}))
 
 			worker.runJob(context.Background(), "worker-1", models.Job{
-				ID:      uuid.New(),
-				Type:    utils.JobTypeSettleOrder,
-				OrderID: uuid.New(),
+				ID:          uuid.New(),
+				Type:        utils.JobTypeSettleOrder,
+				OrderID:     uuid.New(),
+				MaxAttempts: 5,
 			})
 
 			if store.call.method != test.wantMethod {
@@ -154,9 +155,10 @@ func TestWorkerUsesFreshContextAfterHandlerCancellation(t *testing.T) {
 	worker.config.HandlerTimeout = time.Millisecond
 
 	worker.runJob(context.Background(), "worker-1", models.Job{
-		ID:      uuid.New(),
-		Type:    utils.JobTypeSettleOrder,
-		OrderID: uuid.New(),
+		ID:          uuid.New(),
+		Type:        utils.JobTypeSettleOrder,
+		OrderID:     uuid.New(),
+		MaxAttempts: 5,
 	})
 
 	if store.call.method != "reschedule" {
@@ -167,6 +169,94 @@ func TestWorkerUsesFreshContextAfterHandlerCancellation(t *testing.T) {
 	}
 }
 
+func TestWorkerKeepsCleanDoneAfterHandlerContextExpires(t *testing.T) {
+	store := &recordingStore{}
+	worker := testWorker(store, settleForJobFunc(func(ctx context.Context, _ uuid.UUID) (services.SettleOutcome, error) {
+		<-ctx.Done()
+		return services.SettleDone, nil
+	}))
+	worker.config.HandlerTimeout = time.Millisecond
+
+	worker.runJob(context.Background(), "worker-1", models.Job{
+		ID:          uuid.New(),
+		Type:        utils.JobTypeSettleOrder,
+		OrderID:     uuid.New(),
+		MaxAttempts: 5,
+	})
+
+	if store.call.method != "succeed" {
+		t.Fatalf("finish method = %q, want succeed", store.call.method)
+	}
+}
+
+func TestWorkerUsesAttemptAndSuppliedRandomnessForRetryBackoff(t *testing.T) {
+	store := &recordingStore{}
+	worker := testWorker(store, settleForJobFunc(func(context.Context, uuid.UUID) (services.SettleOutcome, error) {
+		return services.SettleRetry, errors.New("payment service unavailable")
+	}))
+	worker.randomFloat = func() float64 { return 1 }
+
+	worker.runJob(context.Background(), "worker-1", models.Job{
+		ID:          uuid.New(),
+		Type:        utils.JobTypeSettleOrder,
+		OrderID:     uuid.New(),
+		Attempts:    3,
+		MaxAttempts: 5,
+	})
+
+	if store.call.delay != 10*time.Second {
+		t.Fatalf("retry delay = %s, want 10s for attempt 3 with positive jitter", store.call.delay)
+	}
+}
+
+func TestWorkerKillsRetryWhenAttemptsAreExhausted(t *testing.T) {
+	store := &recordingStore{}
+	worker := testWorker(store, settleForJobFunc(func(context.Context, uuid.UUID) (services.SettleOutcome, error) {
+		return services.SettleRetry, errors.New("payment-service unavailable")
+	}))
+
+	worker.runJob(context.Background(), "worker-1", models.Job{
+		ID:          uuid.New(),
+		Type:        utils.JobTypeSettleOrder,
+		OrderID:     uuid.New(),
+		Attempts:    5,
+		MaxAttempts: 5,
+	})
+
+	if store.call.method != "kill" {
+		t.Fatalf("finish method = %q, want kill", store.call.method)
+	}
+	if store.call.lastError != "retries exhausted: payment-service unavailable" {
+		t.Fatalf("last error = %q", store.call.lastError)
+	}
+}
+
+func TestWorkerDoesNotExhaustNotReadyJobs(t *testing.T) {
+	store := &recordingStore{}
+	worker := testWorker(store, settleForJobFunc(func(context.Context, uuid.UUID) (services.SettleOutcome, error) {
+		return services.SettleNotReady, nil
+	}))
+	worker.randomFloat = func() float64 {
+		t.Fatal("NotReady used retry backoff randomness")
+		return 0
+	}
+
+	worker.runJob(context.Background(), "worker-1", models.Job{
+		ID:          uuid.New(),
+		Type:        utils.JobTypeSettleOrder,
+		OrderID:     uuid.New(),
+		Attempts:    5,
+		MaxAttempts: 5,
+	})
+
+	if store.call.method != "reschedule" || store.call.countAttempt {
+		t.Fatalf("not-ready finish call = %#v, want uncounted reschedule", store.call)
+	}
+	if store.call.delay != worker.config.NotReadyDelay {
+		t.Fatalf("not-ready delay = %s, want %s", store.call.delay, worker.config.NotReadyDelay)
+	}
+}
+
 func TestWorkerRecoversHandlerPanic(t *testing.T) {
 	store := &recordingStore{}
 	worker := testWorker(store, settleForJobFunc(func(context.Context, uuid.UUID) (services.SettleOutcome, error) {
@@ -174,9 +264,10 @@ func TestWorkerRecoversHandlerPanic(t *testing.T) {
 	}))
 
 	worker.runJob(context.Background(), "worker-1", models.Job{
-		ID:      uuid.New(),
-		Type:    utils.JobTypeSettleOrder,
-		OrderID: uuid.New(),
+		ID:          uuid.New(),
+		Type:        utils.JobTypeSettleOrder,
+		OrderID:     uuid.New(),
+		MaxAttempts: 5,
 	})
 
 	if store.call.method != "reschedule" || !store.call.countAttempt {
@@ -212,7 +303,10 @@ func testWorker(store jobStore, settler orderSettler) *Worker {
 			HandlerTimeout: 20 * time.Second,
 			PollInterval:   200 * time.Millisecond,
 			NotReadyDelay:  time.Second,
-			RetryDelay:     5 * time.Second,
+			RetryBase:      2 * time.Second,
+			RetryCap:       time.Minute,
+			RetryJitter:    0.25,
 		},
+		randomFloat: func() float64 { return 0.5 },
 	}
 }

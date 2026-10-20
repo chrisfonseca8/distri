@@ -53,7 +53,7 @@ The default gateway mode is `success`. Run the suite on a newly rebuilt database
 Each run writes both Markdown and machine-readable JSON to:
 
 ```text
-test-results/correctness-test/
+test-results/local/correctness/
 ```
 
 This folder always contains exactly `correctness-test.md` and
@@ -75,7 +75,7 @@ ORDER_URL=http://127.0.0.1:8080 \
 INVENTORY_URL=http://127.0.0.1:8081 \
 PAYMENT_URL=http://127.0.0.1:8082 \
 DATABASE_URL='postgres://distri:distri@127.0.0.1:5432/distri?sslmode=disable' \
-RESULTS_DIR=../test-results/correctness-test \
+RESULTS_DIR=../test-results/local/correctness \
 GATEWAY_MODE=success RUN_LABEL=success \
 COMPOSE_FILE="$(cd .. && pwd)/compose.local.yaml" \
 go run ./correctnesstesting/local

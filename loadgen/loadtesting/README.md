@@ -7,8 +7,8 @@ Local load-test code and its report contract live in [`local`](local). Results
 will be written as one Markdown file and one JSON file:
 
 ```text
-test-results/load-test/load-test.md
-test-results/load-test/load-test.json
+test-results/local/load/load-test.md
+test-results/local/load/load-test.json
 ```
 
 ## Required client metrics
@@ -190,7 +190,7 @@ loadgen/loadtesting/run-cases.sh c14 200ms      # pool sweep at 200 ms; add size
 loadgen/loadtesting/run-cases.sh restore        # back to success, 200 ms, pool 10 open / 5 idle
 ```
 
-Run `restore` afterwards. The results land in `test-results/load-test/load-test.md`
+Run `restore` afterwards. The results land in `test-results/local/load/load-test.md`
 with summary tables for C9–C12, C13 and C14. Everything in that file is written by
 the runner. When a case is run again, the previous run is kept in a generated
 "Repeat history" table with its mean, spread and coefficient of variation.

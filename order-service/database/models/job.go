@@ -15,7 +15,7 @@ type Job struct {
 	Status      string         `gorm:"type:text;not null;default:queued;check:chk_jobs_status,status IN ('queued','running','succeeded','dead')"`
 	Attempts    int            `gorm:"not null;default:0;check:chk_jobs_attempts_nonnegative,attempts >= 0"`
 	MaxAttempts int            `gorm:"not null;default:5;check:chk_jobs_max_attempts_positive,max_attempts > 0"`
-	NextRunAt   time.Time      `gorm:"type:timestamptz;not null;default:now();index:idx_jobs_claim,where:status IN ('queued','running')"`
+	NextRunAt   time.Time      `gorm:"type:timestamptz;not null;default:now();index:idx_jobs_claim,where:status IN ('queued'\\,'running')"`
 	LockedUntil *time.Time     `gorm:"type:timestamptz"`
 	LockedBy    *string        `gorm:"type:text"`
 	LastError   *string        `gorm:"type:text"`

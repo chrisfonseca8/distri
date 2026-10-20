@@ -10,19 +10,21 @@ import (
 
 	"github.com/chrisfonseca08/distri/payment-service/database/models"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/config"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/jobtypes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
 	"gorm.io/gorm"
 )
-
-// These tests run against the dev/test database (DATABASE_TEST_URL). Rows use
-// random order IDs and are deleted on cleanup.
 
 type countingGateway struct {
 	inner paymentgateway.Gateway
 	calls atomic.Int64
 }
 
-func (g *countingGateway) CreateCharge(ctx context.Context, orderID uuid.UUID, amountPaise int64) (string, error) {
+func (g *countingGateway) CreateCharge(
+	ctx context.Context,
+	orderID uuid.UUID,
+	amountPaise int64,
+) (string, error) {
 	g.calls.Add(1)
 	return g.inner.CreateCharge(ctx, orderID, amountPaise)
 }
@@ -43,41 +45,31 @@ func openTestDB(t *testing.T) *gorm.DB {
 
 func newGateway(t *testing.T, mode string) *countingGateway {
 	t.Helper()
-	sim, err := paymentgateway.NewSimulator(mode, 0)
+	simulator, err := paymentgateway.NewSimulator(mode, 0)
 	if err != nil {
 		t.Fatalf("create simulator: %v", err)
 	}
-	return &countingGateway{inner: sim}
+	return &countingGateway{inner: simulator}
 }
 
 func cleanupOrder(t *testing.T, db *gorm.DB, orderID uuid.UUID) {
 	t.Helper()
 	t.Cleanup(func() {
-		db.Where("order_id = ?", orderID).Delete(&models.PaymentAttempt{})
+		if err := db.Exec(`DELETE FROM payments.jobs
+			WHERE payment_id IN (
+				SELECT id FROM payments.payment_attempts WHERE order_id = ?
+			)`, orderID).Error; err != nil {
+			t.Errorf("delete payment jobs: %v", err)
+		}
+		if err := db.Where("order_id = ?", orderID).Delete(&models.PaymentAttempt{}).Error; err != nil {
+			t.Errorf("delete payment attempt: %v", err)
+		}
 	})
-}
-
-func waitForStatus(t *testing.T, svc *PaymentService, id uuid.UUID, want string) models.PaymentAttempt {
-	t.Helper()
-	deadline := time.Now().Add(30 * time.Second) // Neon round-trips can take seconds
-	for {
-		attempt, err := svc.GetPayment(context.Background(), id)
-		if err != nil {
-			t.Fatalf("get payment: %v", err)
-		}
-		if attempt.Status == want {
-			return attempt
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("status = %s, want %s after 30s", attempt.Status, want)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
 }
 
 func TestPaymentFlowOutcomes(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewPaymentService(db)
+	service := NewPaymentService(db)
 
 	tests := []struct {
 		name        string
@@ -91,14 +83,14 @@ func TestPaymentFlowOutcomes(t *testing.T) {
 		{"ambiguous timeout", paymentgateway.ModeTimeout, "UNKNOWN", "", false},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gw := newGateway(t, tt.mode)
-			processor := NewPaymentProcessor(db, gw, 100*time.Millisecond)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gateway := newGateway(t, test.mode)
+			handler := NewPaymentJobHandler(db, gateway, 100*time.Millisecond)
 			orderID := uuid.New()
 			cleanupOrder(t, db, orderID)
 
-			result, err := svc.CreatePayment(context.Background(), CreatePaymentInput{
+			result, err := service.CreatePayment(context.Background(), CreatePaymentInput{
 				OrderID: orderID, AmountPaise: 149900, Currency: "inr",
 			})
 			if err != nil {
@@ -108,36 +100,83 @@ func TestPaymentFlowOutcomes(t *testing.T) {
 				t.Fatalf("unexpected create result: %+v", result)
 			}
 
-			processor.Start(result.Attempt)
-			got := waitForStatus(t, svc, result.Attempt.ID, tt.wantStatus)
-
-			if tt.wantFailure == "" && got.FailureCode != nil {
+			outcome, err := handler.ProcessForJob(context.Background(), result.Attempt.ID, 1)
+			if err != nil || outcome != ProcessDone {
+				t.Fatalf("process payment = %q, %v; want Done, nil", outcome, err)
+			}
+			got, err := service.GetPayment(context.Background(), result.Attempt.ID)
+			if err != nil {
+				t.Fatalf("get payment: %v", err)
+			}
+			if got.Status != test.wantStatus {
+				t.Fatalf("status = %s, want %s", got.Status, test.wantStatus)
+			}
+			if test.wantFailure == "" && got.FailureCode != nil {
 				t.Errorf("failure_code = %v, want nil", *got.FailureCode)
 			}
-			if tt.wantFailure != "" && (got.FailureCode == nil || *got.FailureCode != tt.wantFailure) {
-				t.Errorf("failure_code = %v, want %s", got.FailureCode, tt.wantFailure)
+			if test.wantFailure != "" && (got.FailureCode == nil || *got.FailureCode != test.wantFailure) {
+				t.Errorf("failure_code = %v, want %s", got.FailureCode, test.wantFailure)
 			}
-			if tt.wantRef != (got.GatewayOrderID != nil) {
-				t.Errorf("gateway_order_id set = %v, want %v", got.GatewayOrderID != nil, tt.wantRef)
+			if test.wantRef != (got.GatewayOrderID != nil) {
+				t.Errorf("gateway_order_id set = %v, want %v", got.GatewayOrderID != nil, test.wantRef)
 			}
-			if gw.calls.Load() != 1 {
-				t.Errorf("gateway calls = %d, want 1", gw.calls.Load())
+			assertJobCount(t, db, result.Attempt.ID, jobtypes.ProcessPayment, 1)
+			assertJobCount(t, db, result.Attempt.ID, jobtypes.NotifyOrder, 1)
+			if gateway.calls.Load() != 1 {
+				t.Errorf("gateway calls = %d, want 1", gateway.calls.Load())
 			}
 		})
 	}
 }
 
-func TestRepeatedCreateReturnsSameAttempt(t *testing.T) {
+func TestReclaimedPendingPaymentBecomesUnknownWithoutGatewayCall(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewPaymentService(db)
+	service := NewPaymentService(db)
+	gateway := newGateway(t, paymentgateway.ModeSuccess)
+	handler := NewPaymentJobHandler(db, gateway, time.Second)
 	orderID := uuid.New()
 	cleanupOrder(t, db, orderID)
 
-	first, err := svc.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
+	result, err := service.CreatePayment(context.Background(), CreatePaymentInput{
+		OrderID: orderID, AmountPaise: 1000,
+	})
+	if err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	if err := db.Table("payments.payment_attempts").
+		Where("id = ? AND status = ?", result.Attempt.ID, "CREATED").
+		Update("status", "PENDING").Error; err != nil {
+		t.Fatalf("fixture pending payment: %v", err)
+	}
+
+	outcome, err := handler.ProcessForJob(context.Background(), result.Attempt.ID, 2)
+	if err != nil || outcome != ProcessDone {
+		t.Fatalf("process reclaimed payment = %q, %v; want Done, nil", outcome, err)
+	}
+	stored, err := service.GetPayment(context.Background(), result.Attempt.ID)
+	if err != nil {
+		t.Fatalf("get payment: %v", err)
+	}
+	if stored.Status != "UNKNOWN" {
+		t.Fatalf("status = %s, want UNKNOWN", stored.Status)
+	}
+	if gateway.calls.Load() != 0 {
+		t.Fatalf("gateway calls = %d, want 0", gateway.calls.Load())
+	}
+	assertJobCount(t, db, result.Attempt.ID, jobtypes.NotifyOrder, 1)
+}
+
+func TestRepeatedCreateReturnsSameAttemptAndOneProcessJob(t *testing.T) {
+	db := openTestDB(t)
+	service := NewPaymentService(db)
+	orderID := uuid.New()
+	cleanupOrder(t, db, orderID)
+
+	first, err := service.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
 	if err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	second, err := svc.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
+	second, err := service.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
 	if err != nil {
 		t.Fatalf("second create: %v", err)
 	}
@@ -147,25 +186,26 @@ func TestRepeatedCreateReturnsSameAttempt(t *testing.T) {
 	if first.Attempt.ID != second.Attempt.ID {
 		t.Fatalf("attempt IDs differ: %s vs %s", first.Attempt.ID, second.Attempt.ID)
 	}
+	assertJobCount(t, db, first.Attempt.ID, jobtypes.ProcessPayment, 1)
 }
 
-func TestConcurrentCreateYieldsOneWinner(t *testing.T) {
+func TestConcurrentCreateYieldsOnePaymentAndOneProcessJob(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewPaymentService(db)
-	gw := newGateway(t, paymentgateway.ModeSuccess)
-	processor := NewPaymentProcessor(db, gw, time.Second)
+	service := NewPaymentService(db)
 	orderID := uuid.New()
 	cleanupOrder(t, db, orderID)
 
 	const callers = 10
 	var created atomic.Int64
-	var wg sync.WaitGroup
+	var waitGroup sync.WaitGroup
 	var attemptID atomic.Value
 	for range callers {
-		wg.Add(1)
+		waitGroup.Add(1)
 		go func() {
-			defer wg.Done()
-			result, err := svc.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
+			defer waitGroup.Done()
+			result, err := service.CreatePayment(context.Background(), CreatePaymentInput{
+				OrderID: orderID, AmountPaise: 1000,
+			})
 			if err != nil {
 				t.Errorf("create payment: %v", err)
 				return
@@ -173,47 +213,45 @@ func TestConcurrentCreateYieldsOneWinner(t *testing.T) {
 			attemptID.Store(result.Attempt.ID)
 			if result.Created {
 				created.Add(1)
-				processor.Start(result.Attempt)
 			}
 		}()
 	}
-	wg.Wait()
+	waitGroup.Wait()
 
 	if created.Load() != 1 {
 		t.Fatalf("created = %d, want exactly 1", created.Load())
 	}
-	waitForStatus(t, svc, attemptID.Load().(uuid.UUID), "SUCCEEDED")
-	if gw.calls.Load() != 1 {
-		t.Fatalf("gateway calls = %d, want 1", gw.calls.Load())
-	}
+	assertJobCount(t, db, attemptID.Load().(uuid.UUID), jobtypes.ProcessPayment, 1)
 }
 
-func TestStartTwiceCallsGatewayOnce(t *testing.T) {
+func TestProcessingFinalPaymentDoesNotCallGatewayAgain(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewPaymentService(db)
-	gw := newGateway(t, paymentgateway.ModeSuccess)
-	processor := NewPaymentProcessor(db, gw, time.Second)
+	service := NewPaymentService(db)
+	gateway := newGateway(t, paymentgateway.ModeSuccess)
+	handler := NewPaymentJobHandler(db, gateway, time.Second)
 	orderID := uuid.New()
 	cleanupOrder(t, db, orderID)
 
-	result, err := svc.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
+	result, err := service.CreatePayment(context.Background(), CreatePaymentInput{
+		OrderID: orderID, AmountPaise: 1000,
+	})
 	if err != nil {
 		t.Fatalf("create payment: %v", err)
 	}
-
-	processor.Start(result.Attempt)
-	processor.Start(result.Attempt)
-	waitForStatus(t, svc, result.Attempt.ID, "SUCCEEDED")
-	time.Sleep(200 * time.Millisecond) // let a wrongly started second call finish
-	if gw.calls.Load() != 1 {
-		t.Fatalf("gateway calls = %d, want 1", gw.calls.Load())
+	if outcome, err := handler.ProcessForJob(context.Background(), result.Attempt.ID, 1); err != nil || outcome != ProcessDone {
+		t.Fatalf("first process = %q, %v", outcome, err)
+	}
+	if outcome, err := handler.ProcessForJob(context.Background(), result.Attempt.ID, 2); err != nil || outcome != ProcessDone {
+		t.Fatalf("second process = %q, %v", outcome, err)
+	}
+	if gateway.calls.Load() != 1 {
+		t.Fatalf("gateway calls = %d, want 1", gateway.calls.Load())
 	}
 }
 
 func TestCreatePaymentValidation(t *testing.T) {
-	svc := NewPaymentService(nil) // validation fails before any DB access
-
-	for _, tt := range []struct {
+	service := NewPaymentService(nil)
+	for _, test := range []struct {
 		name  string
 		input CreatePaymentInput
 		want  error
@@ -222,10 +260,23 @@ func TestCreatePaymentValidation(t *testing.T) {
 		{"negative amount", CreatePaymentInput{OrderID: uuid.New(), AmountPaise: -5}, ErrInvalidAmount},
 		{"bad currency", CreatePaymentInput{OrderID: uuid.New(), AmountPaise: 100, Currency: "RUPEES"}, ErrInvalidCurrency},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := svc.CreatePayment(context.Background(), tt.input); err != tt.want {
-				t.Fatalf("err = %v, want %v", err, tt.want)
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := service.CreatePayment(context.Background(), test.input); err != test.want {
+				t.Fatalf("err = %v, want %v", err, test.want)
 			}
 		})
+	}
+}
+
+func assertJobCount(t *testing.T, db *gorm.DB, paymentID uuid.UUID, jobType string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Table("payments.jobs").
+		Where("payment_id = ? AND type = ?", paymentID, jobType).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count %s jobs: %v", jobType, err)
+	}
+	if count != want {
+		t.Fatalf("%s jobs = %d, want %d", jobType, count, want)
 	}
 }

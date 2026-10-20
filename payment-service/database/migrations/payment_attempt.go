@@ -6,5 +6,8 @@ import (
 )
 
 func MigratePaymentAttempts(db *gorm.DB) error {
-	return db.AutoMigrate(&models.PaymentAttempt{})
+	return db.AutoMigrate(
+		&models.PaymentAttempt{},
+		&models.Job{},
+	)
 }

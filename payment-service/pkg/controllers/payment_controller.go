@@ -16,15 +16,11 @@ type createPaymentRequest struct {
 }
 
 type PaymentController struct {
-	service   *services.PaymentService
-	processor *services.PaymentProcessor
+	service *services.PaymentService
 }
 
-func NewPaymentController(
-	service *services.PaymentService,
-	processor *services.PaymentProcessor,
-) *PaymentController {
-	return &PaymentController{service: service, processor: processor}
+func NewPaymentController(service *services.PaymentService) *PaymentController {
+	return &PaymentController{service: service}
 }
 
 func (c *PaymentController) CreatePayment(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +55,6 @@ func (c *PaymentController) CreatePayment(w http.ResponseWriter, r *http.Request
 	status := http.StatusOK
 	if result.Created {
 		status = http.StatusCreated
-		c.processor.Start(result.Attempt)
 	}
 	writeJSON(w, status, result.Attempt)
 }

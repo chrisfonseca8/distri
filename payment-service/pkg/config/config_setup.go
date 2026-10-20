@@ -8,9 +8,15 @@ import (
 type Config struct {
 	DB      *gorm.DB
 	Gateway paymentgateway.Gateway
+	Worker  WorkerConfig
 }
 
 func Setup() (*Config, error) {
+	workerConfig, err := LoadWorkerConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -25,5 +31,5 @@ func Setup() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{DB: db, Gateway: gateway}, nil
+	return &Config{DB: db, Gateway: gateway, Worker: workerConfig}, nil
 }

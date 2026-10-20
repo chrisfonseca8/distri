@@ -4,18 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/chrisfonseca08/distri/payment-service/pkg/config"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/health"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/jobs"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/telemetry"
@@ -25,19 +28,33 @@ const (
 	gatewayTimeout        = 3 * time.Second
 	healthCheckTimeout    = 3 * time.Second
 	serverShutdownTimeout = 10 * time.Second
-	workerShutdownTimeout = 30 * time.Second
+)
+
+type serviceRole string
+
+const (
+	roleAPI    serviceRole = "api"
+	roleWorker serviceRole = "worker"
+	roleAll    serviceRole = "all"
 )
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	role := flag.String("role", string(roleAll), "process role: api, worker, or all")
+	flag.Parse()
 
-	if err := run(); err != nil {
+	if err := run(*role); err != nil {
 		slog.Error("payment-service stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(roleValue string) error {
+	role, err := parseRole(roleValue)
+	if err != nil {
+		return err
+	}
+
 	applicationConfig, err := config.Setup()
 	if err != nil {
 		return fmt.Errorf("set up configuration: %w", err)
@@ -49,33 +66,58 @@ func run() error {
 	}
 	defer sqlDB.Close()
 
-	paymentProcessor := services.NewPaymentProcessor(
-		applicationConfig.DB,
-		applicationConfig.Gateway,
-		gatewayTimeout,
+	shutdownContext, stopSignals := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
 	)
+	var workerWaitGroup sync.WaitGroup
+	defer func() {
+		stopSignals()
+		workerWaitGroup.Wait()
+	}()
 
-	server, err := config.NewServer(newHandler(applicationConfig, paymentProcessor, sqlDB))
+	if role == roleWorker || role == roleAll {
+		processor := services.NewPaymentJobHandler(
+			applicationConfig.DB,
+			applicationConfig.Gateway,
+			gatewayTimeout,
+		)
+		worker, err := jobs.NewWorker(
+			jobs.NewStore(applicationConfig.DB),
+			processor,
+			applicationConfig.Worker,
+		)
+		if err != nil {
+			return fmt.Errorf("set up payment job worker: %w", err)
+		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			worker.Run(shutdownContext)
+		}()
+	}
+
+	if role == roleWorker {
+		slog.Info("payment-service worker running")
+		<-shutdownContext.Done()
+		slog.Info("shutting down payment-service worker")
+		return nil
+	}
+
+	server, err := config.NewServer(newHandler(applicationConfig, sqlDB))
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}
-
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", server.Addr, err)
 	}
 	defer listener.Close()
 
-	shutdownSignal, stopSignals := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stopSignals()
-
 	serverErrors := startServer(server, listener)
 	if err := verifyStartupHealth(applicationConfig, server.Addr); err != nil {
-		return errors.Join(err, stopServer(server, paymentProcessor))
+		return errors.Join(err, stopServer(server))
 	}
 
 	var runErr error
@@ -84,23 +126,19 @@ func run() error {
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			runErr = fmt.Errorf("serve HTTP: %w", err)
 		}
-	case <-shutdownSignal.Done():
+	case <-shutdownContext.Done():
 		slog.Info("shutting down payment-service")
 	}
 
-	return errors.Join(runErr, stopServer(server, paymentProcessor))
+	return errors.Join(runErr, stopServer(server))
 }
 
-func newHandler(
-	applicationConfig *config.Config,
-	paymentProcessor *services.PaymentProcessor,
-	sqlDB *sql.DB,
-) http.Handler {
+func newHandler(applicationConfig *config.Config, sqlDB *sql.DB) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
 
 	paymentService := services.NewPaymentService(applicationConfig.DB)
-	paymentController := controllers.NewPaymentController(paymentService, paymentProcessor)
+	paymentController := controllers.NewPaymentController(paymentService)
 	routes.RegisterPaymentRoutes(mux, paymentController)
 
 	telemetryRecorder := telemetry.New(sqlDB)
@@ -130,33 +168,30 @@ func verifyStartupHealth(applicationConfig *config.Config, serverAddress string)
 		"http://127.0.0.1"+serverAddress+"/health",
 	)
 	slog.Info("startup health check", "healthy", status.Healthy, "checks", status.Checks)
-
 	if !status.Healthy {
 		return errors.New("startup health check failed")
 	}
 	return nil
 }
 
-func stopServer(server *http.Server, paymentProcessor *services.PaymentProcessor) error {
+func stopServer(server *http.Server) error {
 	shutdownCtx, cancelShutdown := context.WithTimeout(
 		context.Background(),
 		serverShutdownTimeout,
 	)
-	serverErr := server.Shutdown(shutdownCtx)
-	cancelShutdown()
-	if serverErr != nil {
-		serverErr = fmt.Errorf("shut down HTTP server: %w", serverErr)
+	defer cancelShutdown()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shut down HTTP server: %w", err)
 	}
+	return nil
+}
 
-	workerCtx, cancelWorkers := context.WithTimeout(
-		context.Background(),
-		workerShutdownTimeout,
-	)
-	workerErr := paymentProcessor.Wait(workerCtx)
-	cancelWorkers()
-	if workerErr != nil {
-		workerErr = fmt.Errorf("wait for in-flight payments: %w", workerErr)
+func parseRole(value string) (serviceRole, error) {
+	role := serviceRole(value)
+	switch role {
+	case roleAPI, roleWorker, roleAll:
+		return role, nil
+	default:
+		return "", fmt.Errorf("invalid role %q: must be api, worker, or all", value)
 	}
-
-	return errors.Join(serverErr, workerErr)
 }

@@ -8,6 +8,7 @@ import (
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/payment-service/database/models"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/jobtypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -58,22 +59,44 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentI
 		Gateway:     "sim",
 	}
 
-	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "order_id"}},
-		DoNothing: true,
-	}).Create(&attempt)
-	if result.Error != nil {
-		return CreatePaymentResult{}, fmt.Errorf("create payment: %w", result.Error)
-	}
-
-	if result.RowsAffected == 0 {
-		if err := s.db.WithContext(ctx).Where("order_id = ?", input.OrderID).First(&attempt).Error; err != nil {
-			return CreatePaymentResult{}, fmt.Errorf("get existing payment: %w", err)
+	var createResult CreatePaymentResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		insert := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "order_id"}},
+			DoNothing: true,
+		}).Create(&attempt)
+		if insert.Error != nil {
+			return fmt.Errorf("create payment: %w", insert.Error)
 		}
-		return CreatePaymentResult{Attempt: attempt, Created: false}, nil
-	}
 
-	return CreatePaymentResult{Attempt: attempt, Created: true}, nil
+		if insert.RowsAffected == 0 {
+			if err := tx.Where("order_id = ?", input.OrderID).First(&attempt).Error; err != nil {
+				return fmt.Errorf("get existing payment: %w", err)
+			}
+			createResult = CreatePaymentResult{Attempt: attempt, Created: false}
+			return nil
+		}
+
+		if err := enqueueJob(tx, jobtypes.ProcessPayment, attempt.ID); err != nil {
+			return err
+		}
+		createResult = CreatePaymentResult{Attempt: attempt, Created: true}
+		return nil
+	})
+	if err != nil {
+		return CreatePaymentResult{}, err
+	}
+	return createResult, nil
+}
+
+func enqueueJob(tx *gorm.DB, jobType string, paymentID uuid.UUID) error {
+	job := models.Job{Type: jobType, PaymentID: paymentID}
+	if err := tx.Table("payments.jobs").
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&job).Error; err != nil {
+		return fmt.Errorf("enqueue %s job: %w", jobType, err)
+	}
+	return nil
 }
 
 func (s *PaymentService) GetPayment(ctx context.Context, paymentID uuid.UUID) (models.PaymentAttempt, error) {

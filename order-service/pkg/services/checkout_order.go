@@ -11,6 +11,7 @@ import (
 
 	"github.com/chrisfonseca08/distri/order-service/database/models"
 	"github.com/chrisfonseca08/distri/order-service/pkg/clients"
+	"github.com/chrisfonseca08/distri/order-service/pkg/utils"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -50,6 +51,9 @@ func (s *CheckoutService) createOrderFromReservation(
 		if err := createOrderItems(tx, result.OrderID, reservation.Items); err != nil {
 			return err
 		}
+		if err := enqueueSettleJob(tx, result.OrderID); err != nil {
+			return err
+		}
 		return completeCheckoutAttempt(tx, attempt.IdempotencyKey, result)
 	})
 	if err != nil {
@@ -76,6 +80,19 @@ func createOrder(tx *gorm.DB, result CreateCheckoutResult) (bool, error) {
 		return false, fmt.Errorf("create order: %w", insert.Error)
 	}
 	return insert.RowsAffected == 1, nil
+}
+
+func enqueueSettleJob(tx *gorm.DB, orderID uuid.UUID) error {
+	job := models.Job{
+		Type:    utils.JobTypeSettleOrder,
+		OrderID: orderID,
+	}
+	if err := tx.Table("orders.jobs").
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&job).Error; err != nil {
+		return fmt.Errorf("enqueue settle job: %w", err)
+	}
+	return nil
 }
 
 func createOrderItems(

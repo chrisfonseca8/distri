@@ -33,15 +33,19 @@ func run() error {
 		return fmt.Errorf("set up configuration: %w", err)
 	}
 
+	rabbitMQConfig, err := config.LoadRabbitMQConfig()
+	if err != nil {
+		return fmt.Errorf("load RabbitMQ configuration: %w", err)
+	}
+	if err := messaging.SetupTopology(rabbitMQConfig.URL); err != nil {
+		return fmt.Errorf("set up RabbitMQ topology: %w", err)
+	}
+
 	sqlDB, err := applicationConfig.DB.DB()
 	if err != nil {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
-
-	if err := messaging.SetupTopology(applicationConfig.RabbitMQ.URL); err != nil {
-		return err
-	}
 
 	mux := http.NewServeMux()
 	routes.RegisterHealthRoutes(mux, applicationConfig.DB)

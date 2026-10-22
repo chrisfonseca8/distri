@@ -4,6 +4,7 @@ go 1.27.2
 
 require (
 	github.com/joho/godotenv v1.5.1
+	github.com/rabbitmq/amqp091-go v1.16.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2

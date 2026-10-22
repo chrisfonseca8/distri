@@ -191,6 +191,7 @@ services:
     environment:
       <<: *orchestrator-environment
       ORCHESTRATOR_PORT: "8083"
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-distri}:${RABBITMQ_DEFAULT_PASS:-distri}@rabbitmq:5672/
     ports:
       - "${LOCAL_ORCHESTRATOR_PORT:-8083}:8083"
     depends_on:
@@ -198,6 +199,8 @@ services:
         condition: service_healthy
       orchestrator-migrate:
         condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8083/readyz"]
       interval: 3s

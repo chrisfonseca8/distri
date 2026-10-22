@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/config"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 )
 
@@ -37,6 +38,10 @@ func run() error {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
+
+	if err := messaging.SetupTopology(applicationConfig.RabbitMQ.URL); err != nil {
+		return err
+	}
 
 	mux := http.NewServeMux()
 	routes.RegisterHealthRoutes(mux, applicationConfig.DB)

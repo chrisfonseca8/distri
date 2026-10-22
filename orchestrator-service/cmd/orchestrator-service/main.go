@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/config"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 )
 
@@ -32,6 +34,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up configuration: %w", err)
 	}
+	sqlDB, err := applicationConfig.DB.DB()
+	if err != nil {
+		return fmt.Errorf("get database connection: %w", err)
+	}
+	defer sqlDB.Close()
 
 	rabbitMQConfig, err := config.LoadRabbitMQConfig()
 	if err != nil {
@@ -41,11 +48,20 @@ func run() error {
 		return fmt.Errorf("set up RabbitMQ topology: %w", err)
 	}
 
-	sqlDB, err := applicationConfig.DB.DB()
+	publisher, err := messaging.NewPublisher(rabbitMQConfig.URL)
 	if err != nil {
-		return fmt.Errorf("get database connection: %w", err)
+		return fmt.Errorf("set up RabbitMQ publisher: %w", err)
 	}
-	defer sqlDB.Close()
+	defer publisher.Close()
+
+	relay, err := outbox.NewRelay(
+		outbox.NewStore(applicationConfig.DB),
+		publisher,
+		outbox.DefaultRelayConfig(),
+	)
+	if err != nil {
+		return fmt.Errorf("set up outbox relay: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	routes.RegisterHealthRoutes(mux, applicationConfig.DB)
@@ -60,7 +76,16 @@ func run() error {
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
-	defer stopSignals()
+	var backgroundWorkers sync.WaitGroup
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		relay.Run(shutdownSignal)
+	}()
+	defer func() {
+		stopSignals()
+		backgroundWorkers.Wait()
+	}()
 
 	serverErrors := make(chan error, 1)
 	go func() {

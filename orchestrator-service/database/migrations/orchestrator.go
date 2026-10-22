@@ -10,6 +10,7 @@ func MigrateOrchestrator(db *gorm.DB) error {
 		&models.Saga{},
 		&models.SagaStep{},
 		&models.CheckoutAttempt{},
+		&models.Outbox{},
 	); err != nil {
 		return err
 	}

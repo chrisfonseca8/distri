@@ -191,6 +191,7 @@ services:
     environment:
       <<: *orchestrator-environment
       ORCHESTRATOR_PORT: "8083"
+      INVENTORY_URL: http://inventory-service:8081
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-distri}:${RABBITMQ_DEFAULT_PASS:-distri}@rabbitmq:5672/
     ports:
       - "${LOCAL_ORCHESTRATOR_PORT:-8083}:8083"
@@ -199,6 +200,8 @@ services:
         condition: service_healthy
       orchestrator-migrate:
         condition: service_completed_successfully
+      inventory-service:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     healthcheck:

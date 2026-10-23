@@ -15,6 +15,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/saga"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -177,6 +178,15 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			return errConcurrentSagaTransition
 		}
 
+		mapping, hasCommandMapping := commandMappings[decision.Command]
+		var payload json.RawMessage
+		if decision.Command != "" && hasCommandMapping {
+			payload, err = mapping.build(sagaRow)
+			if err != nil {
+				return fmt.Errorf("build %s command: %w", decision.Command, err)
+			}
+		}
+
 		resend := decision.NextStep == saga.Step(currentStep.Step) && decision.Command != ""
 		stepUpdates := map[string]any{
 			"updated_at": now,
@@ -187,6 +197,10 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			stepUpdates["started_at"] = now
 			stepUpdates["finished_at"] = nil
 			stepUpdates["next_attempt_at"] = now.Add(h.stepTimeout)
+			if hasCommandMapping {
+				stepUpdates["routing_key"] = mapping.routingKey
+				stepUpdates["command_payload"] = datatypes.JSON(payload)
+			}
 		} else {
 			stepStatus, err := finishedStepStatus(reply.Outcome)
 			if err != nil {
@@ -205,7 +219,6 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			return errConcurrentSagaTransition
 		}
 
-		mapping, hasCommandMapping := commandMappings[decision.Command]
 		if decision.NextStep != "" && decision.NextStep != saga.Step(currentStep.Step) {
 			nextStep := models.SagaStep{
 				SagaID: sagaRow.ID,
@@ -218,6 +231,8 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 				nextStep.StartedAt = &now
 				nextAttemptAt := now.Add(h.stepTimeout)
 				nextStep.NextAttemptAt = &nextAttemptAt
+				nextStep.RoutingKey = &mapping.routingKey
+				nextStep.CommandPayload = datatypes.JSON(payload)
 			}
 			if err := tx.Table("orchestrator.saga_steps").
 				Omit(clause.Associations).
@@ -238,10 +253,6 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			return nil
 		}
 
-		payload, err := mapping.build(sagaRow)
-		if err != nil {
-			return fmt.Errorf("build %s command: %w", decision.Command, err)
-		}
 		if err := outbox.Enqueue(tx, outbox.Message{
 			MessageID:  uuid.New(),
 			RoutingKey: mapping.routingKey,

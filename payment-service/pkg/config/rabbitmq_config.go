@@ -15,7 +15,11 @@ type RabbitMQConfig struct {
 	URL                 string
 	ConsumerConcurrency int
 	ConsumerPrefetch    int
+	ConsumerPool        ConsumerPoolConfig
+	ConsumerMaxAttempts int
 }
+
+const defaultConsumerMaxAttempts = 5
 
 func LoadRabbitMQConfig() (RabbitMQConfig, error) {
 	if err := loadEnvFile(); err != nil {
@@ -39,8 +43,22 @@ func LoadRabbitMQConfig() (RabbitMQConfig, error) {
 	if prefetch <= 0 {
 		return RabbitMQConfig{}, errors.New("PAYMENT_CONSUMER_PREFETCH must be greater than zero")
 	}
+	consumerPool, err := loadConsumerPoolConfig("PAYMENT", concurrency)
+	if err != nil {
+		return RabbitMQConfig{}, err
+	}
+	maxAttempts, err := envInt("CONSUMER_MAX_ATTEMPTS", defaultConsumerMaxAttempts)
+	if err != nil {
+		return RabbitMQConfig{}, err
+	}
+	if maxAttempts <= 0 {
+		return RabbitMQConfig{}, errors.New("CONSUMER_MAX_ATTEMPTS must be greater than zero")
+	}
+
 	return RabbitMQConfig{
+		ConsumerMaxAttempts: maxAttempts,
 		URL:                 url,
+		ConsumerPool:        consumerPool,
 		ConsumerConcurrency: concurrency,
 		ConsumerPrefetch:    prefetch,
 	}, nil

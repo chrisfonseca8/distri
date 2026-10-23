@@ -21,6 +21,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/reply"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/sweeper"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -45,7 +46,7 @@ func run() error {
 	}
 	defer sqlDB.Close()
 
-	inventoryClient, err := clients.NewInventoryClientFromEnv()
+	inventoryClient, err := clients.NewHTTPInventoryClientFromEnv()
 	if err != nil {
 		return fmt.Errorf("set up inventory client: %w", err)
 	}
@@ -76,13 +77,50 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up outbox relay: %w", err)
 	}
-	replyConsumer, err := messaging.NewConsumer(
-		rabbitMQConfig.URL,
-		messages.OrchestratorRepliesQueue,
-		reply.NewHandler(applicationConfig.DB, sagaConfig.StepTimeout).Handle,
+	sagaSweeper, err := sweeper.NewSagaSweeper(applicationConfig.DB, sweeper.SagaConfig{
+		Interval:         sagaConfig.SweepInterval,
+		Batch:            sagaConfig.SweepBatch,
+		StepTimeout:      sagaConfig.StepTimeout,
+		StepMaxAttempts:  sagaConfig.StepMaxAttempts,
+		ResendBackoffCap: sagaConfig.ResendBackoffCap,
+	})
+	if err != nil {
+		return fmt.Errorf("set up saga sweeper: %w", err)
+	}
+	reservationSweeperConfig, err := config.LoadReservationSweeperConfig()
+	if err != nil {
+		return fmt.Errorf("load reservation sweeper configuration: %w", err)
+	}
+	reservationSweeper, err := sweeper.NewReservationSweeper(
+		inventoryClient,
+		applicationConfig.DB,
+		reservationSweeperConfig,
 	)
 	if err != nil {
-		return fmt.Errorf("set up order reply consumer: %w", err)
+		return fmt.Errorf("set up reservation sweeper: %w", err)
+	}
+	replyHandler := reply.NewHandler(applicationConfig.DB, sagaConfig.StepTimeout)
+	replyConsumers, err := messaging.NewPool(
+		messaging.PoolConfig{
+			URL:            rabbitMQConfig.URL,
+			Queue:          messages.OrchestratorRepliesQueue,
+			Min:            rabbitMQConfig.ConsumerConcurrency,
+			Max:            rabbitMQConfig.ConsumerPool.MaxConcurrency,
+			Interval:       rabbitMQConfig.ConsumerPool.ScaleInterval,
+			DepthPerWorker: rabbitMQConfig.ConsumerPool.DepthPerWorker,
+			ScaleDownAfter: rabbitMQConfig.ConsumerPool.ScaleDownAfter,
+		},
+		func() (*messaging.Consumer, error) {
+			return messaging.NewConsumer(
+				rabbitMQConfig.URL,
+				messages.OrchestratorRepliesQueue,
+				replyHandler.Handle,
+				messaging.WithMaxAttempts(rabbitMQConfig.ConsumerMaxAttempts),
+			)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("set up order reply consumer pool: %w", err)
 	}
 
 	mux := http.NewServeMux()
@@ -106,14 +144,22 @@ func run() error {
 		syscall.SIGTERM,
 	)
 	var backgroundWorkers sync.WaitGroup
-	backgroundWorkers.Add(2)
+	backgroundWorkers.Add(4)
 	go func() {
 		defer backgroundWorkers.Done()
 		relay.Run(shutdownSignal)
 	}()
 	go func() {
 		defer backgroundWorkers.Done()
-		replyConsumer.Run(shutdownSignal)
+		replyConsumers.Run(shutdownSignal)
+	}()
+	go func() {
+		defer backgroundWorkers.Done()
+		sagaSweeper.Run(shutdownSignal)
+	}()
+	go func() {
+		defer backgroundWorkers.Done()
+		reservationSweeper.Run(shutdownSignal)
 	}()
 	defer func() {
 		stopSignals()

@@ -23,6 +23,19 @@ const (
 	OrchestratorRepliesQueue = "distri.orchestrator.replies"
 )
 
+// retryTiers are the delay queues behind every work queue Q: Q.retry.<name>
+// holds a message for ttl, then dead-letters it back to Q through the default
+// exchange. Consumers pick the tier by attempt number and must use these names
+// (see retry.go in each service).
+var retryTiers = []struct {
+	name string
+	ttl  time.Duration
+}{
+	{name: "5s", ttl: 5 * time.Second},
+	{name: "30s", ttl: 30 * time.Second},
+	{name: "2m", ttl: 2 * time.Minute},
+}
+
 type queueBinding struct {
 	queue      string
 	routingKey string
@@ -68,6 +81,19 @@ func DeclareTopology(channel *amqp.Channel) error {
 			nil,
 		); err != nil {
 			return fmt.Errorf("bind queue %q: %w", binding.queue, err)
+		}
+
+		for _, tier := range retryTiers {
+			retryQueue := binding.queue + ".retry." + tier.name
+			if _, err := channel.QueueDeclare(
+				retryQueue, true, false, false, false, amqp.Table{
+					"x-message-ttl":             int32(tier.ttl.Milliseconds()),
+					"x-dead-letter-exchange":    "",
+					"x-dead-letter-routing-key": binding.queue,
+				},
+			); err != nil {
+				return fmt.Errorf("declare retry queue %q: %w", retryQueue, err)
+			}
 		}
 	}
 

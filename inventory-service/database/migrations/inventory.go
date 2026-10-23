@@ -11,5 +11,7 @@ func MigrateInventory(db *gorm.DB) error {
 		&models.Inventory{},
 		&models.Reservation{},
 		&models.ReservationItem{},
+		&models.Outbox{},
+		&models.ProcessedMessage{},
 	)
 }

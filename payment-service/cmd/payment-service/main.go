@@ -110,22 +110,34 @@ func run(roleValue string) error {
 		}()
 
 		paymentHandler := services.NewPaymentInitiateHandler(applicationConfig.DB)
-		for range rabbitMQConfig.ConsumerConcurrency {
-			consumer, err := messaging.NewConsumer(
-				rabbitMQConfig.URL,
-				messages.PaymentCommandsQueue,
-				rabbitMQConfig.ConsumerPrefetch,
-				paymentHandler.Handle,
-			)
-			if err != nil {
-				return fmt.Errorf("set up payment command consumer: %w", err)
-			}
-			workerWaitGroup.Add(1)
-			go func() {
-				defer workerWaitGroup.Done()
-				consumer.Run(shutdownContext)
-			}()
+		pool, err := messaging.NewPool(
+			messaging.PoolConfig{
+				URL:            rabbitMQConfig.URL,
+				Queue:          messages.PaymentCommandsQueue,
+				Min:            rabbitMQConfig.ConsumerConcurrency,
+				Max:            rabbitMQConfig.ConsumerPool.MaxConcurrency,
+				Interval:       rabbitMQConfig.ConsumerPool.ScaleInterval,
+				DepthPerWorker: rabbitMQConfig.ConsumerPool.DepthPerWorker,
+				ScaleDownAfter: rabbitMQConfig.ConsumerPool.ScaleDownAfter,
+			},
+			func() (*messaging.Consumer, error) {
+				return messaging.NewConsumer(
+					rabbitMQConfig.URL,
+					messages.PaymentCommandsQueue,
+					rabbitMQConfig.ConsumerPrefetch,
+					paymentHandler.Handle,
+					messaging.WithMaxAttempts(rabbitMQConfig.ConsumerMaxAttempts),
+				)
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("set up payment command consumer pool: %w", err)
 		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			pool.Run(shutdownContext)
+		}()
 
 		processor := services.NewPaymentJobHandler(
 			applicationConfig.DB,
@@ -144,6 +156,20 @@ func run(roleValue string) error {
 		go func() {
 			defer workerWaitGroup.Done()
 			worker.Run(shutdownContext)
+		}()
+
+		resolverConfig, err := config.LoadResolverConfig()
+		if err != nil {
+			return fmt.Errorf("load payment resolver configuration: %w", err)
+		}
+		resolver, err := services.NewPaymentResolver(applicationConfig.DB, resolverConfig.Interval)
+		if err != nil {
+			return fmt.Errorf("set up payment resolver: %w", err)
+		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			resolver.Run(shutdownContext)
 		}()
 	}
 

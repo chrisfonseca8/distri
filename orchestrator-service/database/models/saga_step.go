@@ -3,6 +3,8 @@ package models
 import (
 	"time"
 	"uuid"
+
+	"gorm.io/datatypes"
 )
 
 type SagaStep struct {
@@ -14,8 +16,12 @@ type SagaStep struct {
 	Attempts      int        `gorm:"not null;default:0;check:chk_saga_steps_attempts_nonnegative,attempts >= 0"`
 	NextAttemptAt *time.Time `gorm:"type:timestamptz;column:next_attempt_at"`
 	LastError     *string    `gorm:"type:text"`
-	StartedAt     *time.Time `gorm:"type:timestamptz"`
-	FinishedAt    *time.Time `gorm:"type:timestamptz"`
-	CreatedAt     time.Time  `gorm:"type:timestamptz;not null;autoCreateTime"`
-	UpdatedAt     time.Time  `gorm:"type:timestamptz;not null;autoUpdateTime"`
+	// RoutingKey and CommandPayload are the exact command the sweeper resends.
+	// Both stay NULL for steps that send no command (RESERVE_STOCK).
+	RoutingKey     *string        `gorm:"type:text"`
+	CommandPayload datatypes.JSON `gorm:"type:jsonb"`
+	StartedAt      *time.Time     `gorm:"type:timestamptz"`
+	FinishedAt     *time.Time     `gorm:"type:timestamptz"`
+	CreatedAt      time.Time      `gorm:"type:timestamptz;not null;autoCreateTime"`
+	UpdatedAt      time.Time      `gorm:"type:timestamptz;not null;autoUpdateTime"`
 }

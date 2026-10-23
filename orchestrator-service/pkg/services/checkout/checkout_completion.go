@@ -49,6 +49,7 @@ func (s *CheckoutService) createSagaFromReservation(
 
 	now := time.Now().UTC()
 	nextAttemptAt := now.Add(s.stepTimeout)
+	orderCreateRoutingKey := messages.OrderCreateRoutingKey
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		sagaRow := models.Saga{
 			ID:          *attempt.OrderID,
@@ -78,12 +79,14 @@ func (s *CheckoutService) createSagaFromReservation(
 		}
 
 		createOrderStep := models.SagaStep{
-			SagaID:        *attempt.OrderID,
-			Step:          string(saga.CREATE_ORDER),
-			Status:        "RUNNING",
-			Attempts:      1,
-			NextAttemptAt: &nextAttemptAt,
-			StartedAt:     &now,
+			SagaID:         *attempt.OrderID,
+			Step:           string(saga.CREATE_ORDER),
+			Status:         "RUNNING",
+			Attempts:       1,
+			NextAttemptAt:  &nextAttemptAt,
+			StartedAt:      &now,
+			RoutingKey:     &orderCreateRoutingKey,
+			CommandPayload: datatypes.JSON(commandBody),
 		}
 		if err := tx.Table("orchestrator.saga_steps").
 			Omit(clause.Associations).

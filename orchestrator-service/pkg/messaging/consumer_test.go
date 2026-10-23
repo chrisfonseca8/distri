@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -66,19 +65,20 @@ func TestConsumerDeadLettersPermanentFailure(t *testing.T) {
 	}
 }
 
-func TestConsumerRequeuesTransientFailure(t *testing.T) {
+func TestConsumerRequeuesTransientFailureWhenRetryRepublishFails(t *testing.T) {
 	acknowledger := &fakeAcknowledger{}
 	consumer := &Consumer{
-		queue:                 "test",
-		transientRequeueDelay: time.Millisecond,
+		queue: "test",
 		handler: func(context.Context, Delivery) error {
 			return Transient(errors.New("database unavailable"))
 		},
 	}
 	delivery := amqp.Delivery{Acknowledger: acknowledger, DeliveryTag: 1}
 
-	if err := consumer.handleDelivery(context.Background(), delivery); err != nil {
-		t.Fatalf("handle delivery: %v", err)
+	// No retry publisher is connected, so the republish fails: the original is
+	// requeued and the error ends the connection.
+	if err := consumer.handleDelivery(context.Background(), delivery); err == nil {
+		t.Fatal("handle delivery hid the retry republish failure")
 	}
 	if acknowledger.acked != 0 || acknowledger.nacked != 1 || !acknowledger.nackRequeued {
 		t.Fatalf(

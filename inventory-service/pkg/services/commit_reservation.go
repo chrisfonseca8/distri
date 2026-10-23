@@ -14,6 +14,7 @@ import (
 var (
 	ErrReservationNotFound      = errors.New("reservation not found")
 	ErrReservationStateConflict = errors.New("reservation status conflict")
+	errStockInvariant           = errors.New("reserved stock invariant failed")
 )
 
 type ChangeReservationResult struct {
@@ -55,28 +56,45 @@ func (s *ReservationService) changeReservationStatus(
 
 	var result ChangeReservationResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		reservation, changed, err := transitionReservedReservation(tx, orderID, targetStatus)
-		if err != nil {
-			return err
-		}
-
-		result = ChangeReservationResult{
-			ReservationID: reservation.ID,
-			OrderID:       reservation.OrderID,
-			Status:        reservation.Status,
-		}
-		if !changed {
-			return nil
-		}
-
-		items, err := loadReservationItems(tx, reservation.ID)
-		if err != nil {
-			return err
-		}
-		return moveReservedStock(tx, items, movement)
+		var err error
+		result, err = changeReservationStatusTx(tx, orderID, targetStatus, movement)
+		return err
 	})
 
 	return result, err
+}
+
+// changeReservationStatusTx runs the guarded status change and the matching
+// stock movement inside the caller's transaction, so the AMQP handler can add
+// its processed-message and reply-outbox rows to the same commit.
+func changeReservationStatusTx(
+	tx *gorm.DB,
+	orderID uuid.UUID,
+	targetStatus string,
+	movement stockMovement,
+) (ChangeReservationResult, error) {
+	reservation, changed, err := transitionReservedReservation(tx, orderID, targetStatus)
+	if err != nil {
+		return ChangeReservationResult{}, err
+	}
+
+	result := ChangeReservationResult{
+		ReservationID: reservation.ID,
+		OrderID:       reservation.OrderID,
+		Status:        reservation.Status,
+	}
+	if !changed {
+		return result, nil
+	}
+
+	items, err := loadReservationItems(tx, reservation.ID)
+	if err != nil {
+		return ChangeReservationResult{}, err
+	}
+	if err := moveReservedStock(tx, items, movement); err != nil {
+		return ChangeReservationResult{}, err
+	}
+	return result, nil
 }
 
 func transitionReservedReservation(
@@ -159,9 +177,10 @@ func moveReservedStock(
 		}
 		if update.RowsAffected != 1 {
 			return fmt.Errorf(
-				"%s stock for product %s: reserved stock invariant failed",
+				"%s stock for product %s: %w",
 				movement,
 				item.ProductID,
+				errStockInvariant,
 			)
 		}
 	}

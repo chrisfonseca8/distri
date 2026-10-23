@@ -117,21 +117,33 @@ func run(roleValue string) error {
 		}()
 
 		orderCommandHandler := services.NewOrderCommandHandler(applicationConfig.DB)
-		for range rabbitMQConfig.ConsumerConcurrency {
-			orderCreateConsumer, err := messaging.NewConsumer(
-				rabbitMQConfig.URL,
-				messages.OrderCommandsQueue,
-				orderCommandHandler.Handle,
-			)
-			if err != nil {
-				return fmt.Errorf("set up order.create consumer: %w", err)
-			}
-			workerWaitGroup.Add(1)
-			go func() {
-				defer workerWaitGroup.Done()
-				orderCreateConsumer.Run(shutdownContext)
-			}()
+		pool, err := messaging.NewPool(
+			messaging.PoolConfig{
+				URL:            rabbitMQConfig.URL,
+				Queue:          messages.OrderCommandsQueue,
+				Min:            rabbitMQConfig.ConsumerConcurrency,
+				Max:            rabbitMQConfig.ConsumerPool.MaxConcurrency,
+				Interval:       rabbitMQConfig.ConsumerPool.ScaleInterval,
+				DepthPerWorker: rabbitMQConfig.ConsumerPool.DepthPerWorker,
+				ScaleDownAfter: rabbitMQConfig.ConsumerPool.ScaleDownAfter,
+			},
+			func() (*messaging.Consumer, error) {
+				return messaging.NewConsumer(
+					rabbitMQConfig.URL,
+					messages.OrderCommandsQueue,
+					orderCommandHandler.Handle,
+					messaging.WithMaxAttempts(rabbitMQConfig.ConsumerMaxAttempts),
+				)
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("set up order command consumer pool: %w", err)
 		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			pool.Run(shutdownContext)
+		}()
 
 		worker, err := jobs.NewWorker(
 			jobs.NewStore(applicationConfig.DB),
@@ -147,19 +159,23 @@ func run(roleValue string) error {
 			worker.Run(shutdownContext)
 		}()
 
-		reservationSweeper, err := sweeper.NewReservationSweeper(
-			inventoryClient,
-			orderService,
-			applicationConfig.Sweeper,
-		)
-		if err != nil {
-			return fmt.Errorf("set up reservation sweeper: %w", err)
+		if applicationConfig.Sweeper.Enabled {
+			reservationSweeper, err := sweeper.NewReservationSweeper(
+				inventoryClient,
+				orderService,
+				applicationConfig.Sweeper,
+			)
+			if err != nil {
+				return fmt.Errorf("set up reservation sweeper: %w", err)
+			}
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				reservationSweeper.Run(shutdownContext)
+			}()
+		} else {
+			slog.Info("order-service reservation sweeper disabled")
 		}
-		workerWaitGroup.Add(1)
-		go func() {
-			defer workerWaitGroup.Done()
-			reservationSweeper.Run(shutdownContext)
-		}()
 	}
 
 	if role == roleWorker {

@@ -108,24 +108,42 @@ func (h *PaymentJobHandler) writeResult(
 	defer cancelWrite()
 
 	return h.db.WithContext(writeContext).Transaction(func(tx *gorm.DB) error {
-		result := tx.Table("payments.payment_attempts").
-			Where("id = ? AND status = ?", paymentID, "PENDING").
-			Updates(updates)
-		if result.Error != nil {
-			return fmt.Errorf("persist payment gateway result: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
-
-		var payment models.PaymentAttempt
-		if err := tx.Table("payments.payment_attempts").
-			Where("id = ?", paymentID).
-			Take(&payment).Error; err != nil {
-			return fmt.Errorf("load payment result for reply: %w", err)
-		}
-		return enqueuePaymentReply(tx, payment)
+		_, err := writePaymentResult(tx, paymentID, "PENDING", updates)
+		return err
 	})
+}
+
+// writePaymentResult is the single place that records a payment's result: the
+// guarded status update and its reply.payment outbox row, in the caller's
+// transaction. It reports whether this call changed the payment; a payment that
+// is no longer in the from status was resolved by someone else and gets no
+// second reply.
+func writePaymentResult(
+	tx *gorm.DB,
+	paymentID uuid.UUID,
+	from string,
+	updates map[string]any,
+) (bool, error) {
+	result := tx.Table("payments.payment_attempts").
+		Where("id = ? AND status = ?", paymentID, from).
+		Updates(updates)
+	if result.Error != nil {
+		return false, fmt.Errorf("persist payment result: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+
+	var payment models.PaymentAttempt
+	if err := tx.Table("payments.payment_attempts").
+		Where("id = ?", paymentID).
+		Take(&payment).Error; err != nil {
+		return false, fmt.Errorf("load payment result for reply: %w", err)
+	}
+	if err := enqueuePaymentReply(tx, payment); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (h *PaymentJobHandler) loadPayment(

@@ -9,12 +9,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/config"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/health"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/messages"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/services"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/telemetry"
@@ -41,6 +45,80 @@ func run() error {
 	}
 	defer sqlDB.Close()
 
+	shutdownSignal, stopSignals := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stopSignals()
+
+	// Deferred last-in-first-out: cancel the workers, wait for the consumers
+	// and relay to finish, then close the publisher they used.
+	workerContext, cancelWorkers := context.WithCancel(shutdownSignal)
+	var workerWaitGroup sync.WaitGroup
+	var outboxPublisher *messaging.Publisher
+	defer func() {
+		cancelWorkers()
+		workerWaitGroup.Wait()
+		if outboxPublisher != nil {
+			if err := outboxPublisher.Close(); err != nil {
+				slog.Error("close outbox publisher", "error", err)
+			}
+		}
+	}()
+
+	rabbitMQConfig, err := config.LoadRabbitMQConfig()
+	if err != nil {
+		return fmt.Errorf("load RabbitMQ configuration: %w", err)
+	}
+	outboxPublisher, err = messaging.NewPublisher(rabbitMQConfig.URL)
+	if err != nil {
+		return fmt.Errorf("set up outbox publisher: %w", err)
+	}
+	relay, err := outbox.NewRelay(
+		outbox.NewStore(applicationConfig.DB),
+		outboxPublisher,
+		outbox.DefaultRelayConfig(),
+	)
+	if err != nil {
+		return fmt.Errorf("set up outbox relay: %w", err)
+	}
+	workerWaitGroup.Add(1)
+	go func() {
+		defer workerWaitGroup.Done()
+		relay.Run(workerContext)
+	}()
+
+	inventoryHandler := services.NewInventoryCommandHandler(applicationConfig.DB)
+	pool, err := messaging.NewPool(
+		messaging.PoolConfig{
+			URL:            rabbitMQConfig.URL,
+			Queue:          messages.InventoryCommandsQueue,
+			Min:            rabbitMQConfig.ConsumerConcurrency,
+			Max:            rabbitMQConfig.ConsumerPool.MaxConcurrency,
+			Interval:       rabbitMQConfig.ConsumerPool.ScaleInterval,
+			DepthPerWorker: rabbitMQConfig.ConsumerPool.DepthPerWorker,
+			ScaleDownAfter: rabbitMQConfig.ConsumerPool.ScaleDownAfter,
+		},
+		func() (*messaging.Consumer, error) {
+			return messaging.NewConsumer(
+				rabbitMQConfig.URL,
+				messages.InventoryCommandsQueue,
+				rabbitMQConfig.ConsumerPrefetch,
+				inventoryHandler.Handle,
+				messaging.WithMaxAttempts(rabbitMQConfig.ConsumerMaxAttempts),
+			)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("set up inventory command consumer pool: %w", err)
+	}
+	workerWaitGroup.Add(1)
+	go func() {
+		defer workerWaitGroup.Done()
+		pool.Run(workerContext)
+	}()
+
 	mux := http.NewServeMux()
 	productService := services.NewProductService(applicationConfig.DB)
 	productController := controllers.NewProductController(productService)
@@ -66,13 +144,6 @@ func run() error {
 		return fmt.Errorf("listen on %s: %w", server.Addr, err)
 	}
 	defer listener.Close()
-
-	shutdownSignal, stopSignals := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stopSignals()
 
 	serverErrors := make(chan error, 1)
 	go func() {

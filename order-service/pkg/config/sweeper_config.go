@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -13,6 +15,8 @@ const (
 )
 
 type SweeperConfig struct {
+	// Enabled is false when the orchestrator runs the reservation sweeper.
+	Enabled        bool
 	ReservationTTL time.Duration
 	Interval       time.Duration
 	BatchSize      int
@@ -36,7 +40,15 @@ func LoadSweeperConfig() (SweeperConfig, error) {
 		return SweeperConfig{}, err
 	}
 
-	result := SweeperConfig{ReservationTTL: ttl, Interval: interval, BatchSize: batchSize}
+	enabled := true
+	if value := os.Getenv("RESERVATION_SWEEP_ENABLED"); value != "" {
+		enabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return SweeperConfig{}, fmt.Errorf("RESERVATION_SWEEP_ENABLED must be a boolean: %w", err)
+		}
+	}
+
+	result := SweeperConfig{Enabled: enabled, ReservationTTL: ttl, Interval: interval, BatchSize: batchSize}
 	if err := result.Validate(); err != nil {
 		return SweeperConfig{}, err
 	}

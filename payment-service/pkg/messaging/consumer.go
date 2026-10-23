@@ -12,7 +12,6 @@ import (
 )
 
 const (
-	transientRequeueDelay = 500 * time.Millisecond
 	reconnectInitialDelay = time.Second
 	reconnectMaximumDelay = 30 * time.Second
 )
@@ -54,12 +53,13 @@ type Consumer struct {
 	queue                 string
 	handler               Handler
 	prefetch              int
-	transientRequeueDelay time.Duration
+	maxAttempts           int
+	retry                 *retryPublisher
 	reconnectInitialDelay time.Duration
 	reconnectMaximumDelay time.Duration
 }
 
-func NewConsumer(url string, queue string, prefetch int, handler Handler) (*Consumer, error) {
+func NewConsumer(url string, queue string, prefetch int, handler Handler, options ...ConsumerOption) (*Consumer, error) {
 	if strings.TrimSpace(url) == "" {
 		return nil, errors.New("RabbitMQ URL is required")
 	}
@@ -72,25 +72,35 @@ func NewConsumer(url string, queue string, prefetch int, handler Handler) (*Cons
 	if prefetch <= 0 {
 		return nil, errors.New("RabbitMQ consumer prefetch must be greater than zero")
 	}
-	return &Consumer{
+	consumer := &Consumer{
 		url:                   url,
 		queue:                 queue,
 		handler:               handler,
 		prefetch:              prefetch,
-		transientRequeueDelay: transientRequeueDelay,
+		maxAttempts:           DefaultMaxAttempts,
 		reconnectInitialDelay: reconnectInitialDelay,
 		reconnectMaximumDelay: reconnectMaximumDelay,
-	}, nil
+	}
+	for _, option := range options {
+		option(consumer)
+	}
+	return consumer, nil
 }
 
 func (c *Consumer) Run(ctx context.Context) {
+	c.RunUntil(ctx, nil)
+}
+
+// RunUntil is Run that also ends when stop is closed. A stop is observed only
+// between deliveries, so the delivery being handled always finishes and acks.
+func (c *Consumer) RunUntil(ctx context.Context, stop <-chan struct{}) {
 	slog.Info("RabbitMQ consumer started", "queue", c.queue)
 	defer slog.Info("RabbitMQ consumer stopped", "queue", c.queue)
 
 	reconnectDelay := c.reconnectInitialDelay
-	for ctx.Err() == nil {
-		connected, err := c.consume(ctx)
-		if ctx.Err() != nil {
+	for ctx.Err() == nil && !isStopped(stop) {
+		connected, err := c.consume(ctx, stop)
+		if ctx.Err() != nil || isStopped(stop) {
 			return
 		}
 		if err != nil {
@@ -116,7 +126,16 @@ func (c *Consumer) Run(ctx context.Context) {
 	}
 }
 
-func (c *Consumer) consume(ctx context.Context) (bool, error) {
+func isStopped(stop <-chan struct{}) bool {
+	select {
+	case <-stop:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Consumer) consume(ctx context.Context, stop <-chan struct{}) (bool, error) {
 	connection, err := amqp.Dial(c.url)
 	if err != nil {
 		return false, fmt.Errorf("connect RabbitMQ consumer: %w", err)
@@ -128,6 +147,14 @@ func (c *Consumer) consume(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("open RabbitMQ consumer channel: %w", err)
 	}
 	defer channel.Close()
+
+	retry, err := newRetryPublisher(connection)
+	if err != nil {
+		return false, err
+	}
+	defer retry.close()
+	c.retry = retry
+	defer func() { c.retry = nil }()
 
 	if err := channel.Qos(c.prefetch, 0, false); err != nil {
 		return false, fmt.Errorf("configure RabbitMQ consumer qos: %w", err)
@@ -150,6 +177,8 @@ func (c *Consumer) consume(ctx context.Context) (bool, error) {
 		select {
 		case <-ctx.Done():
 			return true, nil
+		case <-stop:
+			return true, nil
 		case delivery, open := <-deliveries:
 			if !open {
 				return true, errors.New("RabbitMQ delivery channel closed")
@@ -162,6 +191,7 @@ func (c *Consumer) consume(ctx context.Context) (bool, error) {
 }
 
 func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error {
+	delivery = withOriginalRoutingKey(delivery)
 	err := c.handler(ctx, delivery)
 	if err == nil {
 		if ackErr := delivery.Ack(false); ackErr != nil {
@@ -184,24 +214,55 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error 
 		return nil
 	}
 
-	if !waitForConsumer(ctx, c.transientRequeueDelay) {
-		if nackErr := delivery.Nack(false, true); nackErr != nil {
-			return fmt.Errorf("requeue RabbitMQ delivery during shutdown: %w", nackErr)
-		}
-		return nil
-	}
+	attempt := deliveryAttempt(delivery) + 1
 	slog.Warn(
 		"transient RabbitMQ delivery failure",
 		"queue", c.queue,
 		"message_id", delivery.MessageId,
+		"attempt", attempt,
+		"max_attempts", c.attemptLimit(),
 		"error", err,
 	)
-	// TODO(OR8): replace unbounded immediate requeues with retry queues and an
-	// attempt limit before dead-lettering.
-	if nackErr := delivery.Nack(false, true); nackErr != nil {
-		return fmt.Errorf("nack transient RabbitMQ delivery: %w", nackErr)
+	if attempt >= c.attemptLimit() {
+		slog.Error(
+			"RabbitMQ delivery exhausted its attempts; dead-lettering",
+			"queue", c.queue,
+			"message_id", delivery.MessageId,
+			"attempts", attempt,
+		)
+		if nackErr := delivery.Nack(false, false); nackErr != nil {
+			return fmt.Errorf("dead-letter exhausted RabbitMQ delivery: %w", nackErr)
+		}
+		return nil
+	}
+
+	// Ack the original only after the broker confirmed the delayed copy. If
+	// the republish fails the original is requeued (at-least-once) and the
+	// error ends this connection so the reconnect backoff paces the retries.
+	if retryErr := c.republish(ctx, delivery, attempt, err); retryErr != nil {
+		if nackErr := delivery.Nack(false, true); nackErr != nil {
+			return fmt.Errorf("requeue RabbitMQ delivery: %w", nackErr)
+		}
+		return retryErr
+	}
+	if ackErr := delivery.Ack(false); ackErr != nil {
+		return fmt.Errorf("ack retried RabbitMQ delivery: %w", ackErr)
 	}
 	return nil
+}
+
+func (c *Consumer) attemptLimit() int {
+	if c.maxAttempts <= 0 {
+		return DefaultMaxAttempts
+	}
+	return c.maxAttempts
+}
+
+func (c *Consumer) republish(ctx context.Context, delivery Delivery, attempt int, cause error) error {
+	if c.retry == nil {
+		return errors.New("RabbitMQ retry publisher is not connected")
+	}
+	return c.retry.publish(ctx, delivery, c.queue, attempt, cause)
 }
 
 func waitForConsumer(ctx context.Context, delay time.Duration) bool {

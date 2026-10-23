@@ -99,7 +99,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up reservation sweeper: %w", err)
 	}
-	replyHandler := reply.NewHandler(applicationConfig.DB, sagaConfig.StepTimeout)
+	replyHandler := reply.NewHandler(
+		applicationConfig.DB,
+		sagaConfig.StepTimeout,
+		reply.WithSagaDeadline(sagaConfig.Deadline),
+	)
 	replyConsumers, err := messaging.NewPool(
 		messaging.PoolConfig{
 			URL:            rabbitMQConfig.URL,

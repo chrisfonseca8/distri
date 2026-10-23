@@ -73,12 +73,27 @@ func marshalCommand(payload any) (json.RawMessage, error) {
 }
 
 type Handler struct {
-	db          *gorm.DB
-	stepTimeout time.Duration
+	db           *gorm.DB
+	stepTimeout  time.Duration
+	sagaDeadline time.Duration
 }
 
-func NewHandler(db *gorm.DB, stepTimeout time.Duration) *Handler {
-	return &Handler{db: db, stepTimeout: stepTimeout}
+// HandlerOption customises a Handler.
+type HandlerOption func(*Handler)
+
+// WithSagaDeadline gives a saga revived from STUCK by a late reply a fresh
+// deadline of now+deadline. Without it the old deadline has usually passed and
+// the sweeper would mark the saga STUCK again on its next pass.
+func WithSagaDeadline(deadline time.Duration) HandlerOption {
+	return func(h *Handler) { h.sagaDeadline = deadline }
+}
+
+func NewHandler(db *gorm.DB, stepTimeout time.Duration, options ...HandlerOption) *Handler {
+	handler := &Handler{db: db, stepTimeout: stepTimeout}
+	for _, option := range options {
+		option(handler)
+	}
+	return handler
 }
 
 func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error {
@@ -163,14 +178,20 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		if decision.NextStep == "" || decision.SagaStatus == saga.SagaStuck {
 			nextCurrentStep = sagaRow.CurrentStep
 		}
+		sagaUpdates := map[string]any{
+			"current_step": nextCurrentStep,
+			"status":       string(decision.SagaStatus),
+			"version":      sagaRow.Version + 1,
+			"updated_at":   now,
+		}
+		revived := sagaRow.Status == string(saga.SagaStuck) &&
+			(decision.SagaStatus == saga.SagaRunning || decision.SagaStatus == saga.SagaCompensating)
+		if revived && h.sagaDeadline > 0 {
+			sagaUpdates["deadline_at"] = now.Add(h.sagaDeadline)
+		}
 		updateSaga := tx.Table("orchestrator.sagas").
 			Where("id = ? AND version = ?", sagaRow.ID, sagaRow.Version).
-			Updates(map[string]any{
-				"current_step": nextCurrentStep,
-				"status":       string(decision.SagaStatus),
-				"version":      sagaRow.Version + 1,
-				"updated_at":   now,
-			})
+			Updates(sagaUpdates)
 		if updateSaga.Error != nil {
 			return fmt.Errorf("advance saga: %w", updateSaga.Error)
 		}

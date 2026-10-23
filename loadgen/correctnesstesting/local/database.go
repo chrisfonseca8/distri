@@ -51,14 +51,19 @@ func (p *phaseContext) setStock(productID string, onHand int64) {
 	}
 }
 
+// waitForActionableJobs waits until no payment job, outbox row or saga (other
+// than one parked on an ambiguous payment) still has work to do.
 func (p *phaseContext) waitForActionableJobs(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for {
-		remaining := p.scalar(`SELECT count(*)
-			FROM orders.jobs j
-			LEFT JOIN payments.payment_attempts payment ON payment.order_id=j.order_id
-			WHERE j.status IN ('queued','running')
-				AND COALESCE(payment.status, '') <> 'UNKNOWN'`)
+		remaining := p.scalar(`SELECT
+			(SELECT count(*) FROM payments.jobs WHERE status IN ('queued','running'))
+			+ (SELECT count(*) FROM orchestrator.outbox WHERE published_at IS NULL)
+			+ (SELECT count(*)
+				FROM orchestrator.sagas s
+				LEFT JOIN payments.payment_attempts payment ON payment.order_id=s.id
+				WHERE s.status IN ('RUNNING','COMPENSATING')
+					AND COALESCE(payment.status, '') <> 'UNKNOWN')`)
 		if remaining == 0 {
 			return true
 		}
@@ -71,4 +76,20 @@ func (p *phaseContext) waitForActionableJobs(timeout time.Duration) bool {
 
 func item(productID string, quantity int64) map[string]any {
 	return map[string]any{"product_id": productID, "quantity": quantity}
+}
+
+// waitStepAttempts waits until the saga has sent a step's command at least
+// atLeast times, which proves the sweeper resent it.
+func (p *phaseContext) waitStepAttempts(orderID, step string, atLeast int64, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		attempts := p.scalar(`SELECT COALESCE(max(attempts), 0) FROM orchestrator.saga_steps WHERE saga_id=$1 AND step=$2`, orderID, step)
+		if attempts >= atLeast {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }

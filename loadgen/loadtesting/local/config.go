@@ -10,31 +10,32 @@ import (
 )
 
 type config struct {
-	CaseName       string
-	OrderURL       string
-	InventoryURL   string
-	PaymentURL     string
-	DatabaseURL    string
-	ResultsDir     string
-	GatewayMode    string
-	GatewayLatency time.Duration
-	Warmup         time.Duration
-	Duration       time.Duration
-	OfferedRate    float64
-	Workload       string
-	HotStock       int64
-	Clients        int
-	Runs           int
-	ExactOrders    int
-	DrainTimeout   time.Duration
-	SampleEvery    time.Duration
-	Behavior       string
-	DBPoolSize     int
-	DBIdleSize     int
-	ClientSteps    []int
-	RateSteps      []float64
-	Environment    string
-	MaxConns       int
+	CaseName        string
+	OrderURL        string
+	OrchestratorURL string
+	InventoryURL    string
+	PaymentURL      string
+	DatabaseURL     string
+	ResultsDir      string
+	GatewayMode     string
+	GatewayLatency  time.Duration
+	Warmup          time.Duration
+	Duration        time.Duration
+	OfferedRate     float64
+	Workload        string
+	HotStock        int64
+	Clients         int
+	Runs            int
+	ExactOrders     int
+	DrainTimeout    time.Duration
+	SampleEvery     time.Duration
+	Behavior        string
+	DBPoolSize      int
+	DBIdleSize      int
+	ClientSteps     []int
+	RateSteps       []float64
+	Environment     string
+	MaxConns        int
 }
 
 // closedLoopClientOverride lists the cases whose client count LOAD_CLIENTS may change.
@@ -70,7 +71,7 @@ func checkDatabaseTarget(databaseURL, allowedHost string) error {
 
 func loadConfig() (config, error) {
 	c := config{
-		CaseName: strings.ToUpper(env("LOAD_CASE", "C1")), OrderURL: strings.TrimRight(env("ORDER_URL", "http://127.0.0.1:8080"), "/"),
+		CaseName: strings.ToUpper(env("LOAD_CASE", "C1")), OrderURL: strings.TrimRight(env("ORDER_URL", "http://127.0.0.1:8080"), "/"), OrchestratorURL: strings.TrimRight(env("ORCHESTRATOR_URL", "http://127.0.0.1:8083"), "/"),
 		InventoryURL: strings.TrimRight(env("INVENTORY_URL", "http://127.0.0.1:8081"), "/"), PaymentURL: strings.TrimRight(env("PAYMENT_URL", "http://127.0.0.1:8082"), "/"),
 		DatabaseURL: os.Getenv("DATABASE_URL"), ResultsDir: env("RESULTS_DIR", "test-results/load-test"),
 		GatewayMode: env("GATEWAY_MODE", "success"), DrainTimeout: 15 * time.Second, SampleEvery: 500 * time.Millisecond, Workload: "uniform",
@@ -103,8 +104,6 @@ func loadConfig() (config, error) {
 		c.Clients, c.Runs, c.Duration, c.Warmup, c.Workload = 50, 1, 60*time.Second, 10*time.Second, "multi-item"
 	case "C9":
 		c.Clients, c.Runs, c.Duration, c.Warmup, c.Behavior = 50, 1, 60*time.Second, 10*time.Second, "duplicate-checkout"
-	case "C10":
-		c.Clients, c.Runs, c.Duration, c.Warmup, c.Behavior = 50, 1, 60*time.Second, 10*time.Second, "duplicate-pay"
 	case "C11":
 		c.Clients, c.Runs, c.Duration, c.Warmup = 50, 1, 60*time.Second, 10*time.Second
 	case "C12":

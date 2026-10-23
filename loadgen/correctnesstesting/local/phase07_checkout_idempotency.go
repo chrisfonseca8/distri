@@ -10,14 +10,14 @@ func phase07() phaseDefinition {
 		firstStatus, first, _ := p.checkout(key, []map[string]any{item(product, 1)})
 		secondStatus, second, _ := p.checkout(key, []map[string]any{item(product, 1)})
 		conflictStatus, _, _ := p.checkout(key, []map[string]any{item(product, 2)})
-		p.check("sequential retry replays order", firstStatus == 201 && secondStatus == 200 && first.OrderID == second.OrderID, "one stable order ID")
+		p.check("sequential retry replays the stored response", firstStatus == 202 && secondStatus == 202 && first.OrderID == second.OrderID, "one stable order ID")
 		p.check("key reuse with different body is rejected", conflictStatus == 422, statusDetail(conflictStatus, nil))
 
 		left, right := p.productID(10), p.productID(11)
 		canonicalKey := "phase07-canonical-" + newUUID()
 		_, canonical1, _ := p.checkout(canonicalKey, []map[string]any{item(left, 1), item(right, 1)})
 		canonicalStatus, canonical2, _ := p.checkout(canonicalKey, []map[string]any{item(right, 1), item(left, 1)})
-		p.check("item order is canonicalized", canonicalStatus == 200 && canonical1.OrderID == canonical2.OrderID, "reordered cart is same request")
+		p.check("item order is canonicalized", canonicalStatus == 202 && canonical1.OrderID == canonical2.OrderID, "reordered cart is same request")
 
 		concurrentProduct := p.productID(12)
 		before := p.inventory(concurrentProduct)
@@ -31,20 +31,17 @@ func phase07() phaseDefinition {
 			go func(i int) { defer wg.Done(); statuses[i], ids[i], _ = checkoutID(p, concurrentKey, concurrentProduct) }(i)
 		}
 		wg.Wait()
-		created, replayed, same := 0, 0, true
+		accepted, same := 0, true
 		for i, status := range statuses {
-			if status == 201 {
-				created++
-			}
-			if status == 200 {
-				replayed++
+			if status == 202 {
+				accepted++
 			}
 			if ids[i] != ids[0] {
 				same = false
 			}
 		}
 		after := p.inventory(concurrentProduct)
-		p.check("concurrent retries have one creator", created == 1 && replayed == workers-1 && same, "expected one 201, remaining 200, one order ID")
+		p.check("concurrent retries share one saga", accepted == workers && same, "every retry returns 202 with the same order ID")
 		p.check("concurrent retries reserve once", after.Reserved-before.Reserved == 1, "reserved delta must equal 1")
 	}}
 }

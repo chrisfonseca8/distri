@@ -52,7 +52,7 @@ func (p *phaseContext) request(method, url string, body any, headers map[string]
 
 func (p *phaseContext) checkout(key string, items []map[string]any) (int, checkoutResult, error) {
 	var result checkoutResult
-	status, _, err := p.request(http.MethodPost, p.suite.orderURL+"/v1/checkouts",
+	status, _, err := p.request(http.MethodPost, p.suite.orchestratorURL+"/v1/checkouts",
 		map[string]any{"items": items}, map[string]string{"Idempotency-Key": key}, &result)
 	return status, result, err
 }
@@ -63,10 +63,36 @@ func (p *phaseContext) getOrder(id string) (int, orderResult, error) {
 	return status, result, err
 }
 
-func (p *phaseContext) payOrder(id string) (int, orderResult, error) {
-	var result orderResult
-	status, _, err := p.request(http.MethodPost, p.suite.orderURL+"/v1/orders/"+id+"/pay", nil, nil, &result)
-	return status, result, err
+// awaitOrder polls the order read model until the saga drives the order to PAID
+// or CANCELLED. If that does not happen within the timeout it returns the last
+// observed order, so a still-pending order is a valid result (for example after
+// an ambiguous payment).
+func (p *phaseContext) awaitOrder(id string, timeout time.Duration) (int, orderResult, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		status, order, err := p.getOrder(id)
+		terminal := order.Status == "PAID" || order.Status == "CANCELLED"
+		if err == nil && status == 200 && terminal {
+			return status, order, err
+		}
+		if time.Now().After(deadline) {
+			return status, order, err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// waitScalar polls a count query until it equals want or the timeout passes,
+// and returns the last value. Orders appear asynchronously after a 202.
+func (p *phaseContext) waitScalar(timeout time.Duration, want int64, query string, args ...any) int64 {
+	deadline := time.Now().Add(timeout)
+	for {
+		value := p.scalar(query, args...)
+		if value == want || time.Now().After(deadline) {
+			return value
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (p *phaseContext) reserve(orderID, hash string, items []map[string]any) (int, reservationResult, error) {

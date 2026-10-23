@@ -9,8 +9,6 @@ func MigrateOrders(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&models.Order{},
 		&models.OrderItem{},
-		&models.CheckoutAttempt{},
-		&models.Job{},
 		&models.Outbox{},
 		&models.ProcessedMessage{},
 	)

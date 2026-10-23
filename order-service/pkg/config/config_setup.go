@@ -4,25 +4,14 @@ import "gorm.io/gorm"
 
 // Config holds the service configuration assembled by Config_setup.
 type Config struct {
-	DB      *gorm.DB
-	Worker  WorkerConfig
-	Sweeper SweeperConfig
+	DB *gorm.DB
 }
 
 func Config_setup() (*Config, error) {
-	workerConfig, err := LoadWorkerConfig()
-	if err != nil {
-		return nil, err
-	}
-	sweeperConfig, err := LoadSweeperConfig()
-	if err != nil {
-		return nil, err
-	}
-
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
 	}
 
-	return &Config{DB: db, Worker: workerConfig, Sweeper: sweeperConfig}, nil
+	return &Config{DB: db}, nil
 }

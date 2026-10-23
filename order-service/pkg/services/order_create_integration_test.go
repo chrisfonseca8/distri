@@ -38,9 +38,6 @@ func TestOrderCreateHandlerTransactionAndIdempotency(t *testing.T) {
 			Delete(&models.ProcessedMessage{}).Error; err != nil {
 			t.Errorf("delete processed messages: %v", err)
 		}
-		if err := db.Table("orders.jobs").Where("order_id = ?", orderID).Delete(&models.Job{}).Error; err != nil {
-			t.Errorf("delete jobs: %v", err)
-		}
 		if err := db.Table("orders.order_items").Where("order_id = ?", orderID).Delete(&models.OrderItem{}).Error; err != nil {
 			t.Errorf("delete order items: %v", err)
 		}
@@ -100,14 +97,6 @@ func TestOrderCreateHandlerTransactionAndIdempotency(t *testing.T) {
 	}
 	if reply.OrderID != orderID || reply.Step != messages.CREATE_ORDER || reply.Outcome != messages.Succeeded {
 		t.Fatalf("reply = %+v", reply)
-	}
-
-	var jobCount int64
-	if err := db.Table("orders.jobs").Where("order_id = ?", orderID).Count(&jobCount).Error; err != nil {
-		t.Fatalf("count jobs: %v", err)
-	}
-	if jobCount != 0 {
-		t.Fatalf("settle jobs = %d, want 0", jobCount)
 	}
 
 	if err := handler.Handle(t.Context(), firstDelivery); err != nil {

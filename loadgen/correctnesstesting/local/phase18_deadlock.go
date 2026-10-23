@@ -26,7 +26,7 @@ func phase18() phaseDefinition {
 		wg.Wait()
 		created, failures := 0, 0
 		for i, status := range statuses {
-			if status == 201 && errs[i] == nil {
+			if status == 202 && errs[i] == nil {
 				created++
 			} else {
 				failures++

@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 // Phase 14 must run in a fresh stack configured for deterministic gateway decline.
 func phase14() phaseDefinition {
 	return phaseDefinition{14, "Declined payment end to end", "Checks that a declined payment cancels the order and releases, rather than consumes, reserved inventory.", func(p *phaseContext) {
@@ -10,7 +12,9 @@ func phase14() phaseDefinition {
 		product := p.productID(16)
 		before := p.inventory(product)
 		_, checkout, _ := p.checkout("phase14-"+newUUID(), []map[string]any{item(product, 2)})
-		status, order, err := p.payOrder(checkout.OrderID)
+		status, order, err := p.awaitOrder(checkout.OrderID, 30*time.Second)
+		// The order turns terminal before the saga's last inventory step lands.
+		p.check("saga finishes its inventory step", p.waitScalar(30*time.Second, 1, "SELECT count(*) FROM orchestrator.sagas WHERE id=$1 AND status='COMPENSATED'", checkout.OrderID) == 1, "saga status COMPENSATED")
 		after := p.inventory(product)
 		p.check("decline cancels order", err == nil && status == 200 && order.Status == "CANCELLED", statusDetail(status, err))
 		p.check("payment is failed", p.text("SELECT status FROM payments.payment_attempts WHERE order_id=$1", checkout.OrderID) == "FAILED", "terminal payment")

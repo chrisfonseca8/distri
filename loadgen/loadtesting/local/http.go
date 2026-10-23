@@ -15,7 +15,8 @@ import (
 )
 
 type loadClient struct {
-	baseURL  string
+	checkoutURL string // orchestrator-service: checkout entry point and saga status
+
 	http     *http.Client
 	metrics  *collector
 	behavior string
@@ -28,6 +29,9 @@ type cartItem struct {
 type checkoutResponse struct {
 	OrderID string `json:"order_id"`
 	Status  string `json:"status"`
+}
+type sagaResponse struct {
+	Status string `json:"status"`
 }
 type orderResponse struct {
 	ID     string `json:"id"`
@@ -43,8 +47,6 @@ func (c *loadClient) workflowCart(parent context.Context, items []cartItem) {
 	switch c.behavior {
 	case "duplicate-checkout":
 		c.duplicateCheckoutWorkflow(parent, items, sequence)
-	case "duplicate-pay":
-		c.duplicatePayWorkflow(parent, items)
 	default:
 		c.standardWorkflow(parent, items)
 	}
@@ -63,23 +65,7 @@ func (c *loadClient) standardWorkflow(parent context.Context, items []cartItem) 
 		return
 	}
 	c.metrics.acceptedOne()
-	payStatus, order, payLatency, transport, decode := c.pay(ctx, checkout.OrderID)
-	c.metrics.payResult(payStatus, payLatency, transport, decode)
-	if transport != nil || decode != nil || payStatus < 200 || payStatus >= 300 {
-		return
-	}
-	if payStatus == http.StatusAccepted {
-		c.metrics.pendingOne()
-		return
-	}
-	if order.Status != "PAID" && order.Status != "CANCELLED" {
-		order = c.waitTerminal(ctx, checkout.OrderID)
-	}
-	if order.Status == "PAID" || order.Status == "CANCELLED" {
-		c.metrics.completedOne(order.Status, time.Since(started))
-	} else {
-		c.metrics.pendingOne()
-	}
+	c.finishOrder(ctx, started, checkout.OrderID)
 }
 
 type checkoutCall struct {
@@ -148,80 +134,15 @@ func (c *loadClient) finishCheckoutCalls(ctx context.Context, started time.Time,
 		return
 	}
 	c.metrics.acceptedOne()
-	c.finishPayment(ctx, started, chosen.OrderID)
+	c.finishOrder(ctx, started, chosen.OrderID)
 }
 
-func (c *loadClient) duplicatePayWorkflow(parent context.Context, items []cartItem) {
-	c.metrics.beginWorkflow()
-	defer c.metrics.endWorkflow()
-	started := time.Now()
-	c.metrics.offeredOne()
-	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
-	defer cancel()
-	status, checkout, latency, transport, decode := c.checkout(ctx, items)
-	c.metrics.checkoutResult(status, latency, transport, decode)
-	if transport != nil || decode != nil || status < 200 || status >= 300 || checkout.OrderID == "" {
-		return
-	}
-	c.metrics.acceptedOne()
-	c.metrics.duplicate(1, 1, 0, 0)
-	type payCall struct {
-		status            int
-		order             orderResponse
-		transport, decode error
-	}
-	calls := make([]payCall, 2)
-	start := make(chan struct{})
-	var wait sync.WaitGroup
-	wait.Add(2)
-	for index := range calls {
-		go func(index int) {
-			defer wait.Done()
-			<-start
-			status, order, latency, transport, decode := c.pay(ctx, checkout.OrderID)
-			c.metrics.payResult(status, latency, transport, decode)
-			calls[index] = payCall{status, order, transport, decode}
-		}(index)
-	}
-	close(start)
-	wait.Wait()
-	mismatch := int64(0)
-	for _, call := range calls {
-		if call.status < 200 || call.status >= 300 || call.transport != nil || call.decode != nil {
-			mismatch++
-		}
-	}
-	order := calls[0].order
-	if calls[0].order.Status != calls[1].order.Status {
-		mismatch++
-	}
-	if mismatch > 0 {
-		c.metrics.duplicate(0, 0, 0, mismatch)
-		return
-	}
-	if order.Status != "PAID" && order.Status != "CANCELLED" {
-		order = c.waitTerminal(ctx, checkout.OrderID)
-	}
-	if order.Status == "PAID" || order.Status == "CANCELLED" {
-		c.metrics.completedOne(order.Status, time.Since(started))
-	} else {
-		c.metrics.pendingOne()
-	}
-}
-
-func (c *loadClient) finishPayment(ctx context.Context, started time.Time, orderID string) {
-	payStatus, order, payLatency, transport, decode := c.pay(ctx, orderID)
-	c.metrics.payResult(payStatus, payLatency, transport, decode)
-	if transport != nil || decode != nil || payStatus < 200 || payStatus >= 300 {
-		return
-	}
-	if payStatus == http.StatusAccepted {
-		c.metrics.pendingOne()
-		return
-	}
-	if order.Status != "PAID" && order.Status != "CANCELLED" {
-		order = c.waitTerminal(ctx, orderID)
-	}
+// finishOrder waits for the saga to drive the order to a terminal state. There
+// is no pay call: the orchestrator takes the payment itself. An order still
+// pending when the workflow budget ends (for example an ambiguous payment) is
+// counted as pending.
+func (c *loadClient) finishOrder(ctx context.Context, started time.Time, orderID string) {
+	order := c.waitTerminal(ctx, orderID)
 	if order.Status == "PAID" || order.Status == "CANCELLED" {
 		c.metrics.completedOne(order.Status, time.Since(started))
 	} else {
@@ -236,16 +157,14 @@ func (c *loadClient) checkout(ctx context.Context, items []cartItem) (int, check
 func (c *loadClient) checkoutWithKey(ctx context.Context, items []cartItem, key string) (int, checkoutResponse, time.Duration, error, error) {
 	body := map[string]any{"items": items}
 	var result checkoutResponse
-	status, latency, transport, decode := c.do(ctx, http.MethodPost, c.baseURL+"/v1/checkouts", body, map[string]string{"Idempotency-Key": key}, &result)
+	status, latency, transport, decode := c.do(ctx, http.MethodPost, c.checkoutURL+"/v1/checkouts", body, map[string]string{"Idempotency-Key": key}, &result)
 	return status, result, latency, transport, decode
 }
 
-func (c *loadClient) pay(ctx context.Context, orderID string) (int, orderResponse, time.Duration, error, error) {
-	var result orderResponse
-	status, latency, transport, decode := c.do(ctx, http.MethodPost, c.baseURL+"/v1/orders/"+orderID+"/pay", nil, nil, &result)
-	return status, result, latency, transport, decode
-}
-
+// waitTerminal polls the saga until it finishes. A COMPLETED saga means the
+// order is PAID and the stock confirmed; COMPENSATED means CANCELLED and the
+// stock released. Reporting the order as done any earlier would race the saga's
+// last inventory step.
 func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResponse {
 	for {
 		select {
@@ -253,10 +172,16 @@ func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResp
 			return orderResponse{}
 		case <-time.After(100 * time.Millisecond):
 		}
-		var result orderResponse
-		status, _, transport, decode := c.do(ctx, http.MethodGet, c.baseURL+"/v1/orders/"+orderID, nil, nil, &result)
-		if transport == nil && decode == nil && status == 200 && (result.Status == "PAID" || result.Status == "CANCELLED") {
-			return result
+		var result sagaResponse
+		status, _, transport, decode := c.do(ctx, http.MethodGet, c.checkoutURL+"/v1/checkouts/"+orderID, nil, nil, &result)
+		if transport != nil || decode != nil || status != 200 {
+			continue
+		}
+		switch result.Status {
+		case "COMPLETED":
+			return orderResponse{ID: orderID, Status: "PAID"}
+		case "COMPENSATED":
+			return orderResponse{ID: orderID, Status: "CANCELLED"}
 		}
 	}
 }

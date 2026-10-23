@@ -19,10 +19,10 @@ Every run must include:
 |---|---|
 | Offered rate | Workflows scheduled per second, whether or not they complete. |
 | Accepted requests/s | Checkout requests returning any 2xx response divided by measurement duration. |
-| Completed orders/s | Orders reaching `PAID` or `CANCELLED` divided by measurement duration. |
-| Checkout latency | min, mean, p50, p95, p99, and max for `POST /v1/checkouts`. |
-| Pay latency | min, mean, p50, p95, p99, and max for `POST /v1/orders/{id}/pay`. |
-| End-to-end latency | Checkout start until the order reaches `PAID` or `CANCELLED`. |
+| Completed orders/s | Sagas reaching `COMPLETED` (order `PAID`, stock confirmed) or `COMPENSATED` (order `CANCELLED`, stock released) divided by measurement duration. |
+| Checkout latency | min, mean, p50, p95, p99, and max for `POST /v1/checkouts` on the orchestrator. |
+| Pay latency | Retired in OR9: the orchestrator takes the payment itself, so there is no pay call and this column is always empty. |
+| End-to-end latency | Checkout start until the saga is `COMPLETED` or `COMPENSATED`. |
 | Status mix | Separate counts for each HTTP status, business conflicts, 5xx, transport errors, and decode errors. |
 | In-flight | Maximum and time-weighted mean active requests/workflows. |
 
@@ -171,7 +171,7 @@ LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) LOCAL_DOCKER_GID=$(stat -c %g /var/run/doc
 | Case | What it does | Needs |
 |---|---|---|
 | C9 | 20% of workflows send a duplicate checkout with the same key | default stack |
-| C10 | two simultaneous `/pay` calls for every order | payment service in `success` mode |
+| C10 | retired in OR9 (it sent two simultaneous `/pay` calls; that endpoint no longer exists) | — |
 | C11 | every payment is declined; checks the release path | payment service in `decline` mode |
 | C12 | 60/30/10 success/decline/timeout; counts orders left pending and the stock they hold | payment service in `random` mode |
 | C13 | gateway latency 0 / 200 / 1000 / 2000 ms (stops at 2 s: 3 s hits the payment service's own gateway timeout) | payment service restarted per latency |

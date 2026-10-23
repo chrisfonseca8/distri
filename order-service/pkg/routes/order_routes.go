@@ -8,5 +8,4 @@ import (
 
 func RegisterOrderRoutes(mux *http.ServeMux, controller *controllers.OrderController) {
 	mux.HandleFunc("GET /v1/orders/{orderID}", controller.GetOrder)
-	mux.HandleFunc("POST /v1/orders/{orderID}/pay", controller.PayOrder)
 }

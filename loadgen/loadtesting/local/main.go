@@ -38,6 +38,10 @@ func run() error {
 	if cfg.GatewayMode != expectedMode {
 		return fmt.Errorf("%s requires GATEWAY_MODE=%s, got %q", cfg.CaseName, expectedMode, cfg.GatewayMode)
 	}
+	if err := healthy(cfg.OrchestratorURL + "/health"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	if err := healthy(cfg.OrderURL + "/health"); err != nil {
 		return err
 	}
@@ -89,7 +93,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	}
 	transport := &http.Transport{MaxIdleConns: cfg.MaxConns, MaxIdleConnsPerHost: cfg.MaxConns, MaxConnsPerHost: cfg.MaxConns}
 	if cfg.Warmup > 0 {
-		warmupClient := &loadClient{baseURL: cfg.OrderURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior}
+		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior}
 		warmupSelector := newCartSelector(cfg.Workload, products)
 		if cfg.CaseName == "C4" {
 			runOpenLoop(ctx, warmupClient, warmupSelector, cfg.OfferedRate, cfg.Warmup)
@@ -127,7 +131,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	cpuBefore, cpuBeforeOK := readCgroupCPUUsec()
 	started := time.Now().UTC()
 	metrics := newCollector()
-	client := &loadClient{baseURL: cfg.OrderURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior}
+	client := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior}
 	selector := newCartSelector(cfg.Workload, products)
 
 	measurement := cfg.Duration

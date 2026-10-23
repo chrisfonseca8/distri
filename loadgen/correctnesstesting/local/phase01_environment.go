@@ -7,6 +7,8 @@ func phase01() phaseDefinition {
 	return phaseDefinition{1, "Environment and migrations", "Checks service reachability, database schemas, inventory seed count, and the required empty payment table.", func(p *phaseContext) {
 		status, _, err := p.request(http.MethodGet, p.suite.orderURL+"/health", nil, nil, nil)
 		p.check("order service health", err == nil && status == 200, statusDetail(status, err))
+		status, _, err = p.request(http.MethodGet, p.suite.orchestratorURL+"/health", nil, nil, nil)
+		p.check("orchestrator service health", err == nil && status == 200, statusDetail(status, err))
 		status, _, err = p.request(http.MethodGet, p.suite.paymentURL+"/health", nil, nil, nil)
 		p.check("payment service health", err == nil && status == 200, statusDetail(status, err))
 		status, _, err = p.request(http.MethodGet, p.suite.inventoryURL+"/v1/products/"+p.productID(0), nil, nil, nil)

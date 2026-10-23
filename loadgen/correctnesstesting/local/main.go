@@ -32,12 +32,12 @@ func main() {
 
 	definitions := []phaseDefinition{
 		phase01(), phase02(), phase03(), phase04(), phase05(), phase06(), phase07(),
-		phase08(), phase09(), phase10(), phase11(), phase12(), phase13(), phase14(),
+		phase08(), phase09(), phase10(), phase13(), phase14(),
 		phase15(), phase16(), phase17(), phase18(), phase19(), phase20(), phase21(), phase22(),
 	}
 	started := time.Now()
 	report := correctnessReport{Suite: "correctness-test", RunID: s.runID, StartedAt: started,
-		Environment: reportEnv{s.orderURL, s.inventoryURL, s.paymentURL, s.gatewayMode, s.runLabel}}
+		Environment: reportEnv{s.orderURL, s.orchestratorURL, s.inventoryURL, s.paymentURL, s.gatewayMode, s.runLabel}}
 	selected, err := selectedPhases(os.Getenv("PHASES"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

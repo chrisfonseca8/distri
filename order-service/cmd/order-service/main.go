@@ -13,17 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chrisfonseca08/distri/order-service/pkg/clients"
 	"github.com/chrisfonseca08/distri/order-service/pkg/config"
 	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
-	"github.com/chrisfonseca08/distri/order-service/pkg/jobs"
 	"github.com/chrisfonseca08/distri/order-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/order-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/order-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/order-service/pkg/services"
-	"github.com/chrisfonseca08/distri/order-service/pkg/sweeper"
 	"github.com/chrisfonseca08/distri/order-service/pkg/telemetry"
 )
 
@@ -65,16 +62,7 @@ func run(roleValue string) error {
 	}
 	defer sqlDB.Close()
 
-	inventoryClient, err := clients.NewInventoryClientFromEnv()
-	if err != nil {
-		return fmt.Errorf("set up inventory client: %w", err)
-	}
-	paymentClient, err := clients.NewPaymentClientFromEnv()
-	if err != nil {
-		return fmt.Errorf("set up payment client: %w", err)
-	}
-
-	orderService := services.NewOrderService(applicationConfig.DB, paymentClient, inventoryClient)
+	orderService := services.NewOrderService(applicationConfig.DB)
 
 	shutdownContext, stop := signal.NotifyContext(
 		context.Background(),
@@ -144,38 +132,6 @@ func run(roleValue string) error {
 			defer workerWaitGroup.Done()
 			pool.Run(shutdownContext)
 		}()
-
-		worker, err := jobs.NewWorker(
-			jobs.NewStore(applicationConfig.DB),
-			orderService,
-			applicationConfig.Worker,
-		)
-		if err != nil {
-			return fmt.Errorf("set up job worker: %w", err)
-		}
-		workerWaitGroup.Add(1)
-		go func() {
-			defer workerWaitGroup.Done()
-			worker.Run(shutdownContext)
-		}()
-
-		if applicationConfig.Sweeper.Enabled {
-			reservationSweeper, err := sweeper.NewReservationSweeper(
-				inventoryClient,
-				orderService,
-				applicationConfig.Sweeper,
-			)
-			if err != nil {
-				return fmt.Errorf("set up reservation sweeper: %w", err)
-			}
-			workerWaitGroup.Add(1)
-			go func() {
-				defer workerWaitGroup.Done()
-				reservationSweeper.Run(shutdownContext)
-			}()
-		} else {
-			slog.Info("order-service reservation sweeper disabled")
-		}
 	}
 
 	if role == roleWorker {
@@ -191,10 +147,6 @@ func run(roleValue string) error {
 	if telemetry.Enabled() {
 		telemetryRecorder.Register(mux)
 	}
-
-	checkoutService := services.NewCheckoutService(applicationConfig.DB, inventoryClient)
-	checkoutController := controllers.NewCheckoutController(checkoutService)
-	routes.RegisterCheckoutRoutes(mux, checkoutController)
 
 	orderController := controllers.NewOrderController(orderService)
 	routes.RegisterOrderRoutes(mux, orderController)

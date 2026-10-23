@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // Phase 17 applies high contention to a deliberately small stock pool.
 func phase17() phaseDefinition {
@@ -20,7 +23,7 @@ func phase17() phaseDefinition {
 		wg.Wait()
 		created, conflicts := 0, 0
 		for _, status := range statuses {
-			if status == 201 {
+			if status == 202 {
 				created++
 			}
 			if status == 409 {
@@ -30,6 +33,6 @@ func phase17() phaseDefinition {
 		stock := p.inventory(product)
 		p.check("exactly available stock wins", created == 10 && conflicts == workers-10, "expected 10 created and 40 conflicts")
 		p.check("stock is not oversold", stock.OnHand == 10 && stock.Reserved == 10 && stock.Allocated == 0, "on_hand=10 reserved=10 allocated=0")
-		p.check("ten orders were created", p.scalar(`SELECT count(*) FROM orders.order_items WHERE product_id=$1`, product) == 10, "one order per unit")
+		p.check("ten orders were created", p.waitScalar(20*time.Second, 10, `SELECT count(*) FROM orders.order_items WHERE product_id=$1`, product) == 10, "one order per unit")
 	}}
 }

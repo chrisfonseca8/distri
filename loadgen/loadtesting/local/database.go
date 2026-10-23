@@ -47,10 +47,13 @@ func resetFixture(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	defer tx.Rollback(ctx)
 
 	if _, err := tx.Exec(ctx, `TRUNCATE TABLE
-		orders.jobs,
 		orders.order_items,
 		orders.orders,
-		orders.checkout_attempts,
+		orchestrator.checkout_attempts,
+		orchestrator.saga_steps,
+		orchestrator.sagas,
+		orchestrator.outbox,
+		orchestrator.processed_messages,
 		inventory.reservation_items,
 		inventory.reservations,
 		payments.payment_attempts
@@ -264,7 +267,7 @@ func checkInvariants(ctx context.Context, pool *pgxpool.Pool, client ClientMetri
 			struct {
 				name, query string
 				expected    int64
-			}{"one unique completed checkout attempt per offered workflow", `SELECT count(*) FROM orders.checkout_attempts WHERE status='completed'`, client.Offered},
+			}{"one unique completed checkout attempt per offered workflow", `SELECT count(*) FROM orchestrator.checkout_attempts WHERE status='completed'`, client.Offered},
 		)
 	}
 	for _, check := range counts {

@@ -14,17 +14,18 @@ import (
 )
 
 type suite struct {
-	ctx          context.Context
-	db           *pgx.Conn
-	client       *http.Client
-	orderURL     string
-	inventoryURL string
-	paymentURL   string
-	gatewayMode  string
-	runLabel     string
-	composeFile  string
-	resultsDir   string
-	runID        string
+	ctx             context.Context
+	db              *pgx.Conn
+	client          *http.Client
+	orderURL        string
+	orchestratorURL string
+	inventoryURL    string
+	paymentURL      string
+	gatewayMode     string
+	runLabel        string
+	composeFile     string
+	resultsDir      string
+	runID           string
 }
 
 type phaseContext struct {
@@ -46,7 +47,7 @@ func newSuite(ctx context.Context) (*suite, error) {
 	}
 	return &suite{
 		ctx: ctx, db: db, client: &http.Client{Timeout: 12 * time.Second},
-		orderURL: requiredEnv("ORDER_URL"), inventoryURL: requiredEnv("INVENTORY_URL"),
+		orderURL: requiredEnv("ORDER_URL"), orchestratorURL: requiredEnv("ORCHESTRATOR_URL"), inventoryURL: requiredEnv("INVENTORY_URL"),
 		paymentURL: requiredEnv("PAYMENT_URL"), gatewayMode: envOr("GATEWAY_MODE", "success"),
 		runLabel:    envOr("RUN_LABEL", envOr("GATEWAY_MODE", "success")),
 		composeFile: strings.TrimSpace(os.Getenv("COMPOSE_FILE")),

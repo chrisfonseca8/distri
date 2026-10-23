@@ -4,30 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/order-service/database/models"
-	"github.com/chrisfonseca08/distri/order-service/pkg/clients"
-	"github.com/chrisfonseca08/distri/order-service/pkg/utils/state"
 	"gorm.io/gorm"
 )
 
-const (
-	paymentWaitTimeout  = 4 * time.Second
-	paymentPollInterval = 100 * time.Millisecond
-)
-
-var (
-	ErrOrderNotFound             = errors.New("order not found")
-	ErrOrderPaymentRejected      = errors.New("payment request was rejected")
-	ErrOrderPaymentInconsistent  = errors.New("payment does not match the order")
-	ErrOrderStatusConflict       = errors.New("payment conflicts with the final order status")
-	ErrOrderInventoryNotFound    = errors.New("order reservation not found")
-	ErrOrderInventoryConflict    = errors.New("order reservation status conflict")
-	ErrOrderInventoryUnavailable = errors.New("order inventory is unavailable")
-)
+var ErrOrderNotFound = errors.New("order not found")
 
 type OrderItemResult struct {
 	ID             uuid.UUID `json:"id"`
@@ -47,31 +31,14 @@ type OrderResult struct {
 	Items      []OrderItemResult `json:"items"`
 }
 
-type SettleOutcome string
-
-const (
-	SettleDone      SettleOutcome = "Done"
-	SettleNotReady  SettleOutcome = "NotReady"
-	SettleRetry     SettleOutcome = "Retry"
-	SettlePermanent SettleOutcome = "Permanent"
-)
-
+// OrderService reads order data. Orders are created and moved between states
+// only by the order command handlers; checkout is owned by the orchestrator.
 type OrderService struct {
-	db              *gorm.DB
-	paymentClient   clients.PaymentClient
-	inventoryClient clients.InventoryClient
+	db *gorm.DB
 }
 
-func NewOrderService(
-	db *gorm.DB,
-	paymentClient clients.PaymentClient,
-	inventoryClient clients.InventoryClient,
-) *OrderService {
-	return &OrderService{
-		db:              db,
-		paymentClient:   paymentClient,
-		inventoryClient: inventoryClient,
-	}
+func NewOrderService(db *gorm.DB) *OrderService {
+	return &OrderService{db: db}
 }
 
 func (s *OrderService) GetOrder(ctx context.Context, orderID uuid.UUID) (OrderResult, error) {
@@ -109,272 +76,6 @@ func (s *OrderService) GetOrder(ctx context.Context, orderID uuid.UUID) (OrderRe
 		})
 	}
 	return result, nil
-}
-
-// GetOrderStatus is the sweeper's cheap lookup path; it deliberately does not
-// load order items.
-func (s *OrderService) GetOrderStatus(
-	ctx context.Context,
-	orderID uuid.UUID,
-) (state.OrderStatus, error) {
-	var order struct {
-		Status string
-	}
-	query := s.db.WithContext(ctx).
-		Table("orders.orders").
-		Select("status").
-		Where("id = ?", orderID).
-		Take(&order)
-	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return "", ErrOrderNotFound
-	}
-	if query.Error != nil {
-		return "", fmt.Errorf("get order status: %w", query.Error)
-	}
-	return state.OrderStatus(order.Status), nil
-}
-
-func (s *OrderService) SettleOrder(ctx context.Context, orderID uuid.UUID) (OrderResult, error) {
-	order, _, err := s.settleOrder(ctx, orderID, paymentWaitTimeout)
-	if err != nil {
-		return OrderResult{}, err
-	}
-
-	return s.GetOrder(ctx, order.ID)
-}
-
-func (s *OrderService) SettleForJob(
-	ctx context.Context,
-	orderID uuid.UUID,
-) (SettleOutcome, error) {
-	_, outcome, err := s.settleOrder(ctx, orderID, 0)
-	return outcome, err
-}
-
-func (s *OrderService) settleOrder(
-	ctx context.Context,
-	orderID uuid.UUID,
-	waitingTime time.Duration,
-) (models.Order, SettleOutcome, error) {
-	order, err := s.loadOrder(ctx, orderID)
-	if err != nil {
-		if errors.Is(err, ErrOrderNotFound) {
-			return models.Order{}, SettlePermanent, err
-		}
-		return models.Order{}, SettleRetry, err
-	}
-
-	switch state.OrderStatus(order.Status) {
-	case state.OrderPaid, state.OrderCancelled, state.OrderExpired:
-		if err := s.settleInventory(ctx, order); err != nil {
-			return order, SettleRetry, err
-		}
-		return order, SettleDone, nil
-	case state.OrderPendingPayment:
-		return s.settlePendingOrder(ctx, order, waitingTime)
-	default:
-		return order, SettlePermanent, fmt.Errorf("unknown order status %q", order.Status)
-	}
-}
-
-func (s *OrderService) settlePendingOrder(
-	ctx context.Context,
-	order models.Order,
-	waitingTime time.Duration,
-) (models.Order, SettleOutcome, error) {
-	payment, err := s.paymentClient.Create(
-		ctx,
-		order.ID,
-		order.TotalPaise,
-		order.Currency,
-	)
-	if err != nil {
-		if errors.Is(err, clients.ErrPaymentUnavailable) {
-			return order, SettleRetry, nil
-		}
-		return models.Order{}, SettlePermanent, fmt.Errorf("%w: %v", ErrOrderPaymentRejected, err)
-	}
-	if err := validatePaymentForOrder(payment, order); err != nil {
-		return models.Order{}, SettlePermanent, err
-	}
-
-	payment, err = s.waitForPayment(ctx, payment, waitingTime)
-	if err != nil {
-		if waitingTime <= 0 {
-			return order, SettleRetry, err
-		}
-		if ctx.Err() != nil {
-			return order, SettleRetry, nil
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			return order, SettleNotReady, nil
-		}
-		if errors.Is(err, clients.ErrPaymentUnavailable) ||
-			errors.Is(err, context.Canceled) {
-			return order, SettleRetry, nil
-		}
-		return models.Order{}, SettlePermanent, fmt.Errorf("%w: %v", ErrOrderPaymentRejected, err)
-	}
-	if err := validatePaymentForOrder(payment, order); err != nil {
-		return models.Order{}, SettlePermanent, err
-	}
-
-	var target state.OrderStatus
-	switch payment.Status {
-	case "SUCCEEDED":
-		target = state.OrderPaid
-	case "FAILED":
-		target = state.OrderCancelled
-	case "UNKNOWN", "CREATED", "PENDING":
-		return order, SettleNotReady, nil
-	default:
-		return models.Order{}, SettlePermanent, fmt.Errorf("unknown payment status %q", payment.Status)
-	}
-
-	order, err = s.transitionOrder(ctx, order.ID, target, payment.Status)
-	if err != nil {
-		if errors.Is(err, ErrOrderStatusConflict) {
-			return models.Order{}, SettlePermanent, err
-		}
-		return models.Order{}, SettleRetry, err
-	}
-	if err := s.settleInventory(ctx, order); err != nil {
-		return order, SettleRetry, err
-	}
-	return order, SettleDone, nil
-}
-
-func (s *OrderService) waitForPayment(
-	ctx context.Context,
-	payment clients.Payment,
-	waitingTime time.Duration,
-) (clients.Payment, error) {
-	if payment.Status != "CREATED" && payment.Status != "PENDING" {
-		return payment, nil
-	}
-
-	if waitingTime <= 0 {
-		return s.paymentClient.Get(ctx, payment.ID)
-	}
-
-	waitContext, cancel := context.WithTimeout(ctx, waitingTime)
-	defer cancel()
-
-	ticker := time.NewTicker(paymentPollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-waitContext.Done():
-			return payment, waitContext.Err()
-		case <-ticker.C:
-			current, err := s.paymentClient.Get(waitContext, payment.ID)
-			if err != nil {
-				return payment, err
-			}
-			payment = current
-			if payment.Status != "CREATED" && payment.Status != "PENDING" {
-				return payment, nil
-			}
-		}
-	}
-}
-
-func validatePaymentForOrder(payment clients.Payment, order models.Order) error {
-	if payment.ID == uuid.Nil() ||
-		payment.OrderID != order.ID ||
-		payment.AmountPaise != order.TotalPaise ||
-		payment.Currency != order.Currency {
-		return ErrOrderPaymentInconsistent
-	}
-	return nil
-}
-
-func (s *OrderService) transitionOrder(
-	ctx context.Context,
-	orderID uuid.UUID,
-	target state.OrderStatus,
-	paymentStatus string,
-) (models.Order, error) {
-	if !state.CanTransition(state.OrderPendingPayment, target) {
-		return models.Order{}, fmt.Errorf(
-			"invalid order transition %s to %s",
-			state.OrderPendingPayment,
-			target,
-		)
-	}
-
-	update := s.db.WithContext(ctx).
-		Session(&gorm.Session{SkipDefaultTransaction: true}).
-		Table("orders.orders").
-		Where("id = ? AND status = ?", orderID, state.OrderPendingPayment).
-		Updates(map[string]any{
-			"status":     target,
-			"updated_at": time.Now(),
-		})
-	if update.Error != nil {
-		return models.Order{}, fmt.Errorf("change order status: %w", update.Error)
-	}
-
-	order, err := s.loadOrder(ctx, orderID)
-	if err != nil {
-		return models.Order{}, err
-	}
-	if update.RowsAffected == 0 && state.OrderStatus(order.Status) != target {
-		slog.Error(
-			"payment conflicts with final order status; manual refund review required",
-			"order_id", orderID.String(),
-			"payment_status", paymentStatus,
-			"order_status", order.Status,
-			"expected_order_status", target,
-		)
-		return models.Order{}, fmt.Errorf(
-			"%w: payment is %s but order is %s",
-			ErrOrderStatusConflict,
-			paymentStatus,
-			order.Status,
-		)
-	}
-
-	return order, nil
-}
-
-func (s *OrderService) settleInventory(ctx context.Context, order models.Order) error {
-	var (
-		result         clients.ChangeReservationResult
-		expectedStatus string
-		err            error
-	)
-	switch state.OrderStatus(order.Status) {
-	case state.OrderPaid:
-		expectedStatus = "CONFIRMED"
-		result, err = s.inventoryClient.Confirm(ctx, order.ID)
-	case state.OrderCancelled, state.OrderExpired:
-		expectedStatus = "RELEASED"
-		result, err = s.inventoryClient.Release(ctx, order.ID)
-	default:
-		return nil
-	}
-	if err == nil && result.Status == expectedStatus {
-		return nil
-	}
-	if err == nil {
-		return fmt.Errorf(
-			"%w: inventory returned reservation status %q",
-			ErrOrderInventoryConflict,
-			result.Status,
-		)
-	}
-
-	switch {
-	case errors.Is(err, clients.ErrReservationNotFound):
-		return fmt.Errorf("%w: %v", ErrOrderInventoryNotFound, err)
-	case errors.Is(err, clients.ErrReservationConflict),
-		errors.Is(err, clients.ErrInvalidRequest):
-		return fmt.Errorf("%w: %v", ErrOrderInventoryConflict, err)
-	default:
-		return fmt.Errorf("%w: %v", ErrOrderInventoryUnavailable, err)
-	}
 }
 
 func (s *OrderService) loadOrder(ctx context.Context, orderID uuid.UUID) (models.Order, error) {

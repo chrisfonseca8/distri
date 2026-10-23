@@ -54,11 +54,12 @@ type correctnessReportCollection struct {
 }
 
 type reportEnv struct {
-	OrderURL     string `json:"order_url"`
-	InventoryURL string `json:"inventory_url"`
-	PaymentURL   string `json:"payment_url"`
-	GatewayMode  string `json:"gateway_mode"`
-	RunLabel     string `json:"run_label,omitempty"`
+	OrderURL        string `json:"order_url"`
+	OrchestratorURL string `json:"orchestrator_url"`
+	InventoryURL    string `json:"inventory_url"`
+	PaymentURL      string `json:"payment_url"`
+	GatewayMode     string `json:"gateway_mode"`
+	RunLabel        string `json:"run_label,omitempty"`
 }
 
 type reportSummary struct {

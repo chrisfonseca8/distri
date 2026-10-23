@@ -7,9 +7,6 @@ x-order-environment: &order-environment
   DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-5}"
   DB_CONN_MAX_LIFETIME: 30m
   LOAD_TEST_TELEMETRY: "true"
-  RESERVATION_SWEEP_TTL: "${RESERVATION_SWEEP_TTL:-10m}"
-  RESERVATION_SWEEP_INTERVAL: "${RESERVATION_SWEEP_INTERVAL:-1m}"
-  RESERVATION_SWEEP_BATCH_SIZE: "${RESERVATION_SWEEP_BATCH_SIZE:-100}"
 
 x-inventory-environment: &inventory-environment
   CONSUMER_MAX_ATTEMPTS: "${CONSUMER_MAX_ATTEMPTS:-5}"
@@ -194,12 +191,7 @@ services:
     environment:
       <<: *order-environment
       PORT: "8080"
-      INVENTORY_URL: http://inventory-service:8081
-      INVENTORY_TIMEOUT: 3s
-      PAYMENT_URL: http://payment-service:8082
-      PAYMENT_TIMEOUT: 3s
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-distri}:${RABBITMQ_DEFAULT_PASS:-distri}@rabbitmq:5672/
-      RESERVATION_SWEEP_ENABLED: "false"
       ORDER_CONSUMER_CONCURRENCY: "1"
       ORDER_CONSUMER_MAX_CONCURRENCY: "${ORDER_CONSUMER_MAX_CONCURRENCY:-4}"
       ORDER_CONSUMER_SCALE_DEPTH_PER_WORKER: "${ORDER_CONSUMER_SCALE_DEPTH_PER_WORKER:-20}"
@@ -210,10 +202,6 @@ services:
     depends_on:
       order-migrate:
         condition: service_completed_successfully
-      inventory-service:
-        condition: service_healthy
-      payment-service:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     healthcheck:
@@ -261,8 +249,11 @@ services:
       context: ./loadgen
     environment:
       ORDER_URL: http://order-service:8080
+      ORCHESTRATOR_URL: http://orchestrator:8083
     depends_on:
       order-service:
+        condition: service_healthy
+      orchestrator:
         condition: service_healthy
     profiles: ["loadtest"]
     restart: "no"
@@ -274,6 +265,7 @@ services:
     entrypoint: ["/app/local-loadtest"]
     environment:
       ORDER_URL: http://order-service:8080
+      ORCHESTRATOR_URL: http://orchestrator:8083
       INVENTORY_URL: http://inventory-service:8081
       PAYMENT_URL: http://payment-service:8082
       DATABASE_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable
@@ -296,6 +288,8 @@ services:
     depends_on:
       order-service:
         condition: service_healthy
+      orchestrator:
+        condition: service_healthy
     profiles: ["local-loadtest"]
     restart: "no"
 
@@ -306,6 +300,7 @@ services:
     entrypoint: ["/app/local-correctness"]
     environment:
       ORDER_URL: http://order-service:8080
+      ORCHESTRATOR_URL: http://orchestrator:8083
       INVENTORY_URL: http://inventory-service:8081
       PAYMENT_URL: http://payment-service:8082
       DATABASE_URL: postgres://distri:distri@postgres:5432/distri?sslmode=disable
@@ -318,6 +313,8 @@ services:
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     depends_on:
       order-service:
+        condition: service_healthy
+      orchestrator:
         condition: service_healthy
     profiles: ["correctness"]
     restart: "no"

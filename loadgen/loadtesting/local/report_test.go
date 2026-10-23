@@ -212,12 +212,12 @@ func TestLoadConfigAcceptsC3SweepSteps(t *testing.T) {
 
 func TestClientOverrideAndConnectionCap(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://u:p@postgres:5432/distri")
-	t.Setenv("LOAD_CASE", "C10")
+	t.Setenv("LOAD_CASE", "C9")
 	t.Setenv("LOAD_CLIENTS", "150")
 	t.Setenv("LOAD_MAX_CONNS", "1500")
 	cfg, err := loadConfig()
 	if err != nil || cfg.Clients != 150 || cfg.MaxConns != 1500 {
-		t.Fatalf("C10 should take 150 clients and a 1500 connection cap: %+v err=%v", cfg, err)
+		t.Fatalf("C9 should take 150 clients and a 1500 connection cap: %+v err=%v", cfg, err)
 	}
 	t.Setenv("LOAD_MAX_CONNS", "")
 	t.Setenv("LOAD_CLIENTS", "")

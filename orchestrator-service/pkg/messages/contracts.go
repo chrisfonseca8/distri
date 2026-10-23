@@ -10,7 +10,12 @@ import "uuid"
 type Step string
 
 const (
-	CREATE_ORDER Step = "CREATE_ORDER"
+	CREATE_ORDER         Step = "CREATE_ORDER"
+	TAKE_PAYMENT         Step = "TAKE_PAYMENT"
+	MARK_ORDER_PAID      Step = "MARK_ORDER_PAID"
+	MARK_ORDER_CANCELLED Step = "MARK_ORDER_CANCELLED"
+	CONFIRM_STOCK        Step = "CONFIRM_STOCK"
+	RELEASE_STOCK        Step = "RELEASE_STOCK"
 )
 
 type Outcome string
@@ -22,10 +27,19 @@ const (
 )
 
 const (
-	OrderCreateRoutingKey    = "order.create"
-	OrderCommandsQueue       = "distri.order.commands"
-	OrderReplyRoutingKey     = "reply.order"
-	OrchestratorRepliesQueue = "distri.orchestrator.replies"
+	OrderCreateRoutingKey      = "order.create"
+	PaymentInitiateRoutingKey  = "payment.initiate"
+	OrderMarkPaidRoutingKey    = "order.mark-paid"
+	OrderCancelRoutingKey      = "order.cancel"
+	InventoryConfirmRoutingKey = "inventory.confirm"
+	InventoryReleaseRoutingKey = "inventory.release"
+	OrderCommandsQueue         = "distri.order.commands"
+	PaymentCommandsQueue       = "distri.payment.commands"
+	InventoryCommandsQueue     = "distri.inventory.commands"
+	OrderReplyRoutingKey       = "reply.order"
+	PaymentReplyRoutingKey     = "reply.payment"
+	InventoryReplyRoutingKey   = "reply.inventory"
+	OrchestratorRepliesQueue   = "distri.orchestrator.replies"
 )
 
 // OrderCreateItem carries the authoritative price returned by inventory
@@ -44,7 +58,29 @@ type OrderCreate struct {
 	Items      []OrderCreateItem `json:"items"`
 }
 
-type OrderReply struct {
+type PaymentInitiate struct {
+	OrderID     uuid.UUID `json:"order_id"`
+	AmountPaise int64     `json:"amount_paise"`
+	Currency    string    `json:"currency"`
+}
+
+type OrderMarkPaid struct {
+	OrderID uuid.UUID `json:"order_id"`
+}
+
+type OrderCancel struct {
+	OrderID uuid.UUID `json:"order_id"`
+}
+
+type InventoryConfirm struct {
+	OrderID uuid.UUID `json:"order_id"`
+}
+
+type InventoryRelease struct {
+	OrderID uuid.UUID `json:"order_id"`
+}
+
+type Reply struct {
 	OrderID uuid.UUID `json:"order_id"`
 	Step    Step      `json:"step"`
 	Outcome Outcome   `json:"outcome"`

@@ -49,7 +49,7 @@ func TestHandlerAdvancesSagaAndIsIdempotent(t *testing.T) {
 		t.Fatalf("create saga step: %v", err)
 	}
 
-	body, err := json.Marshal(messages.OrderReply{
+	body, err := json.Marshal(messages.Reply{
 		OrderID: orderID,
 		Step:    messages.CREATE_ORDER,
 		Outcome: messages.Succeeded,
@@ -57,7 +57,7 @@ func TestHandlerAdvancesSagaAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode reply: %v", err)
 	}
-	handler := NewHandler(db)
+	handler := NewHandler(db, 30*time.Second)
 	delivery := messaging.Delivery{MessageId: messageID, Body: body}
 	if err := handler.Handle(t.Context(), delivery); err != nil {
 		t.Fatalf("handle reply: %v", err)
@@ -129,13 +129,13 @@ func TestHandlerTreatsMissingSagaAsPermanentAndRollsBackMessage(t *testing.T) {
 		db.Table("orchestrator.processed_messages").Where("message_id = ?", messageID).
 			Delete(&models.ProcessedMessage{})
 	})
-	body, err := json.Marshal(messages.OrderReply{
+	body, err := json.Marshal(messages.Reply{
 		OrderID: uuid.New(), Step: messages.CREATE_ORDER, Outcome: messages.Succeeded,
 	})
 	if err != nil {
 		t.Fatalf("encode reply: %v", err)
 	}
-	err = NewHandler(db).Handle(t.Context(), messaging.Delivery{MessageId: messageID, Body: body})
+	err = NewHandler(db, 30*time.Second).Handle(t.Context(), messaging.Delivery{MessageId: messageID, Body: body})
 	var permanent *messaging.PermanentError
 	if !errors.As(err, &permanent) {
 		t.Fatalf("error = %v, want PermanentError", err)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messages"
@@ -18,7 +19,7 @@ func (e testSQLStateError) Error() string    { return "database error" }
 func (e testSQLStateError) SQLState() string { return e.state }
 
 func TestHandlerClassifiesMalformedMessagesAsPermanent(t *testing.T) {
-	handler := NewHandler(nil)
+	handler := NewHandler(nil, 30*time.Second)
 	validBody := fmt.Sprintf(
 		`{"order_id":%q,"step":"CREATE_ORDER","outcome":"Succeeded"}`,
 		uuid.New().String(),

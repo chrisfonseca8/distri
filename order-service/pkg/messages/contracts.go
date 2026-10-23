@@ -10,7 +10,12 @@ import "uuid"
 type Step string
 
 const (
-	CREATE_ORDER Step = "CREATE_ORDER"
+	CREATE_ORDER         Step = "CREATE_ORDER"
+	TAKE_PAYMENT         Step = "TAKE_PAYMENT"
+	MARK_ORDER_PAID      Step = "MARK_ORDER_PAID"
+	MARK_ORDER_CANCELLED Step = "MARK_ORDER_CANCELLED"
+	CONFIRM_STOCK        Step = "CONFIRM_STOCK"
+	RELEASE_STOCK        Step = "RELEASE_STOCK"
 )
 
 type Outcome string
@@ -44,7 +49,7 @@ type OrderCreate struct {
 	Items      []OrderCreateItem `json:"items"`
 }
 
-type OrderReply struct {
+type Reply struct {
 	OrderID uuid.UUID `json:"order_id"`
 	Step    Step      `json:"step"`
 	Outcome Outcome   `json:"outcome"`

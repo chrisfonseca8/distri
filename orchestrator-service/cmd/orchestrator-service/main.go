@@ -79,7 +79,7 @@ func run() error {
 	replyConsumer, err := messaging.NewConsumer(
 		rabbitMQConfig.URL,
 		messages.OrchestratorRepliesQueue,
-		reply.NewHandler(applicationConfig.DB).Handle,
+		reply.NewHandler(applicationConfig.DB, sagaConfig.StepTimeout).Handle,
 	)
 	if err != nil {
 		return fmt.Errorf("set up order reply consumer: %w", err)

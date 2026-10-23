@@ -94,7 +94,7 @@ func TestOrderCreateHandlerTransactionAndIdempotency(t *testing.T) {
 		outboxRows[0].RoutingKey != messages.OrderReplyRoutingKey {
 		t.Fatalf("outbox rows = %+v", outboxRows)
 	}
-	var reply messages.OrderReply
+	var reply messages.Reply
 	if err := json.Unmarshal(outboxRows[0].Payload, &reply); err != nil {
 		t.Fatalf("decode reply: %v", err)
 	}

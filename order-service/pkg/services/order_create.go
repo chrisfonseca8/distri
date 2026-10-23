@@ -42,7 +42,7 @@ func (h *OrderCreateHandler) Handle(
 		return messaging.Permanent(errors.New("order.create AMQP MessageId is required"))
 	}
 
-	replyPayload, err := json.Marshal(messages.OrderReply{
+	replyPayload, err := json.Marshal(messages.Reply{
 		OrderID: command.OrderID,
 		Step:    messages.CREATE_ORDER,
 		Outcome: messages.Succeeded,

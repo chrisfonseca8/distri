@@ -26,20 +26,62 @@ type commandMapping struct {
 	build      func(models.Saga) (json.RawMessage, error)
 }
 
-// OR6 adds TAKE_PAYMENT and its payload builder. Until then, decisions for
-// commands without a mapping deliberately leave the next step PENDING.
-var commandMappings = map[saga.Step]commandMapping{}
-
-type Handler struct {
-	db *gorm.DB
+var commandMappings = map[saga.Step]commandMapping{
+	saga.TAKE_PAYMENT: {
+		routingKey: messages.PaymentInitiateRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.PaymentInitiate{
+				OrderID:     sagaRow.ID,
+				AmountPaise: sagaRow.TotalPaise,
+				Currency:    sagaRow.Currency,
+			})
+		},
+	},
+	saga.MARK_ORDER_PAID: {
+		routingKey: messages.OrderMarkPaidRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.OrderMarkPaid{OrderID: sagaRow.ID})
+		},
+	},
+	saga.MARK_ORDER_CANCELLED: {
+		routingKey: messages.OrderCancelRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.OrderCancel{OrderID: sagaRow.ID})
+		},
+	},
+	saga.CONFIRM_STOCK: {
+		routingKey: messages.InventoryConfirmRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.InventoryConfirm{OrderID: sagaRow.ID})
+		},
+	},
+	saga.RELEASE_STOCK: {
+		routingKey: messages.InventoryReleaseRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.InventoryRelease{OrderID: sagaRow.ID})
+		},
+	},
 }
 
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+func marshalCommand(payload any) (json.RawMessage, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+type Handler struct {
+	db          *gorm.DB
+	stepTimeout time.Duration
+}
+
+func NewHandler(db *gorm.DB, stepTimeout time.Duration) *Handler {
+	return &Handler{db: db, stepTimeout: stepTimeout}
 }
 
 func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error {
-	var reply messages.OrderReply
+	var reply messages.Reply
 	if err := json.Unmarshal(delivery.Body, &reply); err != nil {
 		return messaging.Permanent(fmt.Errorf("decode order reply: %w", err))
 	}
@@ -97,7 +139,7 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		if loadStep.Error != nil {
 			return fmt.Errorf("load current saga step: %w", loadStep.Error)
 		}
-		if currentStep.Status != "RUNNING" {
+		if currentStep.Status != "RUNNING" && currentStep.Status != "AMBIGUOUS" {
 			slog.Warn(
 				"ignore order reply for non-running saga step",
 				"order_id", reply.OrderID,
@@ -117,7 +159,7 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 
 		now := time.Now().UTC()
 		nextCurrentStep := string(decision.NextStep)
-		if decision.SagaStatus == saga.SagaStuck {
+		if decision.NextStep == "" || decision.SagaStatus == saga.SagaStuck {
 			nextCurrentStep = sagaRow.CurrentStep
 		}
 		updateSaga := tx.Table("orchestrator.sagas").
@@ -135,17 +177,27 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			return errConcurrentSagaTransition
 		}
 
-		stepStatus, err := finishedStepStatus(reply.Outcome)
-		if err != nil {
-			return err
+		resend := decision.NextStep == saga.Step(currentStep.Step) && decision.Command != ""
+		stepUpdates := map[string]any{
+			"updated_at": now,
+		}
+		if resend {
+			stepUpdates["status"] = "RUNNING"
+			stepUpdates["attempts"] = gorm.Expr("attempts + 1")
+			stepUpdates["started_at"] = now
+			stepUpdates["finished_at"] = nil
+			stepUpdates["next_attempt_at"] = now.Add(h.stepTimeout)
+		} else {
+			stepStatus, err := finishedStepStatus(reply.Outcome)
+			if err != nil {
+				return err
+			}
+			stepUpdates["status"] = stepStatus
+			stepUpdates["finished_at"] = now
 		}
 		finishStep := tx.Table("orchestrator.saga_steps").
-			Where("id = ? AND status = ?", currentStep.ID, "RUNNING").
-			Updates(map[string]any{
-				"status":      stepStatus,
-				"finished_at": now,
-				"updated_at":  now,
-			})
+			Where("id = ? AND status IN ?", currentStep.ID, []string{"RUNNING", "AMBIGUOUS"}).
+			Updates(stepUpdates)
 		if finishStep.Error != nil {
 			return fmt.Errorf("finish saga step: %w", finishStep.Error)
 		}
@@ -164,6 +216,8 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 				nextStep.Status = "RUNNING"
 				nextStep.Attempts = 1
 				nextStep.StartedAt = &now
+				nextAttemptAt := now.Add(h.stepTimeout)
+				nextStep.NextAttemptAt = &nextAttemptAt
 			}
 			if err := tx.Table("orchestrator.saga_steps").
 				Omit(clause.Associations).

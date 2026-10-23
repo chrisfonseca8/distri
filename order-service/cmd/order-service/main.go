@@ -116,12 +116,12 @@ func run(roleValue string) error {
 			relay.Run(shutdownContext)
 		}()
 
-		orderCreateHandler := services.NewOrderCreateHandler(applicationConfig.DB)
+		orderCommandHandler := services.NewOrderCommandHandler(applicationConfig.DB)
 		for range rabbitMQConfig.ConsumerConcurrency {
 			orderCreateConsumer, err := messaging.NewConsumer(
 				rabbitMQConfig.URL,
 				messages.OrderCommandsQueue,
-				orderCreateHandler.Handle,
+				orderCommandHandler.Handle,
 			)
 			if err != nil {
 				return fmt.Errorf("set up order.create consumer: %w", err)

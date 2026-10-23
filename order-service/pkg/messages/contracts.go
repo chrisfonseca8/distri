@@ -28,6 +28,8 @@ const (
 
 const (
 	OrderCreateRoutingKey    = "order.create"
+	OrderMarkPaidRoutingKey  = "order.mark-paid"
+	OrderCancelRoutingKey    = "order.cancel"
 	OrderCommandsQueue       = "distri.order.commands"
 	OrderReplyRoutingKey     = "reply.order"
 	OrchestratorRepliesQueue = "distri.orchestrator.replies"
@@ -47,6 +49,14 @@ type OrderCreate struct {
 	Currency   string            `json:"currency"`
 	TotalPaise int64             `json:"total_paise"`
 	Items      []OrderCreateItem `json:"items"`
+}
+
+type OrderMarkPaid struct {
+	OrderID uuid.UUID `json:"order_id"`
+}
+
+type OrderCancel struct {
+	OrderID uuid.UUID `json:"order_id"`
 }
 
 type Reply struct {

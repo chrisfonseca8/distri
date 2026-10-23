@@ -19,6 +19,9 @@ import (
 	"github.com/chrisfonseca08/distri/payment-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/health"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/jobs"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/messages"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/telemetry"
@@ -72,12 +75,58 @@ func run(roleValue string) error {
 		syscall.SIGTERM,
 	)
 	var workerWaitGroup sync.WaitGroup
+	var outboxPublisher *messaging.Publisher
 	defer func() {
 		stopSignals()
 		workerWaitGroup.Wait()
+		if outboxPublisher != nil {
+			if err := outboxPublisher.Close(); err != nil {
+				slog.Error("close outbox publisher", "error", err)
+			}
+		}
 	}()
 
 	if role == roleWorker || role == roleAll {
+		rabbitMQConfig, err := config.LoadRabbitMQConfig()
+		if err != nil {
+			return fmt.Errorf("load RabbitMQ configuration: %w", err)
+		}
+		outboxPublisher, err = messaging.NewPublisher(rabbitMQConfig.URL)
+		if err != nil {
+			return fmt.Errorf("set up outbox publisher: %w", err)
+		}
+		relay, err := outbox.NewRelay(
+			outbox.NewStore(applicationConfig.DB),
+			outboxPublisher,
+			outbox.DefaultRelayConfig(),
+		)
+		if err != nil {
+			return fmt.Errorf("set up outbox relay: %w", err)
+		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			relay.Run(shutdownContext)
+		}()
+
+		paymentHandler := services.NewPaymentInitiateHandler(applicationConfig.DB)
+		for range rabbitMQConfig.ConsumerConcurrency {
+			consumer, err := messaging.NewConsumer(
+				rabbitMQConfig.URL,
+				messages.PaymentCommandsQueue,
+				rabbitMQConfig.ConsumerPrefetch,
+				paymentHandler.Handle,
+			)
+			if err != nil {
+				return fmt.Errorf("set up payment command consumer: %w", err)
+			}
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				consumer.Run(shutdownContext)
+			}()
+		}
+
 		processor := services.NewPaymentJobHandler(
 			applicationConfig.DB,
 			applicationConfig.Gateway,

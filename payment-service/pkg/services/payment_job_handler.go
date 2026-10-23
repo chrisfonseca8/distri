@@ -107,15 +107,25 @@ func (h *PaymentJobHandler) writeResult(
 	writeContext, cancelWrite := context.WithTimeout(context.Background(), paymentResultWriteTimeout)
 	defer cancelWrite()
 
-	result := h.db.WithContext(writeContext).
-		Session(&gorm.Session{SkipDefaultTransaction: true}).
-		Table("payments.payment_attempts").
-		Where("id = ? AND status = ?", paymentID, "PENDING").
-		Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("persist payment gateway result: %w", result.Error)
-	}
-	return nil
+	return h.db.WithContext(writeContext).Transaction(func(tx *gorm.DB) error {
+		result := tx.Table("payments.payment_attempts").
+			Where("id = ? AND status = ?", paymentID, "PENDING").
+			Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("persist payment gateway result: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+
+		var payment models.PaymentAttempt
+		if err := tx.Table("payments.payment_attempts").
+			Where("id = ?", paymentID).
+			Take(&payment).Error; err != nil {
+			return fmt.Errorf("load payment result for reply: %w", err)
+		}
+		return enqueuePaymentReply(tx, payment)
+	})
 }
 
 func (h *PaymentJobHandler) loadPayment(

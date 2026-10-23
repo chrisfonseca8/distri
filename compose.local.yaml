@@ -145,6 +145,8 @@ services:
       <<: *payment-environment
       PAYMENT_PORT: "8082"
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-distri}:${RABBITMQ_DEFAULT_PASS:-distri}@rabbitmq:5672/
+      PAYMENT_CONSUMER_CONCURRENCY: "1"
+      PAYMENT_CONSUMER_PREFETCH: "10"
       GATEWAY_MODE: "${GATEWAY_MODE:-success}"
       GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
     ports:
@@ -152,6 +154,8 @@ services:
     depends_on:
       payment-migrate:
         condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8082/health"]
       interval: 3s

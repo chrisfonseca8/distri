@@ -9,6 +9,8 @@ func MigratePaymentAttempts(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&models.PaymentAttempt{},
 		&models.Job{},
+		&models.Outbox{},
+		&models.ProcessedMessage{},
 	); err != nil {
 		return err
 	}

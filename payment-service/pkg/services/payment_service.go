@@ -16,6 +16,7 @@ import (
 var (
 	ErrInvalidAmount   = errors.New("amount_paise must be greater than zero")
 	ErrInvalidCurrency = errors.New("currency must contain three characters")
+	ErrInvalidOrderID  = errors.New("order_id is required")
 	ErrPaymentNotFound = errors.New("payment not found")
 )
 
@@ -39,6 +40,9 @@ func NewPaymentService(db *gorm.DB) *PaymentService {
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentInput) (CreatePaymentResult, error) {
+	if input.OrderID == uuid.Nil() {
+		return CreatePaymentResult{}, ErrInvalidOrderID
+	}
 	if input.AmountPaise <= 0 {
 		return CreatePaymentResult{}, ErrInvalidAmount
 	}
@@ -51,42 +55,47 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentI
 		return CreatePaymentResult{}, ErrInvalidCurrency
 	}
 
-	attempt := models.PaymentAttempt{
-		OrderID:     input.OrderID,
-		AmountPaise: input.AmountPaise,
-		Currency:    currency,
-		Status:      "CREATED",
-		Gateway:     "sim",
-	}
-
+	input.Currency = currency
 	var createResult CreatePaymentResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		insert := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "order_id"}},
-			DoNothing: true,
-		}).Create(&attempt)
-		if insert.Error != nil {
-			return fmt.Errorf("create payment: %w", insert.Error)
-		}
-
-		if insert.RowsAffected == 0 {
-			if err := tx.Where("order_id = ?", input.OrderID).First(&attempt).Error; err != nil {
-				return fmt.Errorf("get existing payment: %w", err)
-			}
-			createResult = CreatePaymentResult{Attempt: attempt, Created: false}
-			return nil
-		}
-
-		if err := enqueueJob(tx, jobtypes.ProcessPayment, attempt.ID); err != nil {
-			return err
-		}
-		createResult = CreatePaymentResult{Attempt: attempt, Created: true}
-		return nil
+		var err error
+		createResult, err = createPayment(tx, input)
+		return err
 	})
 	if err != nil {
 		return CreatePaymentResult{}, err
 	}
 	return createResult, nil
+}
+
+// createPayment is shared by the HTTP path and the AMQP command handler. The
+// caller owns the transaction so payment creation, its job, and broker effects
+// can commit atomically.
+func createPayment(tx *gorm.DB, input CreatePaymentInput) (CreatePaymentResult, error) {
+	attempt := models.PaymentAttempt{
+		OrderID:     input.OrderID,
+		AmountPaise: input.AmountPaise,
+		Currency:    input.Currency,
+		Status:      "CREATED",
+		Gateway:     "sim",
+	}
+	insert := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "order_id"}},
+		DoNothing: true,
+	}).Create(&attempt)
+	if insert.Error != nil {
+		return CreatePaymentResult{}, fmt.Errorf("create payment: %w", insert.Error)
+	}
+	if insert.RowsAffected == 0 {
+		if err := tx.Where("order_id = ?", input.OrderID).First(&attempt).Error; err != nil {
+			return CreatePaymentResult{}, fmt.Errorf("get existing payment: %w", err)
+		}
+		return CreatePaymentResult{Attempt: attempt, Created: false}, nil
+	}
+	if err := enqueueJob(tx, jobtypes.ProcessPayment, attempt.ID); err != nil {
+		return CreatePaymentResult{}, err
+	}
+	return CreatePaymentResult{Attempt: attempt, Created: true}, nil
 }
 
 func enqueueJob(tx *gorm.DB, jobType string, paymentID uuid.UUID) error {

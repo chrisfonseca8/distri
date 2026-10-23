@@ -43,7 +43,9 @@ func (c *PaymentController) CreatePayment(w http.ResponseWriter, r *http.Request
 		AmountPaise: request.AmountPaise,
 		Currency:    request.Currency,
 	})
-	if errors.Is(err, services.ErrInvalidAmount) || errors.Is(err, services.ErrInvalidCurrency) {
+	if errors.Is(err, services.ErrInvalidOrderID) ||
+		errors.Is(err, services.ErrInvalidAmount) ||
+		errors.Is(err, services.ErrInvalidCurrency) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

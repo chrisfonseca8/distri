@@ -12,10 +12,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/clients"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/config"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -39,6 +42,15 @@ func run() error {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
+
+	inventoryClient, err := clients.NewInventoryClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("set up inventory client: %w", err)
+	}
+	sagaConfig, err := config.LoadSagaConfig()
+	if err != nil {
+		return fmt.Errorf("load saga configuration: %w", err)
+	}
 
 	rabbitMQConfig, err := config.LoadRabbitMQConfig()
 	if err != nil {
@@ -65,6 +77,13 @@ func run() error {
 
 	mux := http.NewServeMux()
 	routes.RegisterHealthRoutes(mux, applicationConfig.DB)
+	checkoutService := checkout.NewCheckoutService(
+		applicationConfig.DB,
+		inventoryClient,
+		sagaConfig.Deadline,
+		sagaConfig.StepTimeout,
+	)
+	routes.RegisterCheckoutRoutes(mux, controllers.NewCheckoutController(checkoutService))
 
 	server, err := config.NewServer(mux)
 	if err != nil {

@@ -29,6 +29,8 @@ x-orchestrator-environment: &orchestrator-environment
   DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-10}"
   DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-5}"
   DB_CONN_MAX_LIFETIME: 30m
+  SAGA_DEADLINE: "${SAGA_DEADLINE:-15m}"
+  SAGA_STEP_TIMEOUT: "${SAGA_STEP_TIMEOUT:-30s}"
 
 services:
   postgres:

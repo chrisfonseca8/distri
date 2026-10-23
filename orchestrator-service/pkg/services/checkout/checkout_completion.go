@@ -54,6 +54,8 @@ func (s *CheckoutService) createSagaFromReservation(
 			ID:          *attempt.OrderID,
 			Status:      string(saga.SagaRunning),
 			CurrentStep: string(saga.CREATE_ORDER),
+			TotalPaise:  reservation.TotalPaise,
+			Currency:    reservation.Currency,
 			DeadlineAt:  now.Add(s.sagaDeadline),
 		}
 		if err := tx.Table("orchestrator.sagas").Create(&sagaRow).Error; err != nil {

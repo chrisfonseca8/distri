@@ -18,6 +18,9 @@ import (
 	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
 	"github.com/chrisfonseca08/distri/order-service/pkg/jobs"
+	"github.com/chrisfonseca08/distri/order-service/pkg/messages"
+	"github.com/chrisfonseca08/distri/order-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/order-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/order-service/pkg/services"
 	"github.com/chrisfonseca08/distri/order-service/pkg/sweeper"
@@ -79,12 +82,57 @@ func run(roleValue string) error {
 		syscall.SIGTERM,
 	)
 	var workerWaitGroup sync.WaitGroup
+	var outboxPublisher *messaging.Publisher
 	defer func() {
 		stop()
 		workerWaitGroup.Wait()
+		if outboxPublisher != nil {
+			if err := outboxPublisher.Close(); err != nil {
+				slog.Error("close outbox publisher", "error", err)
+			}
+		}
 	}()
 
 	if role == roleWorker || role == roleAll {
+		rabbitMQConfig, err := config.LoadRabbitMQConfig()
+		if err != nil {
+			return fmt.Errorf("load RabbitMQ configuration: %w", err)
+		}
+		outboxPublisher, err = messaging.NewPublisher(rabbitMQConfig.URL)
+		if err != nil {
+			return fmt.Errorf("set up outbox publisher: %w", err)
+		}
+		relay, err := outbox.NewRelay(
+			outbox.NewStore(applicationConfig.DB),
+			outboxPublisher,
+			outbox.DefaultRelayConfig(),
+		)
+		if err != nil {
+			return fmt.Errorf("set up outbox relay: %w", err)
+		}
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			relay.Run(shutdownContext)
+		}()
+
+		orderCreateHandler := services.NewOrderCreateHandler(applicationConfig.DB)
+		for range rabbitMQConfig.ConsumerConcurrency {
+			orderCreateConsumer, err := messaging.NewConsumer(
+				rabbitMQConfig.URL,
+				messages.OrderCommandsQueue,
+				orderCreateHandler.Handle,
+			)
+			if err != nil {
+				return fmt.Errorf("set up order.create consumer: %w", err)
+			}
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				orderCreateConsumer.Run(shutdownContext)
+			}()
+		}
+
 		worker, err := jobs.NewWorker(
 			jobs.NewStore(applicationConfig.DB),
 			orderService,

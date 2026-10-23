@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"uuid"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
 )
@@ -33,6 +34,27 @@ func (c *CheckoutController) CreateCheckout(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeRawJSON(w, response.StatusCode, response.Body)
+}
+
+func (c *CheckoutController) GetCheckout(w http.ResponseWriter, r *http.Request) {
+	orderID, err := uuid.Parse(r.PathValue("orderID"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid order ID"})
+		return
+	}
+
+	result, err := c.service.GetCheckout(r.Context(), orderID)
+	if err != nil {
+		switch {
+		case errors.Is(err, checkout.ErrCheckoutNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		default:
+			slog.Error("get checkout", "order_id", orderID, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not get checkout"})
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func decodeCheckoutInput(r *http.Request) (checkout.CreateCheckoutInput, error) {

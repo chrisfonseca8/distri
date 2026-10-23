@@ -15,10 +15,12 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/clients"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/config"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/controllers"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/reply"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -74,6 +76,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up outbox relay: %w", err)
 	}
+	replyConsumer, err := messaging.NewConsumer(
+		rabbitMQConfig.URL,
+		messages.OrchestratorRepliesQueue,
+		reply.NewHandler(applicationConfig.DB).Handle,
+	)
+	if err != nil {
+		return fmt.Errorf("set up order reply consumer: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	routes.RegisterHealthRoutes(mux, applicationConfig.DB)
@@ -96,10 +106,14 @@ func run() error {
 		syscall.SIGTERM,
 	)
 	var backgroundWorkers sync.WaitGroup
-	backgroundWorkers.Add(1)
+	backgroundWorkers.Add(2)
 	go func() {
 		defer backgroundWorkers.Done()
 		relay.Run(shutdownSignal)
+	}()
+	go func() {
+		defer backgroundWorkers.Done()
+		replyConsumer.Run(shutdownSignal)
 	}()
 	defer func() {
 		stopSignals()

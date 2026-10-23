@@ -170,6 +170,8 @@ services:
       INVENTORY_TIMEOUT: 3s
       PAYMENT_URL: http://payment-service:8082
       PAYMENT_TIMEOUT: 3s
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-distri}:${RABBITMQ_DEFAULT_PASS:-distri}@rabbitmq:5672/
+      ORDER_CONSUMER_CONCURRENCY: "1"
     ports:
       - "${LOCAL_ORDER_PORT:-8080}:8080"
     depends_on:
@@ -178,6 +180,8 @@ services:
       inventory-service:
         condition: service_healthy
       payment-service:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]

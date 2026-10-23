@@ -8,4 +8,5 @@ import (
 
 func RegisterCheckoutRoutes(mux *http.ServeMux, controller *controllers.CheckoutController) {
 	mux.HandleFunc("POST /v1/checkouts", controller.CreateCheckout)
+	mux.HandleFunc("GET /v1/checkouts/{orderID}", controller.GetCheckout)
 }

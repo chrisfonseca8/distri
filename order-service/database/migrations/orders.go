@@ -11,5 +11,7 @@ func MigrateOrders(db *gorm.DB) error {
 		&models.OrderItem{},
 		&models.CheckoutAttempt{},
 		&models.Job{},
+		&models.Outbox{},
+		&models.ProcessedMessage{},
 	)
 }

@@ -22,3 +22,14 @@ func TestCreateCheckoutRejectsOversizedBody(t *testing.T) {
 		t.Fatalf("status = %d, want 400", response.Code)
 	}
 }
+
+func TestGetCheckoutRejectsInvalidOrderID(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/v1/checkouts/not-a-uuid", nil)
+	request.SetPathValue("orderID", "not-a-uuid")
+	response := httptest.NewRecorder()
+	new(CheckoutController).GetCheckout(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.Code)
+	}
+}

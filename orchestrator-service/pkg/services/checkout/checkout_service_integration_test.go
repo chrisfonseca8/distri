@@ -93,7 +93,8 @@ func TestCreateCheckoutCommitsSagaStepsOutboxAndAttempt(t *testing.T) {
 	if err := db.Table("orchestrator.sagas").Where("id = ?", result.OrderID).Take(&sagaRow).Error; err != nil {
 		t.Fatalf("load saga: %v", err)
 	}
-	if sagaRow.Status != "RUNNING" || sagaRow.CurrentStep != "CREATE_ORDER" {
+	if sagaRow.Status != "RUNNING" || sagaRow.CurrentStep != "CREATE_ORDER" ||
+		sagaRow.TotalPaise != 12345 || sagaRow.Currency != "INR" {
 		t.Fatalf("saga = %+v", sagaRow)
 	}
 	if sagaRow.DeadlineAt.Before(before.Add(sagaDeadline)) || sagaRow.DeadlineAt.After(after.Add(sagaDeadline)) {

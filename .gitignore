@@ -29,6 +29,7 @@ go.work.sum
 # env file
 .env
 .env.*
+!.env.example
 
 # Editor/IDE
 # .idea/
@@ -37,7 +38,14 @@ go.work.sum
 #bin
 /loadgen/loadgen
 /order-service/order-service
+/order-service/migrate
 /payment-service/payment-service
+/payment-service/migrate
+/inventory-service/inventory-service
+/inventory-service/migrate
+/orchestrator-service/orchestrator-service
+/orchestrator-service/migrate
+/gateway-simulator/gateway-simulator
 
 #claud 
 CLAUDE.md

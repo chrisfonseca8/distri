@@ -32,7 +32,7 @@ Outbound: the default (Neon on 5432, Docker Hub on 443).
 
 ```sh
 docker login -u ungoodcoder                 # paste the read-only token
-mkdir -p ~/distri/deploy/cloud ~/distri/loadgen/loadtesting ~/distri/test-results
+mkdir -p ~/distri/deploy/cloud ~/distri/testing/loadtesting ~/distri/test-results
 ```
 
 From your machine, copy only what is needed (no source code):
@@ -40,7 +40,7 @@ From your machine, copy only what is needed (no source code):
 ```sh
 scp -i <key>.pem compose.cloud.yaml                       ec2-user@<ip>:~/distri/
 scp -i <key>.pem deploy/cloud/.env.cloud                  ec2-user@<ip>:~/distri/deploy/cloud/
-scp -i <key>.pem loadgen/loadtesting/run-cases.sh         ec2-user@<ip>:~/distri/loadgen/loadtesting/
+scp -i <key>.pem testing/loadtesting/run-cases.sh         ec2-user@<ip>:~/distri/testing/loadtesting/
 ```
 
 ## 5. First run, on the host (in `~/distri`)
@@ -61,7 +61,7 @@ used locally:
 ```sh
 export DISTRI_COMPOSE_FILE=compose.cloud.yaml DISTRI_ENV_FILE=deploy/cloud/.env.cloud
 export LOADTEST_SERVICE=loadtest LOADTEST_PROFILE=loadtest
-loadgen/loadtesting/run-cases.sh c10        # also c11, c12, c13 [latency...], c14 [latency] [size...]
+testing/loadtesting/run-cases.sh c10        # also c11, c12, c13 [latency...], c14 [latency] [size...]
 ```
 
 Results are written to `~/distri/test-results/load-test/load-test.md` and `.json`;

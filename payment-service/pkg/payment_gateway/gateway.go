@@ -33,6 +33,7 @@ type ErrAwaitingPayment struct {
 	Ref string
 }
 
+// Error describes the order that is still waiting for the customer to pay.
 func (e *ErrAwaitingPayment) Error() string {
 	return fmt.Sprintf("gateway order %s is awaiting payment", e.Ref)
 }
@@ -45,6 +46,7 @@ type ErrRejected struct {
 	Description string
 }
 
+// Error describes why the provider refused the request.
 func (e *ErrRejected) Error() string {
 	return fmt.Sprintf("gateway rejected the request: %s: %s", e.Code, e.Description)
 }
@@ -68,6 +70,7 @@ var ErrPaymentNotFound = errors.New("gateway payment not found")
 // request. The outcome of the original request is not known from this response.
 type ErrRefundConflict struct{ Description string }
 
+// Error describes the refund conflict reported by the provider.
 func (e *ErrRefundConflict) Error() string { return "refund conflict: " + e.Description }
 
 // OrderState is what a provider reports about the order of one checkout.

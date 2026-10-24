@@ -16,6 +16,7 @@ type ReservationController struct {
 	service *services.ReservationService
 }
 
+// ListReservations handles GET /internal/v1/reservations and replies with RESERVED reservations older than a given time, one page at a time.
 func (c *ReservationController) ListReservations(w http.ResponseWriter, r *http.Request) {
 	if strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status"))) != "RESERVED" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be RESERVED"})
@@ -58,10 +59,12 @@ func (c *ReservationController) ListReservations(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, reservations)
 }
 
+// NewReservationController creates the reservation HTTP controller.
 func NewReservationController(service *services.ReservationService) *ReservationController {
 	return &ReservationController{service: service}
 }
 
+// CreateReservation handles POST /internal/v1/reservations and reserves stock for an order.
 func (c *ReservationController) CreateReservation(w http.ResponseWriter, r *http.Request) {
 	var input services.CreateReservationInput
 	decoder := json.NewDecoder(r.Body)
@@ -84,6 +87,7 @@ func (c *ReservationController) CreateReservation(w http.ResponseWriter, r *http
 	writeJSON(w, status, result)
 }
 
+// ConfirmReservation handles the confirm endpoint and turns an order's reserved stock into sold stock.
 func (c *ReservationController) ConfirmReservation(w http.ResponseWriter, r *http.Request) {
 	orderID, err := uuid.Parse(r.PathValue("orderID"))
 	if err != nil {
@@ -99,6 +103,7 @@ func (c *ReservationController) ConfirmReservation(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, result)
 }
 
+// ReleaseReservation handles the release endpoint and returns an order's reserved stock to the shelf.
 func (c *ReservationController) ReleaseReservation(w http.ResponseWriter, r *http.Request) {
 	orderID, err := uuid.Parse(r.PathValue("orderID"))
 	if err != nil {
@@ -114,6 +119,7 @@ func (c *ReservationController) ReleaseReservation(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, result)
 }
 
+// writeReservationError turns a reservation error into the matching HTTP status and message.
 func writeReservationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, services.ErrInvalidReservationInput):

@@ -26,6 +26,7 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
+// main starts the orchestrator service and exits non-zero if it stops with an error.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -35,6 +36,7 @@ func main() {
 	}
 }
 
+// run wires up the database, RabbitMQ workers, sweepers and HTTP server, then serves until shutdown.
 func run() error {
 	applicationConfig, err := config.Setup()
 	if err != nil {

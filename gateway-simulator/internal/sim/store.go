@@ -21,8 +21,10 @@ type APIError struct {
 	Field       string
 }
 
+// Error returns the error's description.
 func (e *APIError) Error() string { return e.Description }
 
+// badRequest builds a 400 error in Razorpay's format.
 func badRequest(description, field string) *APIError {
 	return &APIError{
 		Status: http.StatusBadRequest, Code: "BAD_REQUEST_ERROR", Description: description,
@@ -171,6 +173,7 @@ func (s *Store) notify(name, key string, p *payment, o *order, withOrder bool) {
 	s.notifier.Notify(event)
 }
 
+// NewStore creates an empty store whose delayed work is scheduled through at.
 func NewStore(cfg Config, at func(time.Time, func())) *Store {
 	return &Store{
 		cfg:               cfg,
@@ -236,6 +239,7 @@ func (s *Store) SetScenario(receipt, name string) error {
 	return nil
 }
 
+// SetDefaultScenario sets the default scenario, or clears it if name is empty.
 func (s *Store) SetDefaultScenario(name string) error {
 	if name != "" && !ValidScenario(name) {
 		return fmt.Errorf("unknown scenario %q", name)
@@ -248,6 +252,7 @@ func (s *Store) SetDefaultScenario(name string) error {
 
 // ---- orders ----
 
+// CreateOrder validates the request and creates an order.
 func (s *Store) CreateOrder(req OrderRequest) (OrderView, *APIError) {
 	amount, err := parseAmount(req.Amount)
 	if err != nil || req.Amount == "" {
@@ -341,6 +346,7 @@ func (s *Store) CreateOrder(req OrderRequest) (OrderView, *APIError) {
 	return orderView(o), nil
 }
 
+// GetOrder returns one order, or an error if the ID is unknown.
 func (s *Store) GetOrder(id string) (OrderView, *APIError) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -386,6 +392,7 @@ func (s *Store) ListOrders(receipt string, count, skip int) ([]OrderView, *APIEr
 	return items, nil
 }
 
+// OrderPayments returns the payments of one order.
 func (s *Store) OrderPayments(orderID string) ([]PaymentView, *APIError) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -401,6 +408,7 @@ func (s *Store) OrderPayments(orderID string) ([]PaymentView, *APIError) {
 
 // ---- payments ----
 
+// GetPayment returns one payment, or an error if the ID is unknown.
 func (s *Store) GetPayment(id string) (PaymentView, *APIError) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -479,6 +487,7 @@ func (s *Store) attempt(orderID, outcome string, captureAfter *Duration) {
 	}
 }
 
+// autoCapture captures a payment if it is still only authorized.
 func (s *Store) autoCapture(paymentID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -885,6 +894,7 @@ type StoreStats struct {
 	AmountCaptured int64          `json:"amount_captured_paise"`
 }
 
+// Stats returns the number of orders, payments and refunds by status.
 func (s *Store) Stats() StoreStats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -910,12 +920,14 @@ func (s *Store) Stats() StoreStats {
 
 // ---- helpers ----
 
+// unknownID builds the error returned for an ID that does not exist.
 func unknownID() *APIError {
 	e := badRequest("The id provided does not exist", "")
 	e.Source, e.Step, e.Reason = "business", "payment_initiation", "input_validation_failed"
 	return e
 }
 
+// parseAmount parses an amount given as a JSON number into whole paise.
 func parseAmount(n json.Number) (int64, error) {
 	if n == "" {
 		return 0, fmt.Errorf("amount is empty")
@@ -930,6 +942,7 @@ func parseAmount(n json.Number) (int64, error) {
 	return value, nil
 }
 
+// parseNotes checks the notes limits (at most 15 pairs, 256 characters per value) and converts them to strings.
 func parseNotes(raw map[string]any) (map[string]string, *APIError) {
 	if len(raw) > 15 {
 		return nil, badRequest("notes: a maximum of 15 key-value pairs is allowed", "notes")

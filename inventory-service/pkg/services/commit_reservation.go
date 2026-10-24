@@ -30,6 +30,7 @@ const (
 	releaseStock stockMovement = "release"
 )
 
+// ConfirmReservation marks an order's reservation CONFIRMED and moves its reserved stock to sold.
 func (s *ReservationService) ConfirmReservation(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -37,6 +38,7 @@ func (s *ReservationService) ConfirmReservation(
 	return s.changeReservationStatus(ctx, orderID, "CONFIRMED", confirmStock)
 }
 
+// ReleaseReservation marks an order's reservation RELEASED and returns its reserved stock to available.
 func (s *ReservationService) ReleaseReservation(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -44,6 +46,7 @@ func (s *ReservationService) ReleaseReservation(
 	return s.changeReservationStatus(ctx, orderID, "RELEASED", releaseStock)
 }
 
+// changeReservationStatus runs a reservation status change and its stock movement in one transaction.
 func (s *ReservationService) changeReservationStatus(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -97,6 +100,7 @@ func changeReservationStatusTx(
 	return result, nil
 }
 
+// transitionReservedReservation moves a reservation from RESERVED to targetStatus and reports whether it changed.
 func transitionReservedReservation(
 	tx *gorm.DB,
 	orderID uuid.UUID,
@@ -135,6 +139,7 @@ func transitionReservedReservation(
 	)
 }
 
+// loadReservationItems reads the items of a reservation in product order.
 func loadReservationItems(tx *gorm.DB, reservationID uuid.UUID) ([]models.ReservationItem, error) {
 	var items []models.ReservationItem
 	query := tx.Table("inventory.reservation_items").
@@ -150,6 +155,7 @@ func loadReservationItems(tx *gorm.DB, reservationID uuid.UUID) ([]models.Reserv
 	return items, nil
 }
 
+// moveReservedStock applies the confirm or release stock movement to each reserved item.
 func moveReservedStock(
 	tx *gorm.DB,
 	items []models.ReservationItem,

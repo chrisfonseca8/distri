@@ -30,6 +30,7 @@ type WorkerConfig struct {
 	RetryJitter    float64
 }
 
+// LoadWorkerConfig reads the job worker concurrency, lease, timeout and retry settings from the environment.
 func LoadWorkerConfig() (WorkerConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return WorkerConfig{}, fmt.Errorf("load .env: %w", err)
@@ -84,6 +85,7 @@ func LoadWorkerConfig() (WorkerConfig, error) {
 	return workerConfig, nil
 }
 
+// Validate rejects zero or negative worker settings.
 func (c WorkerConfig) Validate() error {
 	if c.Concurrency <= 0 {
 		return errors.New("WORKER_CONCURRENCY must be greater than zero")
@@ -112,6 +114,7 @@ func (c WorkerConfig) Validate() error {
 	return nil
 }
 
+// envFloat reads a float environment variable, or returns fallback when it is unset.
 func envFloat(name string, fallback float64) (float64, error) {
 	value := os.Getenv(name)
 	if value == "" {

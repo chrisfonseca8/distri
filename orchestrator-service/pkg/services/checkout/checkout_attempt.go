@@ -15,6 +15,7 @@ var ErrIdempotencyKeyConflict = errors.New(
 	"idempotency key was already used for a different checkout request",
 )
 
+// claimCheckoutAttempt records the idempotency key, or returns the existing attempt if the key was already used.
 func (s *CheckoutService) claimCheckoutAttempt(
 	ctx context.Context,
 	prepared preparedCheckoutRequest,
@@ -31,6 +32,7 @@ func (s *CheckoutService) claimCheckoutAttempt(
 	return attempt, created, nil
 }
 
+// createCheckoutAttempt inserts the attempt and reports whether this call created it.
 func (s *CheckoutService) createCheckoutAttempt(
 	ctx context.Context,
 	attempt *models.CheckoutAttempt,

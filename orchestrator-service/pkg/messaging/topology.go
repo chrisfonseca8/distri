@@ -136,6 +136,7 @@ func SetupTopology(url string) error {
 	)
 }
 
+// setupTopologyOnce declares the exchanges and queues once over a short-lived connection.
 func setupTopologyOnce(url string) error {
 	connection, err := amqp.Dial(url)
 	if err != nil {

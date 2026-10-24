@@ -21,6 +21,7 @@ type CompensationConfig struct {
 	RetryDelay            time.Duration
 }
 
+// LoadCompensationConfig reads the refund worker settings from the environment.
 func LoadCompensationConfig() (CompensationConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return CompensationConfig{}, fmt.Errorf("load .env: %w", err)
@@ -59,6 +60,7 @@ func LoadCompensationConfig() (CompensationConfig, error) {
 	return c, c.Validate()
 }
 
+// Validate rejects zero or negative intervals and windows that are out of order.
 func (c CompensationConfig) Validate() error {
 	switch {
 	case c.Interval <= 0 || c.Batch <= 0 || c.Lease <= 0 || c.PendingPoll <= 0 || c.RetryDelay <= 0:

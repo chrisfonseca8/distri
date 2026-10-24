@@ -17,6 +17,7 @@ type RabbitMQConfig struct {
 
 const defaultConsumerMaxAttempts = 5
 
+// LoadRabbitMQConfig reads the RabbitMQ URL and consumer settings from the environment.
 func LoadRabbitMQConfig() (RabbitMQConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return RabbitMQConfig{}, fmt.Errorf("load .env: %w", err)

@@ -36,8 +36,10 @@ type WebhookConfig struct {
 	BackoffCap  time.Duration
 }
 
+// Enabled reports whether a webhook secret is set, which turns webhook handling on.
 func (c WebhookConfig) Enabled() bool { return c.Secret != "" }
 
+// LoadWebhookConfig reads the webhook secret, body limit and processing settings from the environment.
 func LoadWebhookConfig() (WebhookConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return WebhookConfig{}, fmt.Errorf("load .env: %w", err)
@@ -83,6 +85,7 @@ func LoadWebhookConfig() (WebhookConfig, error) {
 	return result, result.Validate()
 }
 
+// Validate rejects zero or negative webhook settings.
 func (c WebhookConfig) Validate() error {
 	switch {
 	case c.MaxBodyBytes <= 0:

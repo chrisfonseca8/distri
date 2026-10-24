@@ -9,6 +9,7 @@ import (
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/config"
 )
 
+// main seeds the sample products and exits non-zero if it fails.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -23,6 +24,7 @@ func main() {
 	)
 }
 
+// run opens the database and seeds the sample products and their stock.
 func run() error {
 	db, err := config.OpenDB()
 	if err != nil {

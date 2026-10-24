@@ -26,6 +26,7 @@ type SagaConfig struct {
 	ResendBackoffCap time.Duration
 }
 
+// LoadSagaConfig reads the saga deadline, step timeout and retry settings from the environment.
 func LoadSagaConfig() (SagaConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return SagaConfig{}, fmt.Errorf("load .env: %w", err)
@@ -71,6 +72,7 @@ func LoadSagaConfig() (SagaConfig, error) {
 	return result, nil
 }
 
+// Validate rejects zero or negative saga settings.
 func (c SagaConfig) Validate() error {
 	if c.Deadline <= 0 {
 		return errors.New("SAGA_DEADLINE must be greater than zero")

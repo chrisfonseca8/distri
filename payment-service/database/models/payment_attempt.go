@@ -33,6 +33,7 @@ type PaymentAttempt struct {
 	UpdatedAt    time.Time  `gorm:"type:timestamptz;not null;autoUpdateTime" json:"updated_at"`
 }
 
+// TableName puts the payment-attempts table in the payments schema.
 func (PaymentAttempt) TableName() string {
 	return "payments.payment_attempts"
 }

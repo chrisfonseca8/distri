@@ -9,6 +9,7 @@ import (
 
 const defaultPort = "8083"
 
+// NewServer builds the HTTP server for handler on the configured port.
 func NewServer(handler http.Handler) (*http.Server, error) {
 	port, err := ServerPort()
 	if err != nil {
@@ -25,6 +26,7 @@ func NewServer(handler http.Handler) (*http.Server, error) {
 	}, nil
 }
 
+// ServerPort returns ORCHESTRATOR_PORT, or the default port when it is unset.
 func ServerPort() (string, error) {
 	if err := loadEnvFile(); err != nil {
 		return "", fmt.Errorf("load .env: %w", err)

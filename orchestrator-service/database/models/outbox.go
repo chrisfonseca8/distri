@@ -21,6 +21,7 @@ type Outbox struct {
 	CreatedAt     time.Time      `gorm:"type:timestamptz;not null;autoCreateTime;index:idx_outbox_relay,priority:2"`
 }
 
+// TableName puts the outbox table in the orchestrator schema.
 func (Outbox) TableName() string {
 	return "orchestrator.outbox"
 }

@@ -24,6 +24,7 @@ type ReservationCursor struct {
 	ID        uuid.UUID
 }
 
+// ListReservedReservations returns one page of RESERVED reservations older than olderThan, after the cursor.
 func (s *ReservationService) ListReservedReservations(
 	ctx context.Context,
 	olderThan time.Time,

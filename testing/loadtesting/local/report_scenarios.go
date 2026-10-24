@@ -55,6 +55,7 @@ func calculateScenarioPoints(reports []Report, cases ...string) []ScenarioPoint 
 	return points
 }
 
+// poolWait returns how many times a service waited for a database connection and for how long.
 func poolWait(report Report, service string) (int64, float64) {
 	metrics, found := report.Services[service]
 	if !found || metrics.DBPool == nil {
@@ -63,6 +64,7 @@ func poolWait(report Report, service string) (int64, float64) {
 	return metrics.DBPool.WaitCount, float64(metrics.DBPool.WaitDuration.Microseconds()) / 1000
 }
 
+// renderBehaviourSummary writes the table for the duplicate, double-pay, decline and random-outcome cases.
 func renderBehaviourSummary(out *strings.Builder, points []ScenarioPoint) {
 	if len(points) == 0 {
 		return
@@ -78,6 +80,7 @@ func renderBehaviourSummary(out *strings.Builder, points []ScenarioPoint) {
 	out.WriteString("\n")
 }
 
+// renderGatewayLatencySummary writes the table for the gateway latency sweep.
 func renderGatewayLatencySummary(out *strings.Builder, points []ScenarioPoint) {
 	if len(points) == 0 {
 		return
@@ -93,6 +96,7 @@ func renderGatewayLatencySummary(out *strings.Builder, points []ScenarioPoint) {
 	out.WriteString("\n")
 }
 
+// renderPoolSizeSummary writes the table for the database pool size sweep.
 func renderPoolSizeSummary(out *strings.Builder, points []ScenarioPoint) {
 	if len(points) == 0 {
 		return
@@ -109,11 +113,13 @@ func renderPoolSizeSummary(out *strings.Builder, points []ScenarioPoint) {
 	out.WriteString("\n")
 }
 
+// waitTriple formats the order, inventory and payment pool waits as one cell.
 func waitTriple(p ScenarioPoint) string {
 	return fmt.Sprintf("%d (%.0f ms) / %d (%.0f ms) / %d (%.0f ms)",
 		p.OrderPoolWaits, p.OrderPoolWaitMS, p.InventoryPoolWaits, p.InventoryPoolWaitMS, p.PaymentPoolWaits, p.PaymentPoolWaitMS)
 }
 
+// summarizeRun reduces a report to the figures kept in the repeat history.
 func summarizeRun(report Report) RunSummary {
 	return RunSummary{
 		StartedAt: report.StartedAt, CompletedRate: report.Client.CompletedRate,
@@ -149,6 +155,7 @@ func calculateRepeatHistory(reports []Report) []RepeatPoint {
 	return points
 }
 
+// renderRepeatHistory writes the table of earlier runs of the same case.
 func renderRepeatHistory(out *strings.Builder, reports []Report) {
 	points := calculateRepeatHistory(reports)
 	if len(points) == 0 {
@@ -168,6 +175,7 @@ func renderRepeatHistory(out *strings.Builder, reports []Report) {
 	out.WriteString("\n")
 }
 
+// sessionsText formats a session count, or n/a when it is unknown.
 func sessionsText(value *int64) string {
 	if value == nil {
 		return "n/a"

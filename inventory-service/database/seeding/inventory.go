@@ -16,6 +16,7 @@ type productSpec struct {
 	pricePaise int64
 }
 
+// SeedInventory inserts the sample products and a starting stock row for each, then checks that all of them are present.
 func SeedInventory(db *gorm.DB) error {
 	specs := []productSpec{
 		{name: "Wireless Mouse", pricePaise: 149900},

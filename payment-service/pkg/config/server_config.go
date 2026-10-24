@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// NewServer builds the HTTP server for handler on the configured port.
 func NewServer(handler http.Handler) (*http.Server, error) {
 	port, err := ServerPort()
 	if err != nil {
@@ -24,6 +25,7 @@ func NewServer(handler http.Handler) (*http.Server, error) {
 	}, nil
 }
 
+// ServerPort returns PAYMENT_PORT as a validated port number.
 func ServerPort() (string, error) {
 	if err := loadEnvFile(); err != nil {
 		return "", fmt.Errorf("load .env: %w", err)

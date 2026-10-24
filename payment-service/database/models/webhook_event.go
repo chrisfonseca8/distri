@@ -34,6 +34,7 @@ type WebhookEvent struct {
 	ProcessedAt *time.Time `gorm:"type:timestamptz"`
 }
 
+// TableName puts the webhook-events table in the payments schema.
 func (WebhookEvent) TableName() string {
 	return "payments.webhook_events"
 }

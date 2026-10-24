@@ -43,6 +43,7 @@ const (
 	roleAll    serviceRole = "all"
 )
 
+// main reads the -role flag, starts the service and exits non-zero if it stops with an error.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	role := flag.String("role", string(roleAll), "process role: api, worker, or all")
@@ -54,6 +55,7 @@ func main() {
 	}
 }
 
+// run starts the HTTP API, the background workers or both, depending on role, and serves until shutdown.
 func run(roleValue string) error {
 	role, err := parseRole(roleValue)
 	if err != nil {
@@ -325,6 +327,7 @@ func run(roleValue string) error {
 	return errors.Join(runErr, stopServer(server))
 }
 
+// newHandler builds the HTTP router with the payment, webhook, health and telemetry routes.
 func newHandler(applicationConfig *config.Config, sqlDB *sql.DB, webhookHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
@@ -347,6 +350,7 @@ func newHandler(applicationConfig *config.Config, sqlDB *sql.DB, webhookHandler 
 	return mux
 }
 
+// startServer serves HTTP in the background and returns a channel that receives the server's error.
 func startServer(server *http.Server, listener net.Listener) <-chan error {
 	serverErrors := make(chan error, 1)
 	go func() {
@@ -356,6 +360,7 @@ func startServer(server *http.Server, listener net.Listener) <-chan error {
 	return serverErrors
 }
 
+// verifyStartupHealth checks the database and the server's health endpoint before the service reports itself ready.
 func verifyStartupHealth(applicationConfig *config.Config, serverAddress string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 	defer cancel()
@@ -372,6 +377,7 @@ func verifyStartupHealth(applicationConfig *config.Config, serverAddress string)
 	return nil
 }
 
+// stopServer shuts the HTTP server down, waiting up to the shutdown timeout for requests in flight.
 func stopServer(server *http.Server) error {
 	shutdownCtx, cancelShutdown := context.WithTimeout(
 		context.Background(),
@@ -384,6 +390,7 @@ func stopServer(server *http.Server) error {
 	return nil
 }
 
+// parseRole checks that the role is api, worker or all.
 func parseRole(value string) (serviceRole, error) {
 	role := serviceRole(value)
 	switch role {

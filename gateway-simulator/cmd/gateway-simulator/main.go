@@ -17,6 +17,7 @@ import (
 	"github.com/chrisfonseca08/distri/gateway-simulator/internal/sim"
 )
 
+// main starts the gateway simulator and exits non-zero if it stops with an error.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(); err != nil {
@@ -25,6 +26,7 @@ func main() {
 	}
 }
 
+// run loads the configuration, starts the scheduler, webhook sender and HTTP server, and stops them on SIGINT or SIGTERM.
 func run() error {
 	cfg, err := sim.LoadConfig()
 	if err != nil {

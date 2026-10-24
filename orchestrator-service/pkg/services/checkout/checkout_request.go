@@ -38,6 +38,7 @@ type preparedCheckoutRequest struct {
 	Items   []CheckoutItemInput
 }
 
+// prepareCheckoutRequest validates the input and builds the attempt record and request hash.
 func prepareCheckoutRequest(input CreateCheckoutInput) (preparedCheckoutRequest, error) {
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	if idempotencyKey == "" {

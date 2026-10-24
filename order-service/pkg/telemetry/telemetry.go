@@ -70,24 +70,29 @@ type statusWriter struct {
 	status int
 }
 
+// WriteHeader records the status code before passing it on.
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
 
+// Enabled reports whether load-test telemetry is turned on.
 func Enabled() bool { return os.Getenv("LOAD_TEST_TELEMETRY") == "true" }
 
+// New creates a recorder and starts it from zero.
 func New(db *sql.DB) *Recorder {
 	r := &Recorder{db: db}
 	r.Reset()
 	return r
 }
 
+// Register adds the telemetry read and reset endpoints to mux.
 func (r *Recorder) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+endpoint, r.handleGet)
 	mux.HandleFunc("POST "+endpoint+"/reset", r.handleReset)
 }
 
+// Middleware counts requests, errors, in-flight requests and latency for every call except health and telemetry.
 func (r *Recorder) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/health" || request.URL.Path == endpoint || request.URL.Path == endpoint+"/reset" {
@@ -116,6 +121,7 @@ func (r *Recorder) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// Reset clears all counters and takes new database and memory baselines.
 func (r *Recorder) Reset() {
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
@@ -130,11 +136,13 @@ func (r *Recorder) Reset() {
 	r.mu.Unlock()
 }
 
+// handleReset clears the counters and replies 204.
 func (r *Recorder) handleReset(w http.ResponseWriter, _ *http.Request) {
 	r.Reset()
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleGet replies with the counters, latency summary and memory use collected since the last reset.
 func (r *Recorder) handleGet(w http.ResponseWriter, _ *http.Request) {
 	r.mu.Lock()
 	requests, errors, inFlight, maxInFlight := r.requests, r.errors, r.inFlight, r.maxInFlight
@@ -160,6 +168,7 @@ func (r *Recorder) handleGet(w http.ResponseWriter, _ *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// summarize sorts the latencies and returns their count, minimum, mean, percentiles and maximum in milliseconds.
 func summarize(values []time.Duration) latencySummary {
 	if len(values) == 0 {
 		return latencySummary{}

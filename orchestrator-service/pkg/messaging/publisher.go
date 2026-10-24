@@ -21,6 +21,7 @@ type Publisher struct {
 	returns    <-chan amqp.Return
 }
 
+// NewPublisher connects to RabbitMQ and returns a publisher.
 func NewPublisher(url string) (*Publisher, error) {
 	publisher := &Publisher{url: url}
 	if err := publisher.connectLocked(); err != nil {
@@ -29,6 +30,7 @@ func NewPublisher(url string) (*Publisher, error) {
 	return publisher, nil
 }
 
+// Publish sends payload to the given routing key on RabbitMQ.
 func (p *Publisher) Publish(
 	ctx context.Context,
 	messageID uuid.UUID,
@@ -97,12 +99,14 @@ func (p *Publisher) Publish(
 	}
 }
 
+// Close closes the publisher's channel and connection.
 func (p *Publisher) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.disconnectLocked()
 }
 
+// connectLocked opens a fresh connection and channel; the caller must hold the lock.
 func (p *Publisher) connectLocked() error {
 	_ = p.disconnectLocked()
 
@@ -129,6 +133,7 @@ func (p *Publisher) connectLocked() error {
 	return nil
 }
 
+// disconnectLocked closes the channel and connection; the caller must hold the lock.
 func (p *Publisher) disconnectLocked() error {
 	var closeErr error
 	if p.channel != nil {

@@ -41,6 +41,7 @@ type CompensationConfig struct {
 	RetryDelay       time.Duration
 }
 
+// validate rejects zero or negative settings and windows that are out of order.
 func (c CompensationConfig) validate() error {
 	switch {
 	case c.Interval <= 0 || c.Batch <= 0 || c.Lease <= 0 || c.GatewayTimeout <= 0 || c.PendingPoll <= 0 || c.RetryDelay <= 0:
@@ -81,6 +82,7 @@ type CompensationWorker struct {
 	now         func() time.Time
 }
 
+// NewCompensationWorker creates the refund worker for one gateway.
 func NewCompensationWorker(
 	db *gorm.DB,
 	gateway paymentgateway.Gateway,
@@ -107,6 +109,7 @@ func NewCompensationWorker(
 	}, nil
 }
 
+// Run processes refund records on every interval until ctx is cancelled.
 func (w *CompensationWorker) Run(ctx context.Context) {
 	slog.Info("compensation worker started", "gateway", w.gatewayName, "interval", w.config.Interval)
 	defer slog.Info("compensation worker stopped")
@@ -190,11 +193,13 @@ func (w *CompensationWorker) transition(
 	return applied, err
 }
 
+// unlocked adds the changes that release a record's lock.
 func unlocked(updates map[string]any) map[string]any {
 	updates["locked_by"], updates["locked_until"] = nil, nil
 	return updates
 }
 
+// truncateText cuts text to at most limit bytes.
 func truncateText(text string, limit int) string {
 	if len(text) <= limit {
 		return text
@@ -202,6 +207,7 @@ func truncateText(text string, limit int) string {
 	return text[:limit]
 }
 
+// toReview parks a record for a person to look at and logs why.
 func (w *CompensationWorker) toReview(ctx context.Context, record models.CompensationRecord, guard recordGuard, reason string) {
 	slog.Error("compensation needs review", "record_id", record.ID, "payment_id", record.GatewayPaymentID, "reason", reason)
 	if _, err := w.transition(ctx, record, guard, models.CompensationReview,
@@ -353,6 +359,7 @@ func (w *CompensationWorker) submitRequired(ctx context.Context) error {
 	return nil
 }
 
+// mine returns the guard that matches a record this worker has claimed.
 func (w *CompensationWorker) mine(record models.CompensationRecord) recordGuard {
 	return recordGuard{status: models.CompensationSubmitting, operationID: record.OperationID, lockedBy: w.workerID}
 }
@@ -466,6 +473,7 @@ func (w *CompensationWorker) afterSubmit(
 	}
 }
 
+// markUnknown records that a refund's outcome is unknown and schedules it to be checked again.
 func (w *CompensationWorker) markUnknown(ctx context.Context, record models.CompensationRecord, guard recordGuard, why string) {
 	since := w.now()
 	if record.UnknownSince != nil {
@@ -511,6 +519,7 @@ func providerOutcome(w *CompensationWorker, record models.CompensationRecord, re
 	}
 }
 
+// callPayment fetches a payment from the gateway with a timeout.
 func (w *CompensationWorker) callPayment(ctx context.Context, id string) (paymentgateway.PaymentInfo, error) {
 	callCtx, cancel := context.WithTimeout(ctx, w.config.GatewayTimeout)
 	defer cancel()
@@ -544,6 +553,7 @@ func (w *CompensationWorker) recoverFailed(ctx context.Context) error {
 	return nil
 }
 
+// deref returns the string a pointer points to, or an empty string for nil.
 func deref(text *string) string {
 	if text == nil {
 		return ""
@@ -571,6 +581,7 @@ func (w *CompensationWorker) reconcileUnknown(ctx context.Context) error {
 	return nil
 }
 
+// reconcileOneUnknown works out what happened to one refund of unknown outcome, waiting if the gateway cannot tell yet.
 func (w *CompensationWorker) reconcileOneUnknown(ctx context.Context, record models.CompensationRecord) {
 	guard := recordGuard{status: models.CompensationUnknown, operationID: record.OperationID}
 	wait := func(why string) {
@@ -634,6 +645,7 @@ func (w *CompensationWorker) reconcileOneUnknown(ctx context.Context, record mod
 	}
 }
 
+// unknownSince returns when the refund first became unknown.
 func (w *CompensationWorker) unknownSince(record models.CompensationRecord) time.Time {
 	if record.UnknownSince != nil {
 		return *record.UnknownSince
@@ -641,6 +653,7 @@ func (w *CompensationWorker) unknownSince(record models.CompensationRecord) time
 	return record.UpdatedAt
 }
 
+// touchUnknown updates an unknown refund record, only if its operation is unchanged.
 func (w *CompensationWorker) touchUnknown(ctx context.Context, record models.CompensationRecord, updates map[string]any) (bool, error) {
 	set := map[string]any{"updated_at": w.now()}
 	for key, value := range updates {
@@ -710,6 +723,7 @@ func (w *CompensationWorker) reconcilePending(ctx context.Context) error {
 	return nil
 }
 
+// touchPending updates a pending refund record, only if it is still pending.
 func (w *CompensationWorker) touchPending(ctx context.Context, record models.CompensationRecord, updates map[string]any) (bool, error) {
 	set := map[string]any{"updated_at": w.now()}
 	for key, value := range updates {

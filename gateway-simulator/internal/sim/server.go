@@ -34,10 +34,12 @@ type Server struct {
 	started  time.Time
 }
 
+// NewServer creates the HTTP server for the simulator.
 func NewServer(cfg Config, store *Store, scheduler *Scheduler, webhooks *Webhooks) *Server {
 	return &Server{cfg: cfg, store: store, scheduler: scheduler, webhooks: webhooks, started: time.Now()}
 }
 
+// Handler builds the router with the Razorpay-style API routes and the simulator control routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/orders", s.api(s.createOrder))
@@ -91,6 +93,7 @@ func (s *Server) api(handler func(http.ResponseWriter, *http.Request)) http.Hand
 	}
 }
 
+// authorized checks the request's basic-auth key ID and secret.
 func (s *Server) authorized(r *http.Request) bool {
 	user, password, ok := r.BasicAuth()
 	if !ok {
@@ -131,6 +134,7 @@ func (s *Server) delay(r *http.Request) error {
 	}
 }
 
+// createOrder handles POST /v1/orders.
 func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	var req OrderRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -141,6 +145,7 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	respond(w, order, apiErr)
 }
 
+// listOrders handles GET /v1/orders with the count and skip query parameters.
 func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	count, skip := 0, 0
@@ -165,11 +170,13 @@ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, collection(items))
 }
 
+// getOrder handles GET /v1/orders/{id}.
 func (s *Server) getOrder(w http.ResponseWriter, r *http.Request) {
 	order, apiErr := s.store.GetOrder(r.PathValue("id"))
 	respond(w, order, apiErr)
 }
 
+// orderPayments handles GET /v1/orders/{id}/payments.
 func (s *Server) orderPayments(w http.ResponseWriter, r *http.Request) {
 	items, apiErr := s.store.OrderPayments(r.PathValue("id"))
 	if apiErr != nil {
@@ -179,11 +186,13 @@ func (s *Server) orderPayments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, collection(items))
 }
 
+// getPayment handles GET /v1/payments/{id}.
 func (s *Server) getPayment(w http.ResponseWriter, r *http.Request) {
 	payment, apiErr := s.store.GetPayment(r.PathValue("id"))
 	respond(w, payment, apiErr)
 }
 
+// capturePayment handles POST /v1/payments/{id}/capture.
 func (s *Server) capturePayment(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Amount   json.Number `json:"amount"`
@@ -197,6 +206,7 @@ func (s *Server) capturePayment(w http.ResponseWriter, r *http.Request) {
 	respond(w, payment, apiErr)
 }
 
+// createRefund handles the refund request for a payment, using the X-Refund-Idempotency header as the idempotency key.
 func (s *Server) createRefund(w http.ResponseWriter, r *http.Request) {
 	var req RefundRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -230,6 +240,7 @@ func (s *Server) createRefund(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// paymentRefunds lists the refunds of one payment.
 func (s *Server) paymentRefunds(w http.ResponseWriter, r *http.Request) {
 	items, apiErr := s.store.ListPaymentRefunds(r.PathValue("id"))
 	if apiErr != nil {
@@ -239,11 +250,13 @@ func (s *Server) paymentRefunds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, collection(items))
 }
 
+// getRefund handles GET for one refund.
 func (s *Server) getRefund(w http.ResponseWriter, r *http.Request) {
 	refund, apiErr := s.store.GetRefund(r.PathValue("id"))
 	respond(w, refund, apiErr)
 }
 
+// listRefunds lists refunds, filtered by count, skip and a time range.
 func (s *Server) listRefunds(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	atoi := func(name string) int {
@@ -258,6 +271,7 @@ func (s *Server) listRefunds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, collection(items))
 }
 
+// setScenario sets the scenario used for orders with a given receipt.
 func (s *Server) setScenario(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetScenario(r.PathValue("receipt"), r.URL.Query().Get("name")); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -266,6 +280,7 @@ func (s *Server) setScenario(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"receipt": r.PathValue("receipt"), "scenario": r.URL.Query().Get("name")})
 }
 
+// setDefaultScenario sets the scenario used when none is chosen for an order.
 func (s *Server) setDefaultScenario(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetDefaultScenario(r.URL.Query().Get("name")); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -274,6 +289,7 @@ func (s *Server) setDefaultScenario(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"default_scenario": r.URL.Query().Get("name")})
 }
 
+// setOrderScenario sets the scenario for one existing order.
 func (s *Server) setOrderScenario(w http.ResponseWriter, r *http.Request) {
 	if apiErr := s.store.SetOrderScenario(r.PathValue("orderID"), r.URL.Query().Get("name")); apiErr != nil {
 		writeError(w, apiErr)
@@ -282,6 +298,7 @@ func (s *Server) setOrderScenario(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"order_id": r.PathValue("orderID"), "scenario": r.URL.Query().Get("name")})
 }
 
+// setPlan sets a scripted plan of attempts and events for a receipt.
 func (s *Server) setPlan(w http.ResponseWriter, r *http.Request) {
 	var plan Plan
 	if err := decodeJSON(r, &plan); err != nil {
@@ -295,6 +312,7 @@ func (s *Server) setPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"receipt": r.PathValue("receipt"), "attempts": len(plan.Attempts)})
 }
 
+// setOrderPlan sets a scripted plan for one existing order.
 func (s *Server) setOrderPlan(w http.ResponseWriter, r *http.Request) {
 	var plan Plan
 	if err := decodeJSON(r, &plan); err != nil {
@@ -308,6 +326,7 @@ func (s *Server) setOrderPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"order_id": r.PathValue("orderID"), "attempts": len(plan.Attempts)})
 }
 
+// listWebhooks lists recent webhook deliveries, optionally for one payment.
 func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -318,6 +337,7 @@ func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, collection(s.webhooks.List(limit, r.URL.Query().Get("payment_id"))))
 }
 
+// redeliverWebhook queues a past webhook event to be sent again.
 func (s *Server) redeliverWebhook(w http.ResponseWriter, r *http.Request) {
 	if !s.webhooks.Redeliver(r.PathValue("eventID")) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown event"})
@@ -339,6 +359,7 @@ type metricsResponse struct {
 	Config        map[string]any   `json:"config"`
 }
 
+// metrics reports uptime, request counts by status class, scheduler, store and webhook stats, and memory use.
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -360,6 +381,7 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// decodeJSON reads a size-limited JSON body into out; an empty body is allowed.
 func decodeJSON(r *http.Request, out any) error {
 	body := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	decoder := json.NewDecoder(body)
@@ -370,6 +392,7 @@ func decodeJSON(r *http.Request, out any) error {
 	return nil
 }
 
+// respond writes value as JSON, or the error if there is one.
 func respond[T any](w http.ResponseWriter, value T, apiErr *APIError) {
 	if apiErr != nil {
 		writeError(w, apiErr)
@@ -390,6 +413,7 @@ type errorBody struct {
 	} `json:"error"`
 }
 
+// writeError writes an API error in Razorpay's error format.
 func writeError(w http.ResponseWriter, apiErr *APIError) {
 	var body errorBody
 	body.Error.Code, body.Error.Description = apiErr.Code, apiErr.Description
@@ -402,6 +426,7 @@ func writeError(w http.ResponseWriter, apiErr *APIError) {
 	writeJSON(w, apiErr.Status, body)
 }
 
+// writeJSON encodes value as JSON and writes it with the given status.
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -417,6 +442,7 @@ type statusRecorder struct {
 // connection for the "lost response" fault).
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
+// WriteHeader records the status code before passing it on.
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)

@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// main runs the schema migration and exits non-zero if it fails.
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -22,6 +23,7 @@ func main() {
 	slog.Info("migration completed")
 }
 
+// run opens the database and applies the payment migrations.
 func run() error {
 	db, err := config.OpenDB()
 	if err != nil {

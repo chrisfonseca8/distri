@@ -21,6 +21,7 @@ import (
 
 var errConcurrentSagaWinner = errors.New("concurrent checkout created the saga")
 
+// createSagaFromReservation creates the saga at its first step, queues the create-order command and records the 202 response in one transaction.
 func (s *CheckoutService) createSagaFromReservation(
 	ctx context.Context,
 	attempt models.CheckoutAttempt,
@@ -110,6 +111,7 @@ func (s *CheckoutService) createSagaFromReservation(
 	return s.loadCompletedResponse(ctx, attempt.IdempotencyKey)
 }
 
+// orderCreatePayload builds the create-order message from the reserved items.
 func orderCreatePayload(orderID uuid.UUID, reservation clients.ReserveResult) (json.RawMessage, error) {
 	items := make([]messages.OrderCreateItem, 0, len(reservation.Items))
 	for _, item := range reservation.Items {
@@ -132,6 +134,7 @@ func orderCreatePayload(orderID uuid.UUID, reservation clients.ReserveResult) (j
 	return body, nil
 }
 
+// completeDefinitiveFailure saves a final failure response on the attempt.
 func (s *CheckoutService) completeDefinitiveFailure(
 	ctx context.Context,
 	idempotencyKey string,
@@ -152,6 +155,7 @@ func (s *CheckoutService) completeDefinitiveFailure(
 	return s.loadCompletedResponse(ctx, idempotencyKey)
 }
 
+// completeCheckoutAttempt marks the attempt completed and stores the response replayed for repeat requests.
 func completeCheckoutAttempt(
 	tx *gorm.DB,
 	idempotencyKey string,
@@ -175,6 +179,7 @@ func completeCheckoutAttempt(
 	return nil
 }
 
+// loadCompletedResponse returns the stored response for an attempt that already finished.
 func (s *CheckoutService) loadCompletedResponse(
 	ctx context.Context,
 	idempotencyKey string,
@@ -194,6 +199,7 @@ type sqlStateError interface {
 	SQLState() string
 }
 
+// isUniqueViolation reports whether err is a Postgres unique-constraint violation.
 func isUniqueViolation(err error) bool {
 	var databaseError sqlStateError
 	return errors.As(err, &databaseError) && databaseError.SQLState() == "23505"

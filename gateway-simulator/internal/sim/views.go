@@ -17,6 +17,7 @@ type OrderView struct {
 	CreatedAt  int64             `json:"created_at"`
 }
 
+// orderView converts an internal order to its API response.
 func orderView(o *order) OrderView {
 	view := OrderView{
 		ID: o.id, Entity: "order", Amount: o.amount, AmountPaid: o.amountPaid,
@@ -53,6 +54,7 @@ type PaymentView struct {
 	Notes          map[string]string `json:"notes"`
 }
 
+// paymentView converts an internal payment to its API response.
 func paymentView(p *payment) PaymentView {
 	view := PaymentView{
 		ID: p.id, Entity: "payment", Amount: p.amount, Currency: p.currency, Status: p.status,
@@ -87,6 +89,7 @@ type RefundView struct {
 	Notes          map[string]string `json:"notes"`
 }
 
+// refundView converts an internal refund to its API response.
 func refundView(r *refund) RefundView {
 	notes := map[string]string{}
 	for key, value := range r.notes {
@@ -113,6 +116,7 @@ type Collection[T any] struct {
 	Items  []T    `json:"items"`
 }
 
+// collection wraps items in Razorpay's collection format.
 func collection[T any](items []T) Collection[T] {
 	if items == nil {
 		items = []T{}

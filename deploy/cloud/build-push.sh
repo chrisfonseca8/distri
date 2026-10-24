@@ -26,8 +26,10 @@ fi
 
 for context in order-service inventory-service payment-service loadgen; do
   image="$repo:$context-$tag"
+  dir="$context"
+  [ "$context" = loadgen ] && dir=testing  # image is named loadgen; its source lives in testing/
   echo "== building $image"
-  docker build --platform linux/amd64 -t "$image" "./$context"
+  docker build --platform linux/amd64 -t "$image" "./$dir"
   echo "== pushing $image"
   docker push "$image"
 done

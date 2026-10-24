@@ -21,6 +21,7 @@ type ConsumerPoolConfig struct {
 	ScaleDownAfter time.Duration
 }
 
+// loadConsumerPoolConfig reads a consumer pool's maximum concurrency and scaling interval using the given env prefix.
 func loadConsumerPoolConfig(prefix string, minimum int) (ConsumerPoolConfig, error) {
 	maximum, err := envInt(prefix+"_CONSUMER_MAX_CONCURRENCY", minimum)
 	if err != nil {

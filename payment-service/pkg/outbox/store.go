@@ -51,10 +51,12 @@ type Store struct {
 	db *gorm.DB
 }
 
+// NewStore creates an outbox store backed by db.
 func NewStore(db *gorm.DB) *Store {
 	return &Store{db: db.Session(&gorm.Session{SkipDefaultTransaction: true})}
 }
 
+// Claim leases up to limit due rows to workerID.
 func (s *Store) Claim(
 	ctx context.Context,
 	workerID string,
@@ -100,6 +102,7 @@ RETURNING outbox.*`
 	return claimed, nil
 }
 
+// MarkPublished marks a row as sent, only if workerID still holds its lease.
 func (s *Store) MarkPublished(
 	ctx context.Context,
 	rowID uuid.UUID,
@@ -120,6 +123,7 @@ func (s *Store) MarkPublished(
 	return result.RowsAffected == 1, nil
 }
 
+// Reschedule puts a row back to be retried after delay, only if workerID still holds its lease.
 func (s *Store) Reschedule(
 	ctx context.Context,
 	rowID uuid.UUID,

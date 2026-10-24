@@ -24,10 +24,12 @@ type OrderCommandHandler struct {
 	createHandler *OrderCreateHandler
 }
 
+// NewOrderCommandHandler creates the handler for order commands received from RabbitMQ.
 func NewOrderCommandHandler(db *gorm.DB) *OrderCommandHandler {
 	return &OrderCommandHandler{db: db, createHandler: NewOrderCreateHandler(db)}
 }
 
+// Handle sends a command to the create, mark-paid or cancel handler based on its routing key.
 func (h *OrderCommandHandler) Handle(ctx context.Context, delivery messaging.Delivery) error {
 	switch delivery.RoutingKey {
 	case messages.OrderCreateRoutingKey:
@@ -41,6 +43,7 @@ func (h *OrderCommandHandler) Handle(ctx context.Context, delivery messaging.Del
 	}
 }
 
+// handleTransition applies the target status to an order, once per message ID, and queues a reply for the saga step.
 func (h *OrderCommandHandler) handleTransition(
 	ctx context.Context,
 	delivery messaging.Delivery,
@@ -131,6 +134,7 @@ func (h *OrderCommandHandler) handleTransition(
 	return messaging.Transient(wrapped)
 }
 
+// decodeOrderTransition reads the order ID from a mark-paid or cancel command.
 func decodeOrderTransition(body []byte, target state.OrderStatus) (uuid.UUID, error) {
 	var orderID uuid.UUID
 	switch target {

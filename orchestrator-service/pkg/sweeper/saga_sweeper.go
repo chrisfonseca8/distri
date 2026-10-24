@@ -28,6 +28,7 @@ type SagaConfig struct {
 	ResendBackoffCap time.Duration
 }
 
+// validate rejects zero or negative sweeper settings.
 func (c SagaConfig) validate() error {
 	if c.Interval <= 0 {
 		return errors.New("saga sweep interval must be greater than zero")
@@ -56,6 +57,7 @@ type SagaSweeper struct {
 	config SagaConfig
 }
 
+// NewSagaSweeper creates a sweeper that resends overdue steps and flags expired sagas.
 func NewSagaSweeper(db *gorm.DB, config SagaConfig) (*SagaSweeper, error) {
 	if db == nil {
 		return nil, errors.New("saga sweeper database is required")
@@ -66,6 +68,7 @@ func NewSagaSweeper(db *gorm.DB, config SagaConfig) (*SagaSweeper, error) {
 	return &SagaSweeper{db: db, config: config}, nil
 }
 
+// Run sweeps on every interval until ctx is cancelled.
 func (s *SagaSweeper) Run(ctx context.Context) {
 	slog.Info("saga sweeper started", "interval", s.config.Interval, "batch", s.config.Batch)
 	defer slog.Info("saga sweeper stopped")
@@ -82,6 +85,7 @@ func (s *SagaSweeper) Run(ctx context.Context) {
 	}
 }
 
+// SweepOnce does one pass: resend overdue steps, then mark expired sagas STUCK.
 func (s *SagaSweeper) SweepOnce(ctx context.Context) {
 	if err := s.resendDueSteps(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("saga sweeper: resend pass failed", "error", err)
@@ -122,6 +126,7 @@ ORDER BY st.next_attempt_at
 LIMIT 1
 FOR UPDATE OF st, sg SKIP LOCKED`
 
+// resendDueSteps resends overdue steps, up to one batch per pass.
 func (s *SagaSweeper) resendDueSteps(ctx context.Context) error {
 	for handled := 0; handled < s.config.Batch; handled++ {
 		found, err := s.handleOneDueStep(ctx)
@@ -135,6 +140,7 @@ func (s *SagaSweeper) resendDueSteps(ctx context.Context) error {
 	return nil
 }
 
+// handleOneDueStep locks one overdue step and either re-queues its command or marks the saga STUCK; it returns false if no step is due.
 func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 	var found bool
 	var afterCommit func()
@@ -226,6 +232,7 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 	return found, nil
 }
 
+// markStuck sets a saga to STUCK, only if its version has not changed.
 func markStuck(tx *gorm.DB, sagaID uuid.UUID, version int64) error {
 	update := tx.Table("orchestrator.sagas").
 		Where("id = ? AND version = ?", sagaID, version).

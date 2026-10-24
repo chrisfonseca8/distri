@@ -22,6 +22,7 @@ type collector struct {
 	duplicateInjected, duplicateExtra, duplicateReplay200, duplicateMismatches int64
 }
 
+// duplicate adds to the counts for the duplicate-checkout test.
 func (c *collector) duplicate(injected, extra, replay200, mismatches int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -31,11 +32,16 @@ func (c *collector) duplicate(injected, extra, replay200, mismatches int64) {
 	c.duplicateMismatches += mismatches
 }
 
+// newCollector creates a collector that starts timing now.
 func newCollector() *collector {
 	now := time.Now()
 	return &collector{started: now, checkoutMix: newStatusMix(), payMix: newStatusMix(), requests: activity{last: now}, workflows: activity{last: now}}
 }
+
+// newStatusMix creates an empty set of HTTP status counts.
 func newStatusMix() StatusMix { return StatusMix{ByHTTPStatus: make(map[string]int64)} }
+
+// update changes an activity's current count by delta, keeping the running average and maximum.
 func (c *collector) update(a *activity, delta int64) {
 	now := time.Now()
 	a.area += float64(a.current) * now.Sub(a.last).Seconds()
@@ -45,13 +51,29 @@ func (c *collector) update(a *activity, delta int64) {
 		a.max = a.current
 	}
 }
-func (c *collector) beginRequest()  { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.requests, 1) }
-func (c *collector) endRequest()    { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.requests, -1) }
+
+// beginRequest counts one more request in flight.
+func (c *collector) beginRequest() { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.requests, 1) }
+
+// endRequest counts one fewer request in flight.
+func (c *collector) endRequest() { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.requests, -1) }
+
+// beginWorkflow counts one more checkout workflow in flight.
 func (c *collector) beginWorkflow() { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.workflows, 1) }
-func (c *collector) endWorkflow()   { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.workflows, -1) }
-func (c *collector) offeredOne()    { c.mu.Lock(); defer c.mu.Unlock(); c.offered++ }
-func (c *collector) acceptedOne()   { c.mu.Lock(); defer c.mu.Unlock(); c.accepted++ }
-func (c *collector) pendingOne()    { c.mu.Lock(); defer c.mu.Unlock(); c.pending++ }
+
+// endWorkflow counts one fewer checkout workflow in flight.
+func (c *collector) endWorkflow() { c.mu.Lock(); defer c.mu.Unlock(); c.update(&c.workflows, -1) }
+
+// offeredOne counts one more workflow offered to the system.
+func (c *collector) offeredOne() { c.mu.Lock(); defer c.mu.Unlock(); c.offered++ }
+
+// acceptedOne counts one more workflow the system accepted.
+func (c *collector) acceptedOne() { c.mu.Lock(); defer c.mu.Unlock(); c.accepted++ }
+
+// pendingOne counts one more workflow still unfinished when the run ended.
+func (c *collector) pendingOne() { c.mu.Lock(); defer c.mu.Unlock(); c.pending++ }
+
+// completedOne counts a finished workflow by its final order status and records its latency.
 func (c *collector) completedOne(status string, latency time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -63,18 +85,24 @@ func (c *collector) completedOne(status string, latency time.Duration) {
 	}
 	c.endToEnd = append(c.endToEnd, latency)
 }
+
+// checkoutResult records the latency and status of one checkout call.
 func (c *collector) checkoutResult(status int, latency time.Duration, transport, decode error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.checkout = append(c.checkout, latency)
 	recordStatus(&c.checkoutMix, status, transport, decode)
 }
+
+// payResult records the latency and status of one payment call.
 func (c *collector) payResult(status int, latency time.Duration, transport, decode error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pay = append(c.pay, latency)
 	recordStatus(&c.payMix, status, transport, decode)
 }
+
+// recordStatus counts a response by HTTP status, transport error or decode error.
 func recordStatus(m *StatusMix, status int, transport, decode error) {
 	if transport != nil {
 		m.TransportErrors++
@@ -95,6 +123,8 @@ func recordStatus(m *StatusMix, status int, transport, decode error) {
 		m.Server5xx++
 	}
 }
+
+// snapshot returns the client-side results for the run so far.
 func (c *collector) snapshot(elapsed time.Duration) ClientMetrics {
 	c.mu.Lock()
 	defer c.mu.Unlock()

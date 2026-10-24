@@ -38,10 +38,12 @@ type orderResponse struct {
 	Status string `json:"status"`
 }
 
+// workflow runs one checkout and payment workflow for a single product.
 func (c *loadClient) workflow(parent context.Context, productID string) {
 	c.workflowCart(parent, []cartItem{{ProductID: productID, Quantity: 1}})
 }
 
+// workflowCart runs one workflow for a cart, using the duplicate-checkout variant when that behaviour is set.
 func (c *loadClient) workflowCart(parent context.Context, items []cartItem) {
 	sequence := c.sequence.Add(1) - 1
 	switch c.behavior {
@@ -52,6 +54,7 @@ func (c *loadClient) workflowCart(parent context.Context, items []cartItem) {
 	}
 }
 
+// standardWorkflow runs checkout, then payment, then waits for the order to reach a final status.
 func (c *loadClient) standardWorkflow(parent context.Context, items []cartItem) {
 	c.metrics.beginWorkflow()
 	defer c.metrics.endWorkflow()
@@ -76,6 +79,7 @@ type checkoutCall struct {
 	decode    error
 }
 
+// duplicateCheckoutWorkflow sends some checkouts twice with the same key, sometimes at the same moment, to test idempotency.
 func (c *loadClient) duplicateCheckoutWorkflow(parent context.Context, items []cartItem, sequence uint64) {
 	c.metrics.beginWorkflow()
 	defer c.metrics.endWorkflow()
@@ -111,6 +115,7 @@ func (c *loadClient) duplicateCheckoutWorkflow(parent context.Context, items []c
 	c.finishCheckoutCalls(ctx, started, calls)
 }
 
+// finishCheckoutCalls checks that repeated checkouts agree and then continues the workflow.
 func (c *loadClient) finishCheckoutCalls(ctx context.Context, started time.Time, calls []checkoutCall) {
 	var chosen checkoutResponse
 	valid, replay200, mismatch := 0, int64(0), int64(0)
@@ -150,10 +155,12 @@ func (c *loadClient) finishOrder(ctx context.Context, started time.Time, orderID
 	}
 }
 
+// checkout sends a checkout with a new idempotency key.
 func (c *loadClient) checkout(ctx context.Context, items []cartItem) (int, checkoutResponse, time.Duration, error, error) {
 	return c.checkoutWithKey(ctx, items, "load-"+newUUID())
 }
 
+// checkoutWithKey sends a checkout with the given idempotency key.
 func (c *loadClient) checkoutWithKey(ctx context.Context, items []cartItem, key string) (int, checkoutResponse, time.Duration, error, error) {
 	body := map[string]any{"items": items}
 	var result checkoutResponse
@@ -186,6 +193,7 @@ func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResp
 	}
 }
 
+// do sends a JSON request and returns the status, latency, transport error and decode error.
 func (c *loadClient) do(ctx context.Context, method, url string, body any, headers map[string]string, out any) (int, time.Duration, error, error) {
 	var reader io.Reader
 	if body != nil {
@@ -226,6 +234,7 @@ func (c *loadClient) do(ctx context.Context, method, url string, body any, heade
 	return response.StatusCode, latency, nil, nil
 }
 
+// newUUID returns a random version-4 UUID.
 func newUUID() string {
 	data := make([]byte, 16)
 	if _, err := rand.Read(data); err != nil {

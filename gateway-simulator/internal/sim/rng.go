@@ -11,6 +11,7 @@ import (
 // sequence, so concurrent scheduling cannot change which fault hits which
 // checkout.
 
+// hashParts hashes the seed and the parts into one number, so the same inputs always give the same random choice.
 func hashParts(seed uint64, parts ...string) uint64 {
 	h := fnv.New64a()
 	var s [8]byte

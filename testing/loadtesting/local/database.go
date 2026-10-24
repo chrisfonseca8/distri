@@ -32,6 +32,7 @@ type gaugeAccumulator struct {
 	max   int64
 }
 
+// add records one reading, keeping the total and maximum.
 func (g *gaugeAccumulator) add(value int64) {
 	g.total += float64(value)
 	if value > g.max {
@@ -39,6 +40,7 @@ func (g *gaugeAccumulator) add(value int64) {
 	}
 }
 
+// resetFixture restores the test data in one transaction and returns the product IDs.
 func resetFixture(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -93,6 +95,7 @@ func resetFixture(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	return products, nil
 }
 
+// configureWorkloadFixture sets the hot-product stock for contention cases.
 func configureWorkloadFixture(ctx context.Context, pool *pgxpool.Pool, cfg config, products []string) error {
 	if cfg.HotStock <= 0 {
 		return nil
@@ -109,6 +112,7 @@ func configureWorkloadFixture(ctx context.Context, pool *pgxpool.Pool, cfg confi
 	return nil
 }
 
+// newDatabaseSampler records the database baseline and creates the sampler.
 func newDatabaseSampler(ctx context.Context, pool *pgxpool.Pool, every time.Duration) (*databaseSampler, error) {
 	s := &databaseSampler{pool: pool, every: every}
 	if err := pool.QueryRow(ctx, `SELECT deadlocks, pg_database_size(current_database()), sessions
@@ -118,6 +122,7 @@ func newDatabaseSampler(ctx context.Context, pool *pgxpool.Pool, every time.Dura
 	return s, nil
 }
 
+// run samples the database on each tick until ctx is cancelled.
 func (s *databaseSampler) run(ctx context.Context) {
 	s.sample(ctx)
 	ticker := time.NewTicker(s.every)
@@ -132,6 +137,7 @@ func (s *databaseSampler) run(ctx context.Context) {
 	}
 }
 
+// sample reads connection, lock and activity counts from Postgres.
 func (s *databaseSampler) sample(ctx context.Context) {
 	var connections, active, idleInTx, lockWaiters, ungranted int64
 	err := s.pool.QueryRow(ctx, `SELECT
@@ -156,6 +162,7 @@ func (s *databaseSampler) sample(ctx context.Context) {
 	s.ungranted.add(ungranted)
 }
 
+// finish takes a last sample and returns the database metrics for the run.
 func (s *databaseSampler) finish(ctx context.Context) (DatabaseMetrics, error) {
 	s.sample(ctx)
 	var deadlocksAfter, bytesAfter, sessionsAfter int64
@@ -214,6 +221,7 @@ func (s *databaseSampler) finish(ctx context.Context) (DatabaseMetrics, error) {
 	}, nil
 }
 
+// checkInvariants runs the database checks that must hold after every run, such as stock never negative.
 func checkInvariants(ctx context.Context, pool *pgxpool.Pool, client ClientMetrics, strictWorkflowCounts bool) ([]InvariantResult, error) {
 	checks := []struct {
 		name  string
@@ -284,6 +292,7 @@ func checkInvariants(ctx context.Context, pool *pgxpool.Pool, client ClientMetri
 	return results, nil
 }
 
+// checkWorkloadInvariants runs the extra checks that belong to specific cases.
 func checkWorkloadInvariants(ctx context.Context, pool *pgxpool.Pool, cfg config, products []string, client ClientMetrics) ([]InvariantResult, error) {
 	if cfg.CaseName == "C11" {
 		var changed int64

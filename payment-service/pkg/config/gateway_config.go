@@ -34,6 +34,7 @@ type GatewayConfig struct {
 	AuditInterval time.Duration
 }
 
+// LoadGatewayConfig reads the payment window and reconcile settings from the environment.
 func LoadGatewayConfig() (GatewayConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return GatewayConfig{}, fmt.Errorf("load .env: %w", err)
@@ -77,6 +78,7 @@ func LoadGatewayConfig() (GatewayConfig, error) {
 	return result, nil
 }
 
+// Validate rejects zero or negative gateway settings.
 func (c GatewayConfig) Validate() error {
 	if c.PaymentWindow <= 0 {
 		return errors.New("PAYMENT_WINDOW must be greater than zero")

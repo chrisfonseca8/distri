@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// NewServer builds the HTTP server for handler on the port in INVENTORY_PORT.
 func NewServer(handler http.Handler) (*http.Server, error) {
 	if err := loadEnvFile(); err != nil {
 		return nil, err

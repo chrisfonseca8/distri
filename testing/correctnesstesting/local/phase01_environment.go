@@ -18,6 +18,7 @@ func phase01() phaseDefinition {
 	}}
 }
 
+// statusDetail describes a health-check result as text for the report.
 func statusDetail(status int, err error) string {
 	if err != nil {
 		return err.Error()

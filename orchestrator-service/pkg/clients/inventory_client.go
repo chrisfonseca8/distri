@@ -91,6 +91,7 @@ type reserveRequest struct {
 	Items       []ReserveItem `json:"items"`
 }
 
+// NewInventoryClientFromEnv builds the inventory client from environment variables.
 func NewInventoryClientFromEnv() (InventoryClient, error) {
 	client, err := NewHTTPInventoryClientFromEnv()
 	if err != nil {
@@ -99,6 +100,7 @@ func NewInventoryClientFromEnv() (InventoryClient, error) {
 	return client, nil
 }
 
+// NewHTTPInventoryClientFromEnv reads INVENTORY_URL and INVENTORY_TIMEOUT and returns the HTTP client.
 func NewHTTPInventoryClientFromEnv() (*HTTPInventoryClient, error) {
 	baseURL := strings.TrimSpace(os.Getenv("INVENTORY_URL"))
 	if baseURL == "" {
@@ -118,6 +120,7 @@ func NewHTTPInventoryClientFromEnv() (*HTTPInventoryClient, error) {
 	}, nil
 }
 
+// inventoryTimeoutFromEnv reads INVENTORY_TIMEOUT, falling back to the default when it is unset.
 func inventoryTimeoutFromEnv() (time.Duration, error) {
 	value := strings.TrimSpace(os.Getenv("INVENTORY_TIMEOUT"))
 	if value == "" {
@@ -134,6 +137,7 @@ func inventoryTimeoutFromEnv() (time.Duration, error) {
 	return timeout, nil
 }
 
+// Reserve asks inventory-service to reserve stock for an order; it is idempotent on orderID.
 func (c *HTTPInventoryClient) Reserve(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -223,6 +227,7 @@ func (c *HTTPInventoryClient) Reserve(
 	}
 }
 
+// ListReserved returns one page of reservations older than olderThan that are still reserved.
 func (c *HTTPInventoryClient) ListReserved(
 	ctx context.Context,
 	olderThan time.Time,
@@ -281,6 +286,7 @@ func (c *HTTPInventoryClient) ListReserved(
 	return reservations, nil
 }
 
+// Release asks inventory-service to give a reservation's stock back.
 func (c *HTTPInventoryClient) Release(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -288,6 +294,7 @@ func (c *HTTPInventoryClient) Release(
 	return c.changeReservation(ctx, orderID, "release")
 }
 
+// changeReservation calls the confirm or release endpoint for an order and decodes the result.
 func (c *HTTPInventoryClient) changeReservation(
 	ctx context.Context,
 	orderID uuid.UUID,

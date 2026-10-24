@@ -18,6 +18,7 @@ type ReservationSweeperConfig struct {
 	BatchSize      int
 }
 
+// LoadReservationSweeperConfig reads the reservation sweeper settings from the environment.
 func LoadReservationSweeperConfig() (ReservationSweeperConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return ReservationSweeperConfig{}, fmt.Errorf("load .env: %w", err)
@@ -43,6 +44,7 @@ func LoadReservationSweeperConfig() (ReservationSweeperConfig, error) {
 	return result, nil
 }
 
+// Validate rejects zero or negative sweeper settings.
 func (c ReservationSweeperConfig) Validate() error {
 	if c.ReservationTTL <= 0 {
 		return errors.New("RESERVATION_SWEEP_TTL must be greater than zero")

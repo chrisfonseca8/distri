@@ -47,6 +47,7 @@ type PaymentReconciler struct {
 	now         func() time.Time
 }
 
+// NewPaymentReconciler creates the reconciler for one gateway.
 func NewPaymentReconciler(
 	db *gorm.DB,
 	gateway paymentgateway.Gateway,
@@ -73,6 +74,7 @@ func NewPaymentReconciler(
 	}, nil
 }
 
+// Run reconciles payments on every interval until ctx is cancelled.
 func (r *PaymentReconciler) Run(ctx context.Context) {
 	slog.Info(
 		"payment reconciler started",
@@ -123,6 +125,7 @@ func (r *PaymentReconciler) ReconcileOnce(ctx context.Context) error {
 	return nil
 }
 
+// reconcileOne looks up one payment's order at the gateway and applies the result; if the lookup fails it changes nothing.
 func (r *PaymentReconciler) reconcileOne(ctx context.Context, attempt models.PaymentAttempt) {
 	lookupContext, cancel := context.WithTimeout(ctx, r.config.GatewayTimeout)
 	state, err := r.lookup.LookupOrder(lookupContext, attempt.OrderID)
@@ -383,6 +386,7 @@ func decideReconcile(
 	return reconcileDecision{}
 }
 
+// windowEnd returns when the payment window for an attempt ends.
 func windowEnd(attempt models.PaymentAttempt, window time.Duration) time.Time {
 	if attempt.ExpiresAt != nil {
 		return *attempt.ExpiresAt
@@ -449,6 +453,7 @@ func applyDecision(tx *gorm.DB, attempt models.PaymentAttempt, decision reconcil
 	return changed, nil
 }
 
+// copyUpdates returns a copy of the update map so it can be extended safely.
 func copyUpdates(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in)+2)
 	for key, value := range in {
@@ -506,6 +511,7 @@ func addCompensationEvent(tx *gorm.DB, recordID uuid.UUID, from, to, detail stri
 	return nil
 }
 
+// touch records the time a payment was last reconciled.
 func (r *PaymentReconciler) touch(ctx context.Context, id uuid.UUID) {
 	if err := r.db.WithContext(ctx).
 		Table("payments.payment_attempts").

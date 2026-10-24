@@ -88,10 +88,12 @@ func Next(currentStep Step, outcome Outcome) (Decision, error) {
 	return decision, nil
 }
 
+// advance moves to the next step and sends that step's command.
 func advance(next Step, status Status) Decision {
 	return Decision{NextStep: next, Command: next, SagaStatus: status}
 }
 
+// retry sends the same step's command again.
 func retry(step Step, status Status) Decision {
 	return Decision{NextStep: step, Command: step, SagaStatus: status}
 }

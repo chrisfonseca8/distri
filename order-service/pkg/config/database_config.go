@@ -24,6 +24,7 @@ func OpenDB() (*gorm.DB, error) {
 	return openDB("DATABASE_TEST_URL")
 }
 
+// openDB connects to Postgres using the DSN in environmentVariable and applies the connection pool limits.
 func openDB(environmentVariable string) (*gorm.DB, error) {
 	if err := loadEnvFile(); err != nil {
 		return nil, fmt.Errorf("load .env: %w", err)
@@ -64,6 +65,7 @@ func openDB(environmentVariable string) (*gorm.DB, error) {
 	return db, nil
 }
 
+// envInt reads an integer environment variable, or returns fallback when it is unset.
 func envInt(name string, fallback int) (int, error) {
 	value := os.Getenv(name)
 	if value == "" {
@@ -78,6 +80,7 @@ func envInt(name string, fallback int) (int, error) {
 	return parsed, nil
 }
 
+// envDuration reads a duration environment variable, or returns fallback when it is unset.
 func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 	value := os.Getenv(name)
 	if value == "" {
@@ -92,6 +95,7 @@ func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 	return parsed, nil
 }
 
+// loadEnvFile loads the nearest .env file, searching from the working directory upwards.
 func loadEnvFile() error {
 	dir, err := os.Getwd()
 	if err != nil {

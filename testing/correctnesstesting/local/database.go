@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// scalar runs a query that returns one number and panics if it fails.
 func (p *phaseContext) scalar(query string, args ...any) int64 {
 	var value int64
 	if err := p.suite.db.QueryRow(p.suite.ctx, query, args...).Scan(&value); err != nil {
@@ -13,6 +14,7 @@ func (p *phaseContext) scalar(query string, args ...any) int64 {
 	return value
 }
 
+// text runs a query that returns one string and panics if it fails.
 func (p *phaseContext) text(query string, args ...any) string {
 	var value string
 	if err := p.suite.db.QueryRow(p.suite.ctx, query, args...).Scan(&value); err != nil {
@@ -21,6 +23,7 @@ func (p *phaseContext) text(query string, args ...any) string {
 	return value
 }
 
+// productID returns the ID of the seeded product at the given position.
 func (p *phaseContext) productID(offset int) string {
 	var id string
 	err := p.suite.db.QueryRow(p.suite.ctx,
@@ -31,6 +34,7 @@ func (p *phaseContext) productID(offset int) string {
 	return id
 }
 
+// inventory reads the on-hand, reserved and allocated counts of a product.
 func (p *phaseContext) inventory(productID string) inventorySnapshot {
 	var value inventorySnapshot
 	err := p.suite.db.QueryRow(p.suite.ctx,
@@ -42,6 +46,7 @@ func (p *phaseContext) inventory(productID string) inventorySnapshot {
 	return value
 }
 
+// setStock resets a product to the given on-hand stock with nothing reserved or allocated.
 func (p *phaseContext) setStock(productID string, onHand int64) {
 	_, err := p.suite.db.Exec(p.suite.ctx,
 		"UPDATE inventory.inventories SET on_hand=$2, reserved=0, allocated=0, updated_at=now() WHERE product_id=$1",
@@ -74,6 +79,7 @@ func (p *phaseContext) waitForActionableJobs(timeout time.Duration) bool {
 	}
 }
 
+// item builds one cart item for a checkout or reservation request.
 func item(productID string, quantity int64) map[string]any {
 	return map[string]any{"product_id": productID, "quantity": quantity}
 }

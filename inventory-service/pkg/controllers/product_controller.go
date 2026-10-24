@@ -23,10 +23,12 @@ type ProductController struct {
 	service *services.ProductService
 }
 
+// NewProductController creates the product HTTP controller.
 func NewProductController(service *services.ProductService) *ProductController {
 	return &ProductController{service: service}
 }
 
+// GetProduct handles GET /v1/products/{productID} and replies with the product.
 func (c *ProductController) GetProduct(w http.ResponseWriter, r *http.Request) {
 	productID, err := uuid.Parse(r.PathValue("productID"))
 	if err != nil {
@@ -54,6 +56,7 @@ func (c *ProductController) GetProduct(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// writeJSON encodes value as JSON and writes it with the given status.
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

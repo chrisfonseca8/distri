@@ -24,9 +24,13 @@ type TransientError struct {
 	Err error
 }
 
+// Error returns the message of the wrapped error.
 func (e *TransientError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped error.
 func (e *TransientError) Unwrap() error { return e.Err }
 
+// Transient marks err as temporary, so the message is retried later.
 func Transient(err error) error {
 	if err == nil {
 		return nil
@@ -38,9 +42,13 @@ type PermanentError struct {
 	Err error
 }
 
+// Error returns the message of the wrapped error.
 func (e *PermanentError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped error.
 func (e *PermanentError) Unwrap() error { return e.Err }
 
+// Permanent marks err as unfixable by retrying, so the message goes to the dead-letter queue.
 func Permanent(err error) error {
 	if err == nil {
 		return nil
@@ -59,6 +67,7 @@ type Consumer struct {
 	reconnectMaximumDelay time.Duration
 }
 
+// NewConsumer creates a consumer that passes each message from queue to handler, with at most prefetch unacknowledged at once.
 func NewConsumer(url string, queue string, prefetch int, handler Handler, options ...ConsumerOption) (*Consumer, error) {
 	if strings.TrimSpace(url) == "" {
 		return nil, errors.New("RabbitMQ URL is required")
@@ -87,6 +96,7 @@ func NewConsumer(url string, queue string, prefetch int, handler Handler, option
 	return consumer, nil
 }
 
+// Run consumes messages until ctx is cancelled, reconnecting if the broker drops.
 func (c *Consumer) Run(ctx context.Context) {
 	c.RunUntil(ctx, nil)
 }
@@ -126,6 +136,7 @@ func (c *Consumer) RunUntil(ctx context.Context, stop <-chan struct{}) {
 	}
 }
 
+// isStopped reports whether the stop channel has been closed.
 func isStopped(stop <-chan struct{}) bool {
 	select {
 	case <-stop:
@@ -135,6 +146,7 @@ func isStopped(stop <-chan struct{}) bool {
 	}
 }
 
+// consume runs one broker connection and reports whether it connected, so Run knows whether to reset its backoff.
 func (c *Consumer) consume(ctx context.Context, stop <-chan struct{}) (bool, error) {
 	connection, err := amqp.Dial(c.url)
 	if err != nil {
@@ -190,6 +202,7 @@ func (c *Consumer) consume(ctx context.Context, stop <-chan struct{}) (bool, err
 	}
 }
 
+// handleDelivery runs the handler and acks, retries or dead-letters the message based on the result.
 func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error {
 	delivery = withOriginalRoutingKey(delivery)
 	err := c.handler(ctx, delivery)
@@ -251,6 +264,7 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error 
 	return nil
 }
 
+// attemptLimit returns how many times a message may be tried before it is dead-lettered.
 func (c *Consumer) attemptLimit() int {
 	if c.maxAttempts <= 0 {
 		return DefaultMaxAttempts
@@ -258,6 +272,7 @@ func (c *Consumer) attemptLimit() int {
 	return c.maxAttempts
 }
 
+// republish sends the message to the retry queue with a higher attempt count.
 func (c *Consumer) republish(ctx context.Context, delivery Delivery, attempt int, cause error) error {
 	if c.retry == nil {
 		return errors.New("RabbitMQ retry publisher is not connected")
@@ -265,6 +280,7 @@ func (c *Consumer) republish(ctx context.Context, delivery Delivery, attempt int
 	return c.retry.publish(ctx, delivery, c.queue, attempt, cause)
 }
 
+// waitForConsumer sleeps for delay and returns false if ctx is cancelled first.
 func waitForConsumer(ctx context.Context, delay time.Duration) bool {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()

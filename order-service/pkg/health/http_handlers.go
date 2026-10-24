@@ -38,6 +38,7 @@ func TestServerHealth(ctx context.Context, healthURL string) error {
 	return nil
 }
 
+// writeJSON encodes value as JSON and writes it with the given status.
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)

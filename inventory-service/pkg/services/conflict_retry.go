@@ -19,6 +19,7 @@ const maxConflictAttempts = 3
 // conflictRetries counts transactions re-run after a conflict (visible to tests and, later, telemetry).
 var conflictRetries atomic.Int64
 
+// retryableConflictCode returns the Postgres code if err is a deadlock or serialization failure, or an empty string otherwise.
 func retryableConflictCode(err error) string {
 	var pgError *pgconn.PgError
 	if errors.As(err, &pgError) && (pgError.Code == "40P01" || pgError.Code == "40001") {
@@ -27,6 +28,7 @@ func retryableConflictCode(err error) string {
 	return ""
 }
 
+// retryOnConflict runs the operation again after a deadlock or serialization failure, up to a fixed number of attempts.
 func retryOnConflict(ctx context.Context, operation string, run func() error) error {
 	var err error
 	for attempt := 1; attempt <= maxConflictAttempts; attempt++ {

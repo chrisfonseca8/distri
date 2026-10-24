@@ -61,6 +61,7 @@ type dockerStats struct {
 	} `json:"memory_stats"`
 }
 
+// newContainerSampler creates a sampler that reads container CPU and memory through the Docker socket.
 func newContainerSampler(every time.Duration) *containerSampler {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", "/var/run/docker.sock")
@@ -75,6 +76,7 @@ func newContainerSampler(every time.Duration) *containerSampler {
 	}
 }
 
+// run samples every container on each tick until ctx is cancelled.
 func (s *containerSampler) run(ctx context.Context) {
 	s.sampleAll(ctx)
 	ticker := time.NewTicker(s.every)
@@ -89,6 +91,7 @@ func (s *containerSampler) run(ctx context.Context) {
 	}
 }
 
+// sampleAll samples all containers at the same time.
 func (s *containerSampler) sampleAll(ctx context.Context) {
 	var wait sync.WaitGroup
 	for logicalName, serviceName := range logicalContainers {
@@ -129,6 +132,7 @@ func (s *containerSampler) readService(ctx context.Context, logicalName, service
 
 var errNoContainer = errors.New("container not found")
 
+// findContainer returns the ID of the running container for a compose service.
 func (s *containerSampler) findContainer(ctx context.Context, service string) (string, error) {
 	filters, err := json.Marshal(map[string][]string{"label": {
 		"com.docker.compose.service=" + service, "com.docker.compose.oneoff=False",
@@ -222,6 +226,7 @@ func (s *containerSampler) record(name string, stats dockerStats, err error) {
 	}
 }
 
+// finish stops sampling and returns each container's averages and maxima.
 func (s *containerSampler) finish() map[string]ContainerMetrics {
 	s.mu.Lock()
 	defer s.mu.Unlock()

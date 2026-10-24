@@ -11,7 +11,7 @@ A backend-only distributed checkout and payment system in Go, built as a learnin
 | `inventory-service` | Stock reserve / confirm / release |
 | `payment-service` | Payments via Razorpay Test Mode or the simulated gateway |
 | `gateway-simulator` | Controllable fake payment gateway |
-| `loadgen` | Go load generator and correctness tests |
+| `testing` | Go load generator, correctness tests, baseline runner |
 
 Stack: Go, GORM, PostgreSQL (schema per service), RabbitMQ, Kafka, Docker Compose.
 

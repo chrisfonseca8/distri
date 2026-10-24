@@ -5,6 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// MigratePaymentAttempts creates or updates every payment table.
 func MigratePaymentAttempts(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&models.PaymentAttempt{},

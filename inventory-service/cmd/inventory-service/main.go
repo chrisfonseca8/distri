@@ -24,6 +24,7 @@ import (
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/telemetry"
 )
 
+// main starts the inventory service and exits non-zero if it stops with an error.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -33,6 +34,7 @@ func main() {
 	}
 }
 
+// run wires up the database, RabbitMQ workers and HTTP server, then serves until shutdown.
 func run() error {
 	applicationConfig, err := config.Setup()
 	if err != nil {

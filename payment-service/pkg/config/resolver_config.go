@@ -12,6 +12,7 @@ type ResolverConfig struct {
 	Interval time.Duration
 }
 
+// LoadResolverConfig reads the dead-job resolver interval from the environment.
 func LoadResolverConfig() (ResolverConfig, error) {
 	if err := loadEnvFile(); err != nil {
 		return ResolverConfig{}, fmt.Errorf("load .env: %w", err)

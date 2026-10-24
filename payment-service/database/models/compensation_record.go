@@ -75,6 +75,7 @@ type CompensationRecord struct {
 	UpdatedAt  time.Time `gorm:"type:timestamptz;not null;autoUpdateTime"`
 }
 
+// TableName puts the compensation-records table in the payments schema.
 func (CompensationRecord) TableName() string {
 	return "payments.compensation_records"
 }
@@ -91,6 +92,7 @@ type CompensationEvent struct {
 	At         time.Time `gorm:"type:timestamptz;not null;default:now()"`
 }
 
+// TableName puts the compensation-events table in the payments schema.
 func (CompensationEvent) TableName() string {
 	return "payments.compensation_events"
 }

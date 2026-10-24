@@ -5,6 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// MigrateOrders creates or updates every order table.
 func MigrateOrders(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&models.Order{},

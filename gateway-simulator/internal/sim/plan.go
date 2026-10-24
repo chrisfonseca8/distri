@@ -74,6 +74,7 @@ type DeliveryRule struct {
 // Duration is a time.Duration that reads and writes as "1500ms" / "2s".
 type Duration struct{ time.Duration }
 
+// UnmarshalJSON reads a duration written as a string such as "2s".
 func (d *Duration) UnmarshalJSON(data []byte) error {
 	var text string
 	if err := json.Unmarshal(data, &text); err != nil {
@@ -87,6 +88,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON writes the duration as a string such as "2s".
 func (d Duration) MarshalJSON() ([]byte, error) { return json.Marshal(d.Duration.String()) }
 
 var knownEvents = map[string]bool{
@@ -94,6 +96,7 @@ var knownEvents = map[string]bool{
 	"refund.created": true, "refund.processed": true, "refund.failed": true,
 }
 
+// Validate checks that the plan's attempts and refund rules use known outcomes and non-negative times.
 func (p Plan) Validate() error {
 	for i, attempt := range p.Attempts {
 		if attempt.At.Duration < 0 {

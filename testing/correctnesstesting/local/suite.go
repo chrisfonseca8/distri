@@ -39,6 +39,7 @@ type phaseContext struct {
 	skipped    bool
 }
 
+// newSuite reads the service URLs and settings from the environment and connects to the database.
 func newSuite(ctx context.Context) (*suite, error) {
 	databaseURL := requiredEnv("DATABASE_URL")
 	db, err := pgx.Connect(ctx, databaseURL)
@@ -56,8 +57,10 @@ func newSuite(ctx context.Context) (*suite, error) {
 	}, nil
 }
 
+// canControlServices reports whether COMPOSE_FILE is set, so phases can stop and start services.
 func (s *suite) canControlServices() bool { return s.composeFile != "" }
 
+// compose runs a docker compose action on one service, with a timeout.
 func (s *suite) compose(action, service string) error {
 	if !s.canControlServices() {
 		return fmt.Errorf("COMPOSE_FILE is not set")
@@ -72,6 +75,7 @@ func (s *suite) compose(action, service string) error {
 	return nil
 }
 
+// requiredEnv returns an environment variable and panics if it is empty.
 func requiredEnv(name string) string {
 	value := strings.TrimSpace(os.Getenv(name))
 	if value == "" {
@@ -80,6 +84,7 @@ func requiredEnv(name string) string {
 	return strings.TrimRight(value, "/")
 }
 
+// envOr returns the trimmed environment variable, or fallback when it is empty.
 func envOr(name, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 		return value
@@ -87,6 +92,7 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
+// execute runs one phase, times it and turns a panic into a failed result.
 func (s *suite) execute(definition phaseDefinition) (result phaseResult) {
 	pc := &phaseContext{suite: s, definition: definition}
 	started := time.Now()
@@ -116,15 +122,22 @@ func (s *suite) execute(definition phaseDefinition) (result phaseResult) {
 	return
 }
 
+// check records one pass or fail assertion for the phase.
 func (p *phaseContext) check(name string, condition bool, detail string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.assertions = append(p.assertions, assertionResult{name, condition, detail})
 }
+
+// fail records a failed assertion.
 func (p *phaseContext) fail(name, detail string) { p.check(name, false, detail) }
+
+// note adds a line of explanation to the phase's report.
 func (p *phaseContext) note(note string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.notes = append(p.notes, note)
 }
+
+// skip marks the phase as skipped and records why.
 func (p *phaseContext) skip(reason string) { p.skipped = true; p.note(reason) }

@@ -59,6 +59,7 @@ type Handler struct {
 	store   EventStore
 }
 
+// NewHandler creates the webhook handler after checking the secret and body limit.
 func NewHandler(secret string, maxBody int64, store EventStore) (*Handler, error) {
 	if strings.TrimSpace(secret) == "" {
 		return nil, errors.New("webhook secret is required")
@@ -72,6 +73,7 @@ func NewHandler(secret string, maxBody int64, store EventStore) (*Handler, error
 	return &Handler{secret: []byte(secret), maxBody: maxBody, store: store}, nil
 }
 
+// ServeHTTP reads the body with a size limit, verifies the signature and stores the event once.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The raw body is read once, bounded, and verified before anything is parsed.
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBody))
@@ -137,6 +139,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": result})
 }
 
+// writeJSON encodes value as JSON and writes it with the given status.
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

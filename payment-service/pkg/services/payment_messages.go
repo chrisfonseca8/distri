@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// enqueuePaymentReply queues the saga reply for a finished payment in the same transaction as its status change.
 func enqueuePaymentReply(tx *gorm.DB, payment models.PaymentAttempt) error {
 	var outcome messages.Outcome
 	switch payment.Status {

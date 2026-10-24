@@ -25,6 +25,7 @@ type CheckoutService struct {
 	stepTimeout     time.Duration
 }
 
+// NewCheckoutService creates the checkout service.
 func NewCheckoutService(
 	db *gorm.DB,
 	inventoryClient clients.InventoryClient,
@@ -39,6 +40,7 @@ func NewCheckoutService(
 	}
 }
 
+// CreateCheckout runs the first part of a checkout: claim the key, reserve stock, then start the saga.
 func (s *CheckoutService) CreateCheckout(
 	ctx context.Context,
 	request CreateCheckoutInput,
@@ -80,6 +82,7 @@ func (s *CheckoutService) CreateCheckout(
 	return response, err
 }
 
+// errorResponse builds a JSON error response with the given status.
 func errorResponse(statusCode int, responseErr error) (Response, error) {
 	body, err := json.Marshal(map[string]string{"error": responseErr.Error()})
 	if err != nil {
@@ -88,6 +91,7 @@ func errorResponse(statusCode int, responseErr error) (Response, error) {
 	return Response{StatusCode: statusCode, Body: body}, nil
 }
 
+// responseFromAttempt rebuilds the stored response of a completed attempt.
 func responseFromAttempt(attempt models.CheckoutAttempt) (Response, error) {
 	if attempt.Status != "completed" || attempt.ResponseCode == nil || len(attempt.ResponseBody) == 0 {
 		return Response{}, errors.New("checkout attempt has no completed response")
@@ -101,6 +105,7 @@ func responseFromAttempt(attempt models.CheckoutAttempt) (Response, error) {
 	}, nil
 }
 
+// definitiveInventoryError maps inventory errors that will never succeed on retry to an HTTP status.
 func definitiveInventoryError(err error) (int, bool) {
 	switch {
 	case errors.Is(err, ErrInvalidCheckoutInput):

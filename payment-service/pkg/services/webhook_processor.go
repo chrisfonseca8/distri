@@ -50,6 +50,7 @@ func (p *WebhookProcessor) WithCompensation(worker *CompensationWorker) *Webhook
 	return p
 }
 
+// NewWebhookProcessor creates the processor for webhook events of one gateway.
 func NewWebhookProcessor(db *gorm.DB, config WebhookProcessorConfig) (*WebhookProcessor, error) {
 	if db == nil {
 		return nil, errors.New("webhook processor database is required")
@@ -68,6 +69,7 @@ func NewWebhookProcessor(db *gorm.DB, config WebhookProcessorConfig) (*WebhookPr
 	}, nil
 }
 
+// Run processes pending webhook events on every interval until ctx is cancelled.
 func (p *WebhookProcessor) Run(ctx context.Context) {
 	slog.Info("webhook processor started", "interval", p.config.Interval, "max_attempts", p.config.MaxAttempts)
 	defer slog.Info("webhook processor stopped")
@@ -172,6 +174,7 @@ type webhookResult struct {
 
 var errLeaseLost = errors.New("webhook event lease was lost")
 
+// handle applies one event in a transaction together with its PROCESSED mark, or parks or retries it.
 func (p *WebhookProcessor) handle(ctx context.Context, event models.WebhookEvent) {
 	var result webhookResult
 	err := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -243,6 +246,7 @@ type webhookEnvelope struct {
 	} `json:"payload"`
 }
 
+// apply decodes an event and applies its effect to the payment or refund; a malformed event is parked.
 func (p *WebhookProcessor) apply(tx *gorm.DB, event models.WebhookEvent) (webhookResult, error) {
 	var envelope webhookEnvelope
 	if err := json.Unmarshal(event.Body, &envelope); err != nil {
@@ -422,6 +426,7 @@ func (p *WebhookProcessor) parkOrRetry(ctx context.Context, event models.Webhook
 	p.reschedule(ctx, event, result.reason)
 }
 
+// reschedule retries an event later, with a delay that doubles up to a cap.
 func (p *WebhookProcessor) reschedule(ctx context.Context, event models.WebhookEvent, reason string) {
 	delay := p.config.BackoffBase
 	for i := 1; i < event.Attempts && delay < p.config.BackoffCap; i++ {

@@ -16,10 +16,12 @@ type ProductService struct {
 	db *gorm.DB
 }
 
+// NewProductService creates the product service.
 func NewProductService(db *gorm.DB) *ProductService {
 	return &ProductService{db: db}
 }
 
+// GetProduct returns one product, or ErrProductNotFound if it does not exist.
 func (s *ProductService) GetProduct(ctx context.Context, productID uuid.UUID) (models.Product, error) {
 	var product models.Product
 	result := s.db.WithContext(ctx).

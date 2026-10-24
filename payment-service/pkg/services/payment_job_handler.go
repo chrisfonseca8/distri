@@ -51,6 +51,7 @@ func WithJobGatewayName(name string) JobHandlerOption {
 	return func(h *PaymentJobHandler) { h.gatewayName = name }
 }
 
+// NewPaymentJobHandler creates the handler that charges the gateway for a payment job.
 func NewPaymentJobHandler(
 	db *gorm.DB,
 	gateway paymentgateway.Gateway,
@@ -69,6 +70,7 @@ func NewPaymentJobHandler(
 	return handler
 }
 
+// ProcessForJob picks what to do with a payment based on its status and returns whether the job is done, should retry or is dead.
 func (h *PaymentJobHandler) ProcessForJob(
 	ctx context.Context,
 	paymentID uuid.UUID,
@@ -103,6 +105,7 @@ func (h *PaymentJobHandler) ProcessForJob(
 	}
 }
 
+// processCreated claims a CREATED payment, calls the gateway outside any transaction and stores the result.
 func (h *PaymentJobHandler) processCreated(
 	ctx context.Context,
 	payment models.PaymentAttempt,
@@ -143,6 +146,7 @@ func (h *PaymentJobHandler) processCreated(
 	return ProcessDone, nil
 }
 
+// writeResult stores a payment's result with its own short timeout.
 func (h *PaymentJobHandler) writeResult(
 	paymentID uuid.UUID,
 	updates map[string]any,
@@ -193,6 +197,7 @@ func writePaymentResult(
 	return true, nil
 }
 
+// loadPayment reads one payment attempt, returning ErrPaymentNotFound if it does not exist.
 func (h *PaymentJobHandler) loadPayment(
 	ctx context.Context,
 	paymentID uuid.UUID,
@@ -211,6 +216,7 @@ func (h *PaymentJobHandler) loadPayment(
 	return payment, nil
 }
 
+// paymentResultUpdates maps the gateway's answer to the payment status and failure code to store.
 func paymentResultUpdates(ref string, gatewayErr error) map[string]any {
 	if gatewayErr == nil {
 		return map[string]any{

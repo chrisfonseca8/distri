@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// request sends a JSON request, decodes the JSON reply into out and returns the status and raw body.
 func (p *phaseContext) request(method, url string, body any, headers map[string]string, out any) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -50,6 +51,7 @@ func (p *phaseContext) request(method, url string, body any, headers map[string]
 	return response.StatusCode, raw, err
 }
 
+// checkout sends a checkout to the orchestrator with the given idempotency key.
 func (p *phaseContext) checkout(key string, items []map[string]any) (int, checkoutResult, error) {
 	var result checkoutResult
 	status, _, err := p.request(http.MethodPost, p.suite.orchestratorURL+"/v1/checkouts",
@@ -57,6 +59,7 @@ func (p *phaseContext) checkout(key string, items []map[string]any) (int, checko
 	return status, result, err
 }
 
+// getOrder reads an order from order-service.
 func (p *phaseContext) getOrder(id string) (int, orderResult, error) {
 	var result orderResult
 	status, _, err := p.request(http.MethodGet, p.suite.orderURL+"/v1/orders/"+id, nil, nil, &result)
@@ -95,6 +98,7 @@ func (p *phaseContext) waitScalar(timeout time.Duration, want int64, query strin
 	}
 }
 
+// reserve asks inventory-service to reserve stock for an order.
 func (p *phaseContext) reserve(orderID, hash string, items []map[string]any) (int, reservationResult, error) {
 	var result reservationResult
 	status, _, err := p.request(http.MethodPost, p.suite.inventoryURL+"/internal/v1/reservations",
@@ -102,6 +106,7 @@ func (p *phaseContext) reserve(orderID, hash string, items []map[string]any) (in
 	return status, result, err
 }
 
+// changeReservation confirms or releases an order's reservation.
 func (p *phaseContext) changeReservation(orderID, action string) (int, reservationResult, error) {
 	var result reservationResult
 	status, _, err := p.request(http.MethodPost,
@@ -109,6 +114,7 @@ func (p *phaseContext) changeReservation(orderID, action string) (int, reservati
 	return status, result, err
 }
 
+// createPayment asks payment-service to create a payment for an order.
 func (p *phaseContext) createPayment(orderID string, amount int64, currency string) (int, paymentResult, error) {
 	var result paymentResult
 	status, _, err := p.request(http.MethodPost, p.suite.paymentURL+"/v1/payments",
@@ -116,12 +122,14 @@ func (p *phaseContext) createPayment(orderID string, amount int64, currency stri
 	return status, result, err
 }
 
+// getPayment reads a payment from payment-service.
 func (p *phaseContext) getPayment(id string) (int, paymentResult, error) {
 	var result paymentResult
 	status, _, err := p.request(http.MethodGet, p.suite.paymentURL+"/v1/payments/"+id, nil, nil, &result)
 	return status, result, err
 }
 
+// waitPayment polls a payment until it leaves CREATED and PENDING, or the timeout passes.
 func (p *phaseContext) waitPayment(id string, timeout time.Duration) paymentResult {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -135,6 +143,7 @@ func (p *phaseContext) waitPayment(id string, timeout time.Duration) paymentResu
 	return payment
 }
 
+// newUUID returns a random version-4 UUID.
 func newUUID() string {
 	data := make([]byte, 16)
 	if _, err := rand.Read(data); err != nil {

@@ -33,6 +33,7 @@ type ErrDeclined struct {
 	OrderID uuid.UUID
 }
 
+// Error describes the declined payment.
 func (e *ErrDeclined) Error() string {
 	return fmt.Sprintf("payment for order %s was declined", e.OrderID)
 }

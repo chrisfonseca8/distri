@@ -26,6 +26,7 @@ const checkAmountPaise = 10000 // INR 100.00, well above Razorpay's minimum
 
 type checker struct{ failed int }
 
+// step prints one PASS or FAIL line and counts failures.
 func (c *checker) step(name string, ok bool, detail string) {
 	status := "PASS"
 	if !ok {
@@ -35,6 +36,7 @@ func (c *checker) step(name string, ok bool, detail string) {
 	fmt.Printf("%s  %s\n      %s\n", status, name, detail)
 }
 
+// main runs a manual check of the Razorpay test-mode connection and exits non-zero if any step fails.
 func main() {
 	if err := loadEnv(); err != nil {
 		fmt.Fprintln(os.Stderr, "load .env:", err)
@@ -126,6 +128,7 @@ func main() {
 	fmt.Println("All checks passed. One unpaid test order was created in your Razorpay Test Mode dashboard.")
 }
 
+// loadEnv loads the nearest .env file, searching from the working directory upwards.
 func loadEnv() error {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -144,6 +147,7 @@ func loadEnv() error {
 	}
 }
 
+// maskKeyID shortens a Razorpay key ID so it can be printed safely.
 func maskKeyID(id string) string {
 	id = strings.TrimSpace(id)
 	if len(id) <= 12 {

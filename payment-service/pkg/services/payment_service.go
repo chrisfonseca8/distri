@@ -49,6 +49,7 @@ func WithGatewayName(name string) GatewayOption {
 	return func(label *gatewayLabel) { label.name = name }
 }
 
+// gatewayNameFrom returns the gateway name set by the options.
 func gatewayNameFrom(options []GatewayOption) string {
 	label := gatewayLabel{}
 	for _, option := range options {
@@ -57,10 +58,12 @@ func gatewayNameFrom(options []GatewayOption) string {
 	return label.name
 }
 
+// NewPaymentService creates the payment service.
 func NewPaymentService(db *gorm.DB, options ...GatewayOption) *PaymentService {
 	return &PaymentService{db: db, gateway: gatewayNameFrom(options)}
 }
 
+// CreatePayment validates the input and creates the payment attempt for an order, or returns the existing one.
 func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentInput) (CreatePaymentResult, error) {
 	if input.OrderID == uuid.Nil() {
 		return CreatePaymentResult{}, ErrInvalidOrderID
@@ -121,6 +124,7 @@ func createPayment(tx *gorm.DB, input CreatePaymentInput) (CreatePaymentResult, 
 	return CreatePaymentResult{Attempt: attempt, Created: true}, nil
 }
 
+// gatewayOrDefault returns name, or "sim" when it is empty.
 func gatewayOrDefault(name string) string {
 	if name == "" {
 		return "sim"
@@ -128,6 +132,7 @@ func gatewayOrDefault(name string) string {
 	return name
 }
 
+// enqueueJob adds a job for a payment to the queue, ignoring a duplicate.
 func enqueueJob(tx *gorm.DB, jobType string, paymentID uuid.UUID) error {
 	job := models.Job{Type: jobType, PaymentID: paymentID}
 	if err := tx.Table("payments.jobs").
@@ -138,6 +143,7 @@ func enqueueJob(tx *gorm.DB, jobType string, paymentID uuid.UUID) error {
 	return nil
 }
 
+// GetPayment returns one payment attempt, or ErrPaymentNotFound if it does not exist.
 func (s *PaymentService) GetPayment(ctx context.Context, paymentID uuid.UUID) (models.PaymentAttempt, error) {
 	var attempt models.PaymentAttempt
 	result := s.db.WithContext(ctx).First(&attempt, "id = ?", paymentID)

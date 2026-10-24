@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// main runs every correctness phase and writes the report, or merges saved reports when CONSOLIDATE_FROM is set.
 func main() {
 	if source := strings.TrimSpace(os.Getenv("CONSOLIDATE_FROM")); source != "" {
 		markdownPath, jsonPath, err := consolidateReports(source, envOr("RESULTS_DIR", "test-results/correctness-test"))

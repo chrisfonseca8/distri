@@ -23,6 +23,7 @@ type PaymentResolver struct {
 	interval time.Duration
 }
 
+// NewPaymentResolver creates the resolver that settles payments whose job died.
 func NewPaymentResolver(db *gorm.DB, interval time.Duration) (*PaymentResolver, error) {
 	if db == nil {
 		return nil, errors.New("payment resolver database is required")
@@ -33,6 +34,7 @@ func NewPaymentResolver(db *gorm.DB, interval time.Duration) (*PaymentResolver, 
 	return &PaymentResolver{db: db, interval: interval}, nil
 }
 
+// Run resolves payments on every interval until ctx is cancelled.
 func (r *PaymentResolver) Run(ctx context.Context) {
 	slog.Info("payment resolver started", "interval", r.interval)
 	defer slog.Info("payment resolver stopped")
@@ -79,6 +81,7 @@ func (r *PaymentResolver) ResolveOnce(ctx context.Context) error {
 	return nil
 }
 
+// resolveOne settles one payment whose job died: CREATED becomes FAILED and PENDING becomes UNKNOWN.
 func (r *PaymentResolver) resolveOne(ctx context.Context) (bool, error) {
 	var (
 		found    bool

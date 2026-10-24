@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// MigrateOrchestrator creates or updates every orchestrator table.
 func MigrateOrchestrator(db *gorm.DB) error {
 	if err := migrateSagaCheckoutValues(db); err != nil {
 		return err
@@ -29,6 +30,7 @@ func MigrateOrchestrator(db *gorm.DB) error {
 	return nil
 }
 
+// migrateSagaCheckoutValues adds the total and currency columns to sagas and fills them from completed checkout attempts; it fails if any saga is left without values.
 func migrateSagaCheckoutValues(db *gorm.DB) error {
 	if !db.Migrator().HasTable(&models.Saga{}) {
 		return nil

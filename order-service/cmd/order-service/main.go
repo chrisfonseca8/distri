@@ -32,6 +32,7 @@ const (
 	roleAll    serviceRole = "all"
 )
 
+// main reads the -role flag, starts the service and exits non-zero if it stops with an error.
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -45,6 +46,7 @@ func main() {
 	}
 }
 
+// run starts the HTTP API, the RabbitMQ workers or both, depending on role, and serves until shutdown.
 func run(roleValue string) error {
 	role, err := parseRole(roleValue)
 	if err != nil {
@@ -204,6 +206,7 @@ func run(roleValue string) error {
 	return nil
 }
 
+// parseRole checks that the role is api, worker or all.
 func parseRole(value string) (serviceRole, error) {
 	role := serviceRole(value)
 	switch role {

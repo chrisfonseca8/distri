@@ -31,6 +31,7 @@ func writeReports(report correctnessReport, directory string) (string, string, e
 	return writeCollection(collection, directory)
 }
 
+// loadCollection reads the saved correctness runs from a folder, or returns an empty set if there are none.
 func loadCollection(directory string) (correctnessReportCollection, error) {
 	collection := correctnessReportCollection{Suite: "correctness-test"}
 	raw, err := os.ReadFile(filepath.Join(directory, "correctness-test.json"))
@@ -46,6 +47,7 @@ func loadCollection(directory string) (correctnessReportCollection, error) {
 	return collection, nil
 }
 
+// writeCollection saves the runs as JSON and Markdown in a folder and returns both file paths.
 func writeCollection(collection correctnessReportCollection, directory string) (string, string, error) {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return "", "", err
@@ -106,6 +108,7 @@ func consolidateReports(source, destination string) (string, string, error) {
 	return writeCollection(collection, destination)
 }
 
+// markdownCollection renders all saved runs as a Markdown report.
 func markdownCollection(collection correctnessReportCollection) string {
 	var b strings.Builder
 	b.WriteString("# Correctness test results\n\n")

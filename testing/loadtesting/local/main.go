@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// main runs the load test and exits non-zero if it fails.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "load test failed:", err)
@@ -20,6 +21,7 @@ func main() {
 	}
 }
 
+// run loads the configuration and executes each run of the chosen case, or only re-renders the report when asked.
 func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "render" {
 		return renderOnly(env("RESULTS_DIR", "test-results/load-test"))
@@ -82,6 +84,7 @@ func run() error {
 	return nil
 }
 
+// executeRun resets the data, drives the load, collects metrics, checks invariants and returns the report.
 func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber int) (Report, error) {
 	products, err := resetFixture(ctx, pool)
 	if err != nil {
@@ -262,6 +265,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	}, nil
 }
 
+// runClosedLoop keeps a fixed number of clients busy for the duration, each starting a workflow as soon as its last one ends.
 func runClosedLoop(ctx context.Context, client *loadClient, selector *cartSelector, clients int, duration time.Duration) {
 	stopAt := time.Now().Add(duration)
 	var workers sync.WaitGroup
@@ -277,6 +281,7 @@ func runClosedLoop(ctx context.Context, client *loadClient, selector *cartSelect
 	workers.Wait()
 }
 
+// runOpenLoop starts workflows at a fixed rate for the duration, whether or not earlier ones have finished.
 func runOpenLoop(ctx context.Context, client *loadClient, selector *cartSelector, rate float64, duration time.Duration) {
 	interval := time.Duration(float64(time.Second) / rate)
 	started := time.Now()
@@ -305,6 +310,7 @@ func runOpenLoop(ctx context.Context, client *loadClient, selector *cartSelector
 	workflows.Wait()
 }
 
+// runFixedWorkflows runs an exact number of workflows spread across the clients.
 func runFixedWorkflows(ctx context.Context, client *loadClient, selector *cartSelector, clients, total int) {
 	var workers sync.WaitGroup
 	var next atomic.Int64
@@ -324,6 +330,7 @@ func runFixedWorkflows(ctx context.Context, client *loadClient, selector *cartSe
 	workers.Wait()
 }
 
+// healthy returns an error if the service does not answer its health check.
 func healthy(url string) error {
 	client := &http.Client{Timeout: 3 * time.Second}
 	response, err := client.Get(url)
@@ -337,6 +344,7 @@ func healthy(url string) error {
 	return nil
 }
 
+// runPassed reports whether a run met its invariants and the checks specific to its case.
 func runPassed(report Report, cfg config) bool {
 	for _, invariant := range report.Invariants {
 		if !invariant.Passed {

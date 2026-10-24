@@ -16,6 +16,7 @@ var (
 	ErrCheckoutInventoryUnavailable = errors.New("checkout inventory is unavailable")
 )
 
+// reserveCheckoutInventory reserves stock for the checkout and returns trusted prices from inventory-service.
 func (s *CheckoutService) reserveCheckoutInventory(
 	ctx context.Context,
 	attempt models.CheckoutAttempt,

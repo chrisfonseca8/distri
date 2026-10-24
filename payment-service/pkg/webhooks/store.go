@@ -15,10 +15,12 @@ type GormStore struct {
 	db *gorm.DB
 }
 
+// NewGormStore creates the webhook event store backed by db.
 func NewGormStore(db *gorm.DB) *GormStore {
 	return &GormStore{db: db}
 }
 
+// Insert stores a webhook event and reports whether it was new.
 func (s *GormStore) Insert(ctx context.Context, event NewEvent) (bool, error) {
 	row := models.WebhookEvent{
 		EventID:   event.EventID,

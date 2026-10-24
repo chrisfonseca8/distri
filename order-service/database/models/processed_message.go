@@ -7,6 +7,7 @@ type ProcessedMessage struct {
 	ProcessedAt time.Time `gorm:"type:timestamptz;not null;autoCreateTime"`
 }
 
+// TableName puts the processed-messages table in the orders schema.
 func (ProcessedMessage) TableName() string {
 	return "orders.processed_messages"
 }

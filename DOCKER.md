@@ -70,8 +70,8 @@ the workload code will not need Docker-specific addressing.
 ## Local correctness suite
 
 The phase-based black-box correctness suite lives in
-`loadgen/correctnesstesting/local`. Its full test list and report format are
-documented in `loadgen/README.md`. Run it against a freshly created local
+`testing/correctnesstesting/local`. Its full test list and report format are
+documented in `testing/README.md`. Run it against a freshly created local
 database:
 
 ```bash

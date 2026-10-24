@@ -5,6 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// MigrateInventory creates or updates every inventory table.
 func MigrateInventory(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&models.Product{},

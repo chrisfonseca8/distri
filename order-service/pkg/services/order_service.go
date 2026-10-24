@@ -37,10 +37,12 @@ type OrderService struct {
 	db *gorm.DB
 }
 
+// NewOrderService creates the order service.
 func NewOrderService(db *gorm.DB) *OrderService {
 	return &OrderService{db: db}
 }
 
+// GetOrder returns an order and its items.
 func (s *OrderService) GetOrder(ctx context.Context, orderID uuid.UUID) (OrderResult, error) {
 	order, err := s.loadOrder(ctx, orderID)
 	if err != nil {
@@ -78,6 +80,7 @@ func (s *OrderService) GetOrder(ctx context.Context, orderID uuid.UUID) (OrderRe
 	return result, nil
 }
 
+// loadOrder reads one order, returning ErrOrderNotFound if it does not exist.
 func (s *OrderService) loadOrder(ctx context.Context, orderID uuid.UUID) (models.Order, error) {
 	var order models.Order
 	query := s.db.WithContext(ctx).

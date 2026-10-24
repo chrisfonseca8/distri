@@ -13,6 +13,7 @@ type Config struct {
 	Worker      WorkerConfig
 }
 
+// Setup loads the worker settings and opens the database.
 func Setup() (*Config, error) {
 	workerConfig, err := LoadWorkerConfig()
 	if err != nil {

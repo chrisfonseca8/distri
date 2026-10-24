@@ -57,10 +57,12 @@ type ReservationService struct {
 	db *gorm.DB
 }
 
+// NewReservationService creates the reservation service.
 func NewReservationService(db *gorm.DB) *ReservationService {
 	return &ReservationService{db: db}
 }
 
+// CreateReservation reserves stock for every item of an order, retrying if the database reports a deadlock.
 func (s *ReservationService) CreateReservation(
 	ctx context.Context,
 	input CreateReservationInput,
@@ -77,6 +79,7 @@ func (s *ReservationService) CreateReservation(
 	return result, err
 }
 
+// createReservationOnce runs one attempt in a single transaction; a repeat for the same order returns the stored result.
 func (s *ReservationService) createReservationOnce(
 	ctx context.Context,
 	input CreateReservationInput,
@@ -120,6 +123,7 @@ func (s *ReservationService) createReservationOnce(
 	return err
 }
 
+// prepareReservationItems validates the order ID, request hash, item count, quantities and duplicate products, and returns the items.
 func prepareReservationItems(input CreateReservationInput) ([]ReservationItemInput, error) {
 	if input.OrderID == uuid.Nil() || strings.TrimSpace(input.RequestHash) == "" {
 		return nil, ErrInvalidReservationInput
@@ -142,6 +146,7 @@ func prepareReservationItems(input CreateReservationInput) ([]ReservationItemInp
 	return items, nil
 }
 
+// compareItemsByProduct orders items by product ID.
 func compareItemsByProduct(left, right ReservationItemInput) int {
 	return strings.Compare(left.ProductID.String(), right.ProductID.String())
 }
@@ -154,6 +159,7 @@ var sortItemsForLocking = true
 // afterInventoryLock is a test seam called after each inventory row update (nil in production).
 var afterInventoryLock func(index int)
 
+// lockOrder returns the items sorted by product ID so every transaction locks stock rows in the same order.
 func lockOrder(items []ReservationItemInput) []ReservationItemInput {
 	if !sortItemsForLocking {
 		return items
@@ -163,6 +169,7 @@ func lockOrder(items []ReservationItemInput) []ReservationItemInput {
 	return ordered
 }
 
+// claimReservation inserts the order's reservation, or returns the existing one; it fails if the same order is reused with a different request.
 func claimReservation(
 	tx *gorm.DB,
 	input CreateReservationInput,
@@ -197,6 +204,7 @@ func claimReservation(
 	return reservation, false, nil
 }
 
+// loadProducts reads the products in the request so prices come from the database.
 func loadProducts(
 	tx *gorm.DB,
 	items []ReservationItemInput,
@@ -223,6 +231,7 @@ func loadProducts(
 	return products, nil
 }
 
+// reserveInventory adds each item's quantity to reserved stock, failing if not enough is available.
 func reserveInventory(tx *gorm.DB, items []ReservationItemInput) error {
 	now := time.Now()
 	for index, item := range lockOrder(items) {
@@ -249,6 +258,7 @@ func reserveInventory(tx *gorm.DB, items []ReservationItemInput) error {
 	return nil
 }
 
+// createReservationItems stores each item with its product price at reservation time.
 func createReservationItems(
 	tx *gorm.DB,
 	reservationID uuid.UUID,
@@ -274,6 +284,7 @@ func createReservationItems(
 	return nil
 }
 
+// markReservationReserved moves the reservation from PENDING to RESERVED.
 func markReservationReserved(tx *gorm.DB, reservationID uuid.UUID) error {
 	update := tx.Table("inventory.reservations").
 		Where("id = ? AND status = ?", reservationID, "PENDING").
@@ -287,6 +298,7 @@ func markReservationReserved(tx *gorm.DB, reservationID uuid.UUID) error {
 	return nil
 }
 
+// loadReservationResult builds the response from the stored reservation and its items.
 func loadReservationResult(
 	tx *gorm.DB,
 	reservation models.Reservation,

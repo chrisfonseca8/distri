@@ -35,15 +35,24 @@ type task struct {
 
 type taskHeap []task
 
+// Len returns the number of queued tasks.
 func (h taskHeap) Len() int { return len(h) }
+
+// Less orders tasks by time, then by the order they were added.
 func (h taskHeap) Less(i, j int) bool {
 	if h[i].at.Equal(h[j].at) {
 		return h[i].seq < h[j].seq
 	}
 	return h[i].at.Before(h[j].at)
 }
+
+// Swap exchanges two tasks.
 func (h taskHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
-func (h *taskHeap) Push(x any)   { *h = append(*h, x.(task)) }
+
+// Push adds a task to the heap.
+func (h *taskHeap) Push(x any) { *h = append(*h, x.(task)) }
+
+// Pop removes the last task from the heap.
 func (h *taskHeap) Pop() any {
 	old := *h
 	last := old[len(old)-1]
@@ -51,6 +60,7 @@ func (h *taskHeap) Pop() any {
 	return last
 }
 
+// NewScheduler creates an empty scheduler.
 func NewScheduler() *Scheduler {
 	return &Scheduler{wake: make(chan struct{}, 1), now: time.Now}
 }
@@ -68,6 +78,7 @@ func (s *Scheduler) At(at time.Time, fn func()) {
 	}
 }
 
+// Run waits for each task's time and runs it, until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) {
 	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
@@ -136,6 +147,7 @@ type SchedulerStats struct {
 	MaxLagMS float64 `json:"max_lag_ms"`
 }
 
+// Stats returns how many tasks are waiting or done and how late tasks have run.
 func (s *Scheduler) Stats() SchedulerStats {
 	return SchedulerStats{
 		Pending:  s.pending.Load(),

@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestDB pings the database and returns an error if it does not answer.
 func TestDB(ctx context.Context, db *gorm.DB) error {
 	sqlDB, err := db.DB()
 	if err != nil {

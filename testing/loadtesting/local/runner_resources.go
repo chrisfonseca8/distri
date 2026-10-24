@@ -17,6 +17,7 @@ func readCgroupCPUUsec() (uint64, bool) {
 	return parseCPUStatUsage(string(data))
 }
 
+// parseCPUStatUsage reads the CPU time used from the contents of a cgroup cpu.stat file.
 func parseCPUStatUsage(content string) (uint64, bool) {
 	for _, line := range strings.Split(content, "\n") {
 		fields := strings.Fields(line)

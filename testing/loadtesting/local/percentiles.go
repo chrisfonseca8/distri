@@ -26,11 +26,13 @@ func SummarizeLatencies(samples []time.Duration) LatencySummary {
 	return summary
 }
 
+// nearest returns the value at the given percentile of sorted values.
 func nearest(values []time.Duration, percentile float64) time.Duration {
 	index := int(float64(len(values)-1)*percentile + 0.5)
 	return values[index]
 }
 
+// durationMS converts a duration to fractional milliseconds.
 func durationMS(value time.Duration) float64 {
 	return float64(value.Microseconds()) / 1000
 }

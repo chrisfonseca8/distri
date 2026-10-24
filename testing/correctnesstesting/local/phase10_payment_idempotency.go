@@ -37,6 +37,7 @@ func phase10() phaseDefinition {
 	}}
 }
 
+// paymentID creates a payment for an order and returns the status and payment ID.
 func paymentID(p *phaseContext, orderID string) (int, string, error) {
 	status, result, err := p.createPayment(orderID, 9900, "INR")
 	return status, result.ID, err

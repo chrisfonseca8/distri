@@ -108,15 +108,24 @@ type Delivery struct {
 
 type deliveryHeap []*Delivery
 
+// Len returns the number of queued deliveries.
 func (h deliveryHeap) Len() int { return len(h) }
+
+// Less orders deliveries by next attempt time, then by the order they were added.
 func (h deliveryHeap) Less(i, j int) bool {
 	if h[i].NextAt.Equal(h[j].NextAt) {
 		return h[i].seq < h[j].seq
 	}
 	return h[i].NextAt.Before(h[j].NextAt)
 }
+
+// Swap exchanges two deliveries.
 func (h deliveryHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
-func (h *deliveryHeap) Push(x any)   { *h = append(*h, x.(*Delivery)) }
+
+// Push adds a delivery to the heap.
+func (h *deliveryHeap) Push(x any) { *h = append(*h, x.(*Delivery)) }
+
+// Pop removes the last delivery from the heap.
 func (h *deliveryHeap) Pop() any {
 	old := *h
 	last := old[len(old)-1]
@@ -152,6 +161,7 @@ type Webhooks struct {
 	omitted        atomic.Int64
 }
 
+// NewWebhooks creates the webhook sender with its HTTP client.
 func NewWebhooks(cfg Config) *Webhooks {
 	transport := &http.Transport{MaxIdleConnsPerHost: cfg.WebhookWorkers, IdleConnTimeout: 30 * time.Second}
 	return &Webhooks{
@@ -164,6 +174,7 @@ func NewWebhooks(cfg Config) *Webhooks {
 	}
 }
 
+// Enabled reports whether a webhook URL is configured.
 func (w *Webhooks) Enabled() bool { return w != nil && w.cfg.WebhookURL != "" }
 
 // Notify queues an event for delivery after a seeded delay. The event id is a
@@ -232,6 +243,7 @@ func (w *Webhooks) Redeliver(id string) bool {
 	return true
 }
 
+// poke wakes the dispatcher without blocking.
 func (w *Webhooks) poke() {
 	select {
 	case w.wake <- struct{}{}:
@@ -385,6 +397,7 @@ type WebhookStats struct {
 	Workers        int   `json:"workers"`
 }
 
+// Stats returns the number of events and how many deliveries are waiting or in progress.
 func (w *Webhooks) Stats() WebhookStats {
 	if w == nil {
 		return WebhookStats{}

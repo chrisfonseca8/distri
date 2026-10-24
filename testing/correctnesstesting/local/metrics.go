@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// summarize turns request latencies and an error count into a latency summary.
 func summarize(samples []time.Duration, errors int) metricSummary {
 	m := metricSummary{Requests: len(samples), Errors: errors}
 	if len(samples) == 0 {
@@ -25,11 +26,13 @@ func summarize(samples []time.Duration, errors int) metricSummary {
 	return m
 }
 
+// percentile returns the value at percentile p of sorted values.
 func percentile(values []time.Duration, p float64) time.Duration {
 	index := int(float64(len(values)-1)*p + 0.5)
 	return values[index]
 }
 
+// milliseconds converts a duration to fractional milliseconds.
 func milliseconds(value time.Duration) float64 {
 	return float64(value.Microseconds()) / 1000
 }

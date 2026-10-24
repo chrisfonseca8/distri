@@ -33,6 +33,7 @@ type RelayConfig struct {
 	RetryCap       time.Duration
 }
 
+// DefaultRelayConfig returns the standard batch size, poll interval, lease and retry settings.
 func DefaultRelayConfig() RelayConfig {
 	return RelayConfig{
 		BatchSize:      10,
@@ -44,6 +45,7 @@ func DefaultRelayConfig() RelayConfig {
 	}
 }
 
+// Validate rejects zero or negative relay settings.
 func (config RelayConfig) Validate() error {
 	if config.BatchSize <= 0 {
 		return errors.New("outbox batch size must be greater than zero")
@@ -70,6 +72,7 @@ type Relay struct {
 	workerID  string
 }
 
+// NewRelay creates a relay that publishes rows from store through messagePublisher.
 func NewRelay(store relayStore, messagePublisher publisher, config RelayConfig) (*Relay, error) {
 	if store == nil {
 		return nil, errors.New("outbox store is required")
@@ -93,6 +96,7 @@ func NewRelay(store relayStore, messagePublisher publisher, config RelayConfig) 
 	}, nil
 }
 
+// Run claims and publishes outbox rows in a loop until ctx is cancelled.
 func (r *Relay) Run(ctx context.Context) {
 	slog.Info("outbox relay started", "worker_id", r.workerID)
 	defer slog.Info("outbox relay stopped", "worker_id", r.workerID)
@@ -127,6 +131,7 @@ func (r *Relay) Run(ctx context.Context) {
 	}
 }
 
+// releaseClaimed hands unpublished rows back so another pass can pick them up.
 func (r *Relay) releaseClaimed(rows []models.Outbox) {
 	finishContext, cancelFinish := context.WithTimeout(context.Background(), finishTimeout)
 	defer cancelFinish()
@@ -149,6 +154,7 @@ func (r *Relay) releaseClaimed(rows []models.Outbox) {
 	}
 }
 
+// publish sends one row and marks it published, or reschedules it with a delay if sending fails.
 func (r *Relay) publish(ctx context.Context, row models.Outbox) {
 	publishContext, cancelPublish := context.WithTimeout(ctx, r.config.PublishTimeout)
 	err := r.publisher.Publish(
@@ -203,6 +209,7 @@ func (r *Relay) publish(ctx context.Context, row models.Outbox) {
 	)
 }
 
+// retryDelay returns the wait before the next attempt, growing from base up to cap.
 func retryDelay(attempt int, base time.Duration, cap time.Duration) time.Duration {
 	if attempt <= 1 {
 		return base
@@ -220,6 +227,7 @@ func retryDelay(attempt int, base time.Duration, cap time.Duration) time.Duratio
 	return delay
 }
 
+// wait sleeps for duration and returns false if ctx is cancelled first.
 func wait(ctx context.Context, duration time.Duration) bool {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()

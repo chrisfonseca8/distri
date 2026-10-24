@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// main runs the schema migration and exits non-zero if it fails.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -20,6 +21,7 @@ func main() {
 	slog.Info("migration completed", "schema", "inventory")
 }
 
+// run opens the database and applies the inventory migrations.
 func run() error {
 	db, err := config.OpenDB()
 	if err != nil {

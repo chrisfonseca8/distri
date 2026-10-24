@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// RegisterHealthRoutes adds the health and readiness endpoints to mux.
 func RegisterHealthRoutes(mux *http.ServeMux, db *gorm.DB) {
 	mux.HandleFunc("GET /health", health.ServerHandler)
 	mux.HandleFunc("GET /readyz", health.ReadinessHandler(db))

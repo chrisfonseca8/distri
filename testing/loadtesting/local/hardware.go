@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// readHardware reads the machine's CPU count and memory.
 func readHardware() (HardwareInfo, error) {
 	file, err := os.Open("/proc/meminfo")
 	if err != nil {

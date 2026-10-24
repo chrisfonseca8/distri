@@ -64,6 +64,7 @@ var commandMappings = map[saga.Step]commandMapping{
 	},
 }
 
+// marshalCommand encodes a command payload as JSON.
 func marshalCommand(payload any) (json.RawMessage, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -88,6 +89,7 @@ func WithSagaDeadline(deadline time.Duration) HandlerOption {
 	return func(h *Handler) { h.sagaDeadline = deadline }
 }
 
+// NewHandler creates the handler for replies from other services.
 func NewHandler(db *gorm.DB, stepTimeout time.Duration, options ...HandlerOption) *Handler {
 	handler := &Handler{db: db, stepTimeout: stepTimeout}
 	for _, option := range options {
@@ -96,6 +98,7 @@ func NewHandler(db *gorm.DB, stepTimeout time.Duration, options ...HandlerOption
 	return handler
 }
 
+// Handle applies one reply to its saga, once per message ID, ignoring replies for steps that are no longer active.
 func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error {
 	var reply messages.Reply
 	if err := json.Unmarshal(delivery.Body, &reply); err != nil {
@@ -296,6 +299,7 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 	return messaging.Transient(wrapped)
 }
 
+// finishedStepStatus maps a reply outcome to the saga step status.
 func finishedStepStatus(outcome messages.Outcome) (string, error) {
 	switch outcome {
 	case messages.Succeeded:
@@ -313,6 +317,7 @@ type sqlStateError interface {
 	SQLState() string
 }
 
+// isPermanentDatabaseError reports whether a database error can never succeed on retry.
 func isPermanentDatabaseError(err error) bool {
 	var databaseError sqlStateError
 	if !errors.As(err, &databaseError) {

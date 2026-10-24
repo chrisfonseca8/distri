@@ -20,10 +20,12 @@ type PaymentInitiateHandler struct {
 	gateway string
 }
 
+// NewPaymentInitiateHandler creates the handler for payment.initiate commands.
 func NewPaymentInitiateHandler(db *gorm.DB, options ...GatewayOption) *PaymentInitiateHandler {
 	return &PaymentInitiateHandler{db: db, gateway: gatewayNameFrom(options)}
 }
 
+// Handle creates the payment attempt for a payment.initiate command, once per message ID, and replies at once if the payment is already finished.
 func (h *PaymentInitiateHandler) Handle(ctx context.Context, delivery messaging.Delivery) error {
 	if delivery.RoutingKey != messages.PaymentInitiateRoutingKey {
 		return messaging.Permanent(fmt.Errorf("unsupported payment routing key %q", delivery.RoutingKey))
@@ -74,6 +76,7 @@ func (h *PaymentInitiateHandler) Handle(ctx context.Context, delivery messaging.
 	return messaging.Transient(wrapped)
 }
 
+// isTerminalPaymentStatus reports whether a payment has reached SUCCEEDED, FAILED or UNKNOWN.
 func isTerminalPaymentStatus(status string) bool {
 	return status == "SUCCEEDED" || status == "FAILED" || status == "UNKNOWN"
 }
@@ -82,6 +85,7 @@ type sqlStateError interface {
 	SQLState() string
 }
 
+// isPermanentDatabaseError reports whether a database error can never succeed on retry.
 func isPermanentDatabaseError(err error) bool {
 	var databaseError sqlStateError
 	if !errors.As(err, &databaseError) {

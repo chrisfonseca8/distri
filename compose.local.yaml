@@ -309,7 +309,7 @@ services:
   loadgen:
     image: distri-local/loadgen:dev
     build:
-      context: ./loadgen
+      context: ./testing
     environment:
       ORDER_URL: http://order-service:8080
       ORCHESTRATOR_URL: http://orchestrator:8083
@@ -324,7 +324,7 @@ services:
   local-loadtest:
     image: distri-local/loadgen:dev
     build:
-      context: ./loadgen
+      context: ./testing
     entrypoint: ["/app/local-loadtest"]
     environment:
       ORDER_URL: http://order-service:8080
@@ -359,7 +359,7 @@ services:
   local-correctness:
     image: distri-local/loadgen:dev
     build:
-      context: ./loadgen
+      context: ./testing
     entrypoint: ["/app/local-correctness"]
     environment:
       ORDER_URL: http://order-service:8080

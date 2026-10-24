@@ -25,6 +25,7 @@ type PoolConfig struct {
 	ScaleDownAfter time.Duration
 }
 
+// validate checks that the pool settings are complete and consistent.
 func (c PoolConfig) validate() error {
 	switch {
 	case c.URL == "":
@@ -54,6 +55,7 @@ type Pool struct {
 	initial     []*Consumer
 }
 
+// NewPool creates a consumer pool that builds consumers with newConsumer.
 func NewPool(config PoolConfig, newConsumer func() (*Consumer, error)) (*Pool, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
@@ -82,6 +84,7 @@ func desiredWorkers(depth int, config PoolConfig) int {
 	return target
 }
 
+// Run starts the minimum consumers and adds or removes some as the queue depth changes, until ctx is cancelled.
 func (p *Pool) Run(ctx context.Context) {
 	slog.Info(
 		"RabbitMQ consumer pool started",
@@ -174,6 +177,7 @@ type depthSampler struct {
 	channel    *amqp.Channel
 }
 
+// depth returns the number of messages waiting in the queue, connecting first if needed.
 func (s *depthSampler) depth() (int, error) {
 	if s.channel == nil {
 		connection, err := amqp.Dial(s.url)
@@ -195,6 +199,7 @@ func (s *depthSampler) depth() (int, error) {
 	return queue.Messages, nil
 }
 
+// close drops the sampler's broker connection.
 func (s *depthSampler) close() {
 	if s.connection != nil {
 		_ = s.connection.Close()

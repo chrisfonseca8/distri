@@ -85,6 +85,7 @@ type WeightedScenario struct {
 	Weight int
 }
 
+// LoadConfig reads the SIM_* environment variables into a validated Config.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		Addr:               envString("SIM_ADDR", ":9090"),
@@ -173,6 +174,7 @@ func LoadConfig() (Config, error) {
 	return cfg, cfg.Validate()
 }
 
+// Validate rejects missing keys and out-of-range or unknown settings.
 func (c Config) Validate() error {
 	if c.KeyID == "" || c.KeySecret == "" {
 		return errors.New("SIM_KEY_ID and SIM_KEY_SECRET are required")
@@ -212,6 +214,7 @@ func (c Config) scaled(d time.Duration) time.Duration {
 	return time.Duration(float64(d) / c.TimeScale)
 }
 
+// ParseMix parses a comma-separated list of name=weight pairs into a weighted scenario list.
 func ParseMix(spec string) ([]WeightedScenario, error) {
 	var mix []WeightedScenario
 	total := 0
@@ -240,6 +243,7 @@ func ParseMix(spec string) ([]WeightedScenario, error) {
 	return mix, nil
 }
 
+// parseSchedule parses a comma-separated list of durations.
 func parseSchedule(spec string) ([]time.Duration, error) {
 	var schedule []time.Duration
 	for _, part := range strings.Split(spec, ",") {
@@ -259,6 +263,7 @@ func parseSchedule(spec string) ([]time.Duration, error) {
 	return schedule, nil
 }
 
+// envString returns the trimmed environment variable, or fallback when it is empty.
 func envString(name, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 		return value
@@ -266,6 +271,7 @@ func envString(name, fallback string) string {
 	return fallback
 }
 
+// envInt reads an integer environment variable, or returns fallback when it is unset.
 func envInt(name string, fallback int) (int, error) {
 	value := os.Getenv(name)
 	if value == "" {
@@ -278,6 +284,7 @@ func envInt(name string, fallback int) (int, error) {
 	return parsed, nil
 }
 
+// envFloat reads a float environment variable, or returns fallback when it is unset.
 func envFloat(name string, fallback float64) (float64, error) {
 	value := os.Getenv(name)
 	if value == "" {
@@ -290,6 +297,7 @@ func envFloat(name string, fallback float64) (float64, error) {
 	return parsed, nil
 }
 
+// envBool reads a boolean environment variable, or returns fallback when it is unset.
 func envBool(name string, fallback bool) (bool, error) {
 	value := os.Getenv(name)
 	if value == "" {

@@ -15,10 +15,12 @@ type Store struct {
 	db *gorm.DB
 }
 
+// NewStore creates a job store backed by db.
 func NewStore(db *gorm.DB) *Store {
 	return &Store{db: db.Session(&gorm.Session{SkipDefaultTransaction: true})}
 }
 
+// Claim leases up to limit queued jobs to workerID.
 func (s *Store) Claim(
 	ctx context.Context,
 	workerID string,
@@ -68,6 +70,7 @@ RETURNING jobs.*`
 	return claimed, nil
 }
 
+// Succeed marks a job succeeded, only if workerID still holds its lease.
 func (s *Store) Succeed(ctx context.Context, jobID uuid.UUID, workerID string) (bool, error) {
 	result := s.db.WithContext(ctx).
 		Table("payments.jobs").
@@ -83,6 +86,7 @@ func (s *Store) Succeed(ctx context.Context, jobID uuid.UUID, workerID string) (
 	return result.RowsAffected == 1, nil
 }
 
+// Reschedule puts a job back in the queue after delay, only if workerID still holds its lease.
 func (s *Store) Reschedule(
 	ctx context.Context,
 	jobID uuid.UUID,
@@ -114,6 +118,7 @@ func (s *Store) Reschedule(
 	return result.RowsAffected == 1, nil
 }
 
+// Kill marks a job dead so it is not retried, only if workerID still holds its lease.
 func (s *Store) Kill(
 	ctx context.Context,
 	jobID uuid.UUID,
@@ -135,6 +140,7 @@ func (s *Store) Kill(
 	return result.RowsAffected == 1, nil
 }
 
+// ListDead returns up to limit dead jobs.
 func (s *Store) ListDead(ctx context.Context, limit int) ([]models.Job, error) {
 	if limit <= 0 {
 		return nil, errors.New("dead job limit must be greater than zero")
@@ -153,6 +159,7 @@ func (s *Store) ListDead(ctx context.Context, limit int) ([]models.Job, error) {
 	return jobs, nil
 }
 
+// Requeue puts a dead job back in the queue with its attempts reset.
 func (s *Store) Requeue(ctx context.Context, jobID uuid.UUID) (bool, error) {
 	result := s.db.WithContext(ctx).
 		Table("payments.jobs").

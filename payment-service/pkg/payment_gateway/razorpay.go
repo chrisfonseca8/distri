@@ -498,6 +498,7 @@ func classifyFailure(action string, status int, apiErr *razorpayError) error {
 	}
 }
 
+// isDuplicateReceipt reports whether Razorpay rejected the request because the same receipt was already used.
 func isDuplicateReceipt(status int, apiErr *razorpayError) bool {
 	if status != http.StatusBadRequest || apiErr == nil {
 		return false

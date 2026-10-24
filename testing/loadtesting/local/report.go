@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// writeAggregate adds a run to the saved results and rewrites the JSON and Markdown files.
 func writeAggregate(resultsDir string, report Report) error {
 	if err := os.MkdirAll(resultsDir, 0o755); err != nil {
 		return fmt.Errorf("create results directory: %w", err)
@@ -81,6 +82,7 @@ func writeAggregate(resultsDir string, report Report) error {
 	return nil
 }
 
+// atomicWrite writes a file through a temporary file so a reader never sees a half-written one.
 func atomicWrite(path string, data []byte) error {
 	temporary := path + ".tmp"
 	if err := os.WriteFile(temporary, data, 0o644); err != nil {
@@ -92,6 +94,7 @@ func atomicWrite(path string, data []byte) error {
 	return nil
 }
 
+// calculateBaselineVariance measures how much the repeated baseline runs differ from each other.
 func calculateBaselineVariance(reports []Report) *BaselineVariance {
 	accepted, completed, checkoutP95, payP95, endToEndP95 := []float64{}, []float64{}, []float64{}, []float64{}, []float64{}
 	for _, report := range reports {
@@ -117,6 +120,7 @@ func calculateBaselineVariance(reports []Report) *BaselineVariance {
 	}
 }
 
+// summarizeVariance returns the mean, minimum, maximum, standard deviation and variation of the values.
 func summarizeVariance(values []float64) VarianceSummary {
 	result := VarianceSummary{Min: values[0], Max: values[0]}
 	for _, value := range values {
@@ -140,6 +144,7 @@ func summarizeVariance(values []float64) VarianceSummary {
 	return result
 }
 
+// renderMarkdown turns all saved runs into the Markdown results file.
 func renderMarkdown(collection ReportCollection) string {
 	var out strings.Builder
 	out.WriteString("# Local load-test results\n\n")
@@ -169,6 +174,7 @@ func renderMarkdown(collection ReportCollection) string {
 	return out.String()
 }
 
+// calculateContentionWave collects the points for the hot-row, skewed and multi-item contention cases.
 func calculateContentionWave(reports []Report) []ContentionPoint {
 	points := make([]ContentionPoint, 0)
 	for _, report := range reports {
@@ -192,6 +198,7 @@ func calculateContentionWave(reports []Report) []ContentionPoint {
 	return points
 }
 
+// renderContentionSummary writes the contention table.
 func renderContentionSummary(out *strings.Builder, points []ContentionPoint) {
 	if len(points) == 0 {
 		return
@@ -207,6 +214,7 @@ func renderContentionSummary(out *strings.Builder, points []ContentionPoint) {
 	out.WriteString("\n")
 }
 
+// calculateClientSweep collects the client-count sweep and finds the point where more clients stop helping.
 func calculateClientSweep(reports []Report) ([]SweepPoint, *int) {
 	points := sweepPoints(reports, "c3-")
 	sort.Slice(points, func(i, j int) bool { return points[i].Clients < points[j].Clients })
@@ -221,6 +229,7 @@ func calculateClientSweep(reports []Report) ([]SweepPoint, *int) {
 	return points, knee
 }
 
+// calculateRateSweep collects the offered-rate sweep and finds the rate where the system stops keeping up.
 func calculateRateSweep(reports []Report) ([]SweepPoint, *float64) {
 	points := sweepPoints(reports, "c4-")
 	sort.Slice(points, func(i, j int) bool { return points[i].OfferedRate < points[j].OfferedRate })
@@ -235,6 +244,7 @@ func calculateRateSweep(reports []Report) ([]SweepPoint, *float64) {
 	return points, saturation
 }
 
+// sweepPoints collects the measured points of the runs whose labels start with prefix.
 func sweepPoints(reports []Report, prefix string) []SweepPoint {
 	points := make([]SweepPoint, 0)
 	for _, report := range reports {
@@ -252,6 +262,7 @@ func sweepPoints(reports []Report, prefix string) []SweepPoint {
 	return points
 }
 
+// renderSweepSummary writes a sweep table with its knee or saturation point.
 func renderSweepSummary(out *strings.Builder, title string, points []SweepPoint, knee *int, saturation *float64) {
 	if len(points) == 0 {
 		return
@@ -279,10 +290,12 @@ func renderSweepSummary(out *strings.Builder, title string, points []SweepPoint,
 	}
 }
 
+// writeVarianceRow writes one row of the baseline variance table.
 func writeVarianceRow(out *strings.Builder, label string, value VarianceSummary) {
 	fmt.Fprintf(out, "| %s | %.2f | %.2f | %.2f | %.2f | %.2f%% |\n", label, value.Mean, value.Min, value.Max, value.StdDev, value.CoefficientPct)
 }
 
+// renderRun writes the full section for one run.
 func renderRun(out *strings.Builder, report Report) {
 	client := report.Client
 	fmt.Fprintf(out, "## %s\n\n", report.Label)
@@ -382,6 +395,7 @@ func renderRun(out *strings.Builder, report Report) {
 	out.WriteString("\n")
 }
 
+// runDescription describes in a sentence what a run does.
 func runDescription(config RunConfig) string {
 	switch config.Case {
 	case "C1":
@@ -414,6 +428,7 @@ func runDescription(config RunConfig) string {
 	}
 }
 
+// passLabel returns PASS or FAIL depending on the run's invariants.
 func passLabel(report Report) string {
 	for _, invariant := range report.Invariants {
 		if !invariant.Passed {
@@ -435,10 +450,12 @@ func passLabel(report Report) string {
 	return "PASS"
 }
 
+// writeLatencyRow writes one row of a latency table.
 func writeLatencyRow(out *strings.Builder, label string, latency LatencySummary) {
 	fmt.Fprintf(out, "| %s | %d | %.2f | %.2f | %.2f | %.2f |\n", label, latency.Samples, latency.P50MS, latency.P95MS, latency.P99MS, latency.MaxMS)
 }
 
+// statusText formats a set of HTTP status counts as text.
 func statusText(mix StatusMix) string {
 	keys := make([]string, 0, len(mix.ByHTTPStatus))
 	for status := range mix.ByHTTPStatus {

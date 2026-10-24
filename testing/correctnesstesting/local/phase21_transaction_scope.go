@@ -24,6 +24,7 @@ func phase21() phaseDefinition {
 	}}
 }
 
+// fmtInt converts an integer to a decimal string.
 func fmtInt(value int64) string {
 	if value == 0 {
 		return "0"

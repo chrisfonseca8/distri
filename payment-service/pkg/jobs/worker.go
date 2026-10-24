@@ -38,6 +38,7 @@ type Worker struct {
 	randomFloat func() float64
 }
 
+// NewWorker creates a job worker after validating its configuration.
 func NewWorker(
 	store jobStore,
 	processor paymentProcessor,
@@ -60,6 +61,7 @@ func NewWorker(
 	}, nil
 }
 
+// Run starts the configured number of worker goroutines and waits for them to stop.
 func (w *Worker) Run(ctx context.Context) {
 	var workers sync.WaitGroup
 	for index := 0; index < w.config.Concurrency; index++ {
@@ -73,6 +75,7 @@ func (w *Worker) Run(ctx context.Context) {
 	workers.Wait()
 }
 
+// runLoop claims one job at a time and runs it until ctx is cancelled.
 func (w *Worker) runLoop(ctx context.Context, workerID string) {
 	slog.Info("payment job worker started", "worker_id", workerID)
 	defer slog.Info("payment job worker stopped", "worker_id", workerID)
@@ -99,6 +102,7 @@ func (w *Worker) runLoop(ctx context.Context, workerID string) {
 	}
 }
 
+// waitForJobs sleeps for interval and returns false if ctx is cancelled first.
 func waitForJobs(ctx context.Context, interval time.Duration) bool {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
@@ -110,6 +114,7 @@ func waitForJobs(ctx context.Context, interval time.Duration) bool {
 	}
 }
 
+// runJob runs one job and then marks it succeeded, retried with a backoff or dead.
 func (w *Worker) runJob(_ context.Context, workerID string, job models.Job) {
 	// A shutdown signal stops new claims, but a job whose lease is already held
 	// gets its own bounded context so it can drain and persist its result.
@@ -184,6 +189,7 @@ func (w *Worker) runJob(_ context.Context, workerID string, job models.Job) {
 	}
 }
 
+// handleJob runs the payment handler for a job and turns a panic into a retry.
 func (w *Worker) handleJob(
 	ctx context.Context,
 	job models.Job,

@@ -8,10 +8,12 @@ type cartSelector struct {
 	sequence atomic.Uint64
 }
 
+// newCartSelector creates a selector that picks carts from products using the given mode.
 func newCartSelector(mode string, products []string) *cartSelector {
 	return &cartSelector{mode: mode, products: products}
 }
 
+// next returns the cart for the next workflow: a single hot product, a skewed mix, two or three items, or products in turn.
 func (s *cartSelector) next() []cartItem {
 	sequence := s.sequence.Add(1) - 1
 	switch s.mode {
@@ -36,6 +38,7 @@ func (s *cartSelector) next() []cartItem {
 	}
 }
 
+// shuffle reorders items in a way that depends only on seed, so runs can be repeated.
 func shuffle(items []cartItem, seed uint64) {
 	for i := len(items) - 1; i > 0; i-- {
 		seed ^= seed << 13

@@ -21,10 +21,12 @@ type OrderCreateHandler struct {
 	db *gorm.DB
 }
 
+// NewOrderCreateHandler creates the handler for order.create commands.
 func NewOrderCreateHandler(db *gorm.DB) *OrderCreateHandler {
 	return &OrderCreateHandler{db: db}
 }
 
+// Handle creates the order and its items from an order.create command, once per message.
 func (h *OrderCreateHandler) Handle(
 	ctx context.Context,
 	delivery messaging.Delivery,
@@ -119,6 +121,7 @@ type sqlStateError interface {
 	SQLState() string
 }
 
+// isPermanentDatabaseError reports whether a database error can never succeed on retry.
 func isPermanentDatabaseError(err error) bool {
 	var databaseError sqlStateError
 	if !errors.As(err, &databaseError) {
@@ -128,6 +131,7 @@ func isPermanentDatabaseError(err error) bool {
 	return strings.HasPrefix(class, "22") || strings.HasPrefix(class, "23")
 }
 
+// validateOrderCreate checks that an order.create command has the fields an order needs.
 func validateOrderCreate(command messages.OrderCreate) error {
 	if command.OrderID == uuid.Nil() {
 		return errors.New("order.create order_id is required")

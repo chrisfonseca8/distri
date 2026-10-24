@@ -31,6 +31,7 @@ type GetCheckoutResult struct {
 	Steps       []CheckoutStepResult `json:"steps"`
 }
 
+// GetCheckout returns the saga's status, current step, total and step list for orderID.
 func (s *CheckoutService) GetCheckout(
 	ctx context.Context,
 	orderID uuid.UUID,

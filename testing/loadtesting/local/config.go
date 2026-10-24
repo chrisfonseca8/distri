@@ -69,6 +69,7 @@ func checkDatabaseTarget(databaseURL, allowedHost string) error {
 	return nil
 }
 
+// loadConfig reads the load test settings from the environment.
 func loadConfig() (config, error) {
 	c := config{
 		CaseName: strings.ToUpper(env("LOAD_CASE", "C1")), OrderURL: strings.TrimRight(env("ORDER_URL", "http://127.0.0.1:8080"), "/"), OrchestratorURL: strings.TrimRight(env("ORCHESTRATOR_URL", "http://127.0.0.1:8083"), "/"),
@@ -184,6 +185,7 @@ func loadConfig() (config, error) {
 	return c, nil
 }
 
+// experiment returns the settings for one run of the chosen case, such as one step of a sweep.
 func (c config) experiment(runNumber int) config {
 	result := c
 	if c.CaseName == "C3" {
@@ -211,12 +213,15 @@ func (c config) experiment(runNumber int) config {
 	return result
 }
 
+// env returns the trimmed environment variable, or fallback when it is empty.
 func env(name, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 		return value
 	}
 	return fallback
 }
+
+// envInt reads an integer environment variable, or returns fallback when it is unset.
 func envInt(name string, fallback int) (int, error) {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {

@@ -30,14 +30,14 @@ audit 1 m / 1 h, compensation interval 2 s, webhook inbox interval 1 s, DB pool 
 ```sh
 # 0. pinned stack: unsets any short fault-test timings, recreates the simulator and payment-service,
 #    prints the effective configuration (secrets filtered) and fails on any mismatch
-loadgen/baseline/start_stack.sh
+testing/baseline/start_stack.sh
 
 # 1. the run (also writes test-results/baseline/B0.json); do not restart the simulator until it finishes
-python3 loadgen/baseline/baseline.py --label B0
+python3 testing/baseline/baseline.py --label B0
 ```
 
-Checks of the runner itself (no traffic): `cd loadgen/baseline && python3 -m unittest -v` and
-`python3 loadgen/baseline/baseline.py --dry-run`.
+Checks of the runner itself (no traffic): `cd testing/baseline && python3 -m unittest -v` and
+`python3 testing/baseline/baseline.py --dry-run`.
 
 Do not run the Go correctness suite, `payment-service` integration tests against `distri`, or the
 `stage5` harness between steps 0 and 2.

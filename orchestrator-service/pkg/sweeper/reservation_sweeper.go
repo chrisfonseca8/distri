@@ -27,6 +27,7 @@ type ReservationSweeper struct {
 	now       func() time.Time
 }
 
+// NewReservationSweeper creates a sweeper that releases old reservations whose saga is missing or already compensated.
 func NewReservationSweeper(
 	inventory clients.ReservationClient,
 	db *gorm.DB,
@@ -49,6 +50,7 @@ func NewReservationSweeper(
 	}, nil
 }
 
+// Run sweeps on every interval until ctx is cancelled.
 func (s *ReservationSweeper) Run(ctx context.Context) {
 	slog.Info(
 		"reservation sweeper started",
@@ -71,12 +73,14 @@ func (s *ReservationSweeper) Run(ctx context.Context) {
 	}
 }
 
+// sweepAndLog runs one sweep and logs any error.
 func (s *ReservationSweeper) sweepAndLog(ctx context.Context) {
 	if err := s.Sweep(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("sweep expired reservations", "error", err)
 	}
 }
 
+// Sweep releases reservations older than the TTL whose saga is missing or compensated; sagas still in progress keep theirs.
 func (s *ReservationSweeper) Sweep(ctx context.Context) error {
 	cutoff := s.now().UTC().Add(-s.config.ReservationTTL)
 	var sweepErrors []error
@@ -148,6 +152,7 @@ func (s *ReservationSweeper) sagaStatus(ctx context.Context, orderID uuid.UUID) 
 	return saga.Status(statuses[0]), true, nil
 }
 
+// release releases one reservation and logs the result.
 func (s *ReservationSweeper) release(
 	ctx context.Context,
 	reservation clients.ReservationSummary,

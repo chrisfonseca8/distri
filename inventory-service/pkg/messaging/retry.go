@@ -96,6 +96,7 @@ type retryPublisher struct {
 	returns <-chan amqp.Return
 }
 
+// newRetryPublisher opens a confirm-mode channel used to send messages to the retry queue.
 func newRetryPublisher(connection *amqp.Connection) (*retryPublisher, error) {
 	channel, err := connection.Channel()
 	if err != nil {
@@ -111,6 +112,7 @@ func newRetryPublisher(connection *amqp.Connection) (*retryPublisher, error) {
 	}, nil
 }
 
+// close closes the retry channel.
 func (p *retryPublisher) close() {
 	_ = p.channel.Close()
 }
@@ -185,6 +187,7 @@ func (p *retryPublisher) publish(
 	}
 }
 
+// truncate cuts value to at most limit bytes.
 func truncate(value string, limit int) string {
 	if len(value) <= limit {
 		return value

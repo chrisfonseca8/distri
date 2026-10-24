@@ -16,6 +16,7 @@ const (
 	ScenarioAuthorizeOnly = "authorize_only"
 )
 
+// ValidScenario reports whether name is a known scenario.
 func ValidScenario(name string) bool {
 	switch name {
 	case ScenarioCapture, ScenarioDecline, ScenarioNone, ScenarioAuthorizeOnly:
@@ -42,4 +43,5 @@ func pickScenario(mix []WeightedScenario, seed uint64, receipt string) string {
 	return mix[len(mix)-1].Name
 }
 
+// itoa converts n to a string.
 func itoa(n int) string { return strconv.Itoa(n) }

@@ -16,10 +16,12 @@ type CheckoutController struct {
 	service *checkout.CheckoutService
 }
 
+// NewCheckoutController creates the checkout HTTP controller.
 func NewCheckoutController(service *checkout.CheckoutService) *CheckoutController {
 	return &CheckoutController{service: service}
 }
 
+// CreateCheckout handles POST /v1/checkouts and replies with the stored result of the checkout.
 func (c *CheckoutController) CreateCheckout(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxCheckoutRequestBody)
 	input, err := decodeCheckoutInput(r)
@@ -36,6 +38,7 @@ func (c *CheckoutController) CreateCheckout(w http.ResponseWriter, r *http.Reque
 	writeRawJSON(w, response.StatusCode, response.Body)
 }
 
+// GetCheckout handles GET /v1/checkouts/{orderID} and replies with the checkout's current state.
 func (c *CheckoutController) GetCheckout(w http.ResponseWriter, r *http.Request) {
 	orderID, err := uuid.Parse(r.PathValue("orderID"))
 	if err != nil {
@@ -57,6 +60,7 @@ func (c *CheckoutController) GetCheckout(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, result)
 }
 
+// decodeCheckoutInput reads the Idempotency-Key header and JSON body, rejecting unknown fields.
 func decodeCheckoutInput(r *http.Request) (checkout.CreateCheckoutInput, error) {
 	input := checkout.CreateCheckoutInput{
 		IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -70,6 +74,7 @@ func decodeCheckoutInput(r *http.Request) (checkout.CreateCheckoutInput, error) 
 	return input, nil
 }
 
+// writeCheckoutError turns a checkout error into the matching HTTP status and message.
 func writeCheckoutError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, checkout.ErrInvalidCheckoutInput):
@@ -84,12 +89,14 @@ func writeCheckoutError(w http.ResponseWriter, err error) {
 	}
 }
 
+// writeRawJSON writes an already-encoded JSON body with the given status.
 func writeRawJSON(w http.ResponseWriter, statusCode int, body json.RawMessage) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_, _ = w.Write(body)
 }
 
+// writeJSON encodes value as JSON and writes it with the given status.
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)

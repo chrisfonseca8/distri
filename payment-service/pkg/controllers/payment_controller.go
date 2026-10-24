@@ -19,10 +19,12 @@ type PaymentController struct {
 	service *services.PaymentService
 }
 
+// NewPaymentController creates the payment HTTP controller.
 func NewPaymentController(service *services.PaymentService) *PaymentController {
 	return &PaymentController{service: service}
 }
 
+// CreatePayment handles POST /v1/payments and creates the payment attempt for an order.
 func (c *PaymentController) CreatePayment(w http.ResponseWriter, r *http.Request) {
 	var request createPaymentRequest
 	decoder := json.NewDecoder(r.Body)
@@ -61,6 +63,7 @@ func (c *PaymentController) CreatePayment(w http.ResponseWriter, r *http.Request
 	writeJSON(w, status, result.Attempt)
 }
 
+// GetPayment handles GET /v1/payments/{paymentID} and replies with the payment attempt.
 func (c *PaymentController) GetPayment(w http.ResponseWriter, r *http.Request) {
 	paymentID, err := uuid.Parse(r.PathValue("paymentID"))
 	if err != nil {
@@ -81,6 +84,7 @@ func (c *PaymentController) GetPayment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, attempt)
 }
 
+// writeJSON encodes value as JSON and writes it with the given status.
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)

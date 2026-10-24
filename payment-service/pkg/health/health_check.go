@@ -11,6 +11,7 @@ type Status struct {
 	Checks  map[string]bool `json:"checks"`
 }
 
+// Check runs the database and server checks and returns the combined status.
 func Check(ctx context.Context, db *gorm.DB, serverHealthURL string) Status {
 	checks := map[string]func(context.Context) error{
 		"database": func(ctx context.Context) error {

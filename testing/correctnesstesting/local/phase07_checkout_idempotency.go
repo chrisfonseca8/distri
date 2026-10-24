@@ -46,6 +46,7 @@ func phase07() phaseDefinition {
 	}}
 }
 
+// checkoutID sends a one-item checkout and returns the status and order ID.
 func checkoutID(p *phaseContext, key, product string) (int, string, error) {
 	status, result, err := p.checkout(key, []map[string]any{item(product, 1)})
 	return status, result.OrderID, err

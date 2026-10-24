@@ -21,10 +21,12 @@ type InventoryCommandHandler struct {
 	db *gorm.DB
 }
 
+// NewInventoryCommandHandler creates the handler for inventory commands received from RabbitMQ.
 func NewInventoryCommandHandler(db *gorm.DB) *InventoryCommandHandler {
 	return &InventoryCommandHandler{db: db}
 }
 
+// Handle sends a confirm or release command to handleChange based on its routing key.
 func (h *InventoryCommandHandler) Handle(ctx context.Context, delivery messaging.Delivery) error {
 	switch delivery.RoutingKey {
 	case messages.InventoryConfirmRoutingKey:
@@ -36,6 +38,7 @@ func (h *InventoryCommandHandler) Handle(ctx context.Context, delivery messaging
 	}
 }
 
+// handleChange applies a confirm or release to an order's reservation once per message ID and queues a reply for the saga step.
 func (h *InventoryCommandHandler) handleChange(
 	ctx context.Context,
 	delivery messaging.Delivery,
@@ -108,6 +111,7 @@ func (h *InventoryCommandHandler) handleChange(
 	return messaging.Transient(wrapped)
 }
 
+// decodeInventoryCommand reads the order ID from a confirm or release command.
 func decodeInventoryCommand(body []byte, movement stockMovement) (uuid.UUID, error) {
 	var orderID uuid.UUID
 	switch movement {
@@ -134,6 +138,7 @@ type sqlStateError interface {
 	SQLState() string
 }
 
+// isPermanentDatabaseError reports whether a database error can never succeed on retry.
 func isPermanentDatabaseError(err error) bool {
 	var databaseError sqlStateError
 	if !errors.As(err, &databaseError) {

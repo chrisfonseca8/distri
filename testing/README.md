@@ -70,7 +70,7 @@ Service. Run the correctness binary from the host while the Docker services are
 up to activate them:
 
 ```sh
-cd loadgen
+cd testing
 ORDER_URL=http://127.0.0.1:8080 \
 INVENTORY_URL=http://127.0.0.1:8081 \
 PAYMENT_URL=http://127.0.0.1:8082 \

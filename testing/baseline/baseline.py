@@ -9,7 +9,7 @@ arrivals), then a drain period until every saga is terminal or the drain limit p
 It only reads and writes through the public checkout API; it never edits service tables.
 Stdlib only. See docs/baseline.md for the stack configuration and what is recorded.
 
-  python3 loadgen/baseline/baseline.py --label B0
+  python3 testing/baseline/baseline.py --label B0
 """
 import argparse, json, os, random, socket, subprocess, threading, time, urllib.request, urllib.error, uuid, statistics, datetime
 

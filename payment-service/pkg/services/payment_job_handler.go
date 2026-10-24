@@ -22,18 +22,51 @@ const (
 	ProcessPermanent ProcessOutcome = "Permanent"
 )
 
+const defaultPaymentWindow = 5 * time.Minute
+
 type PaymentJobHandler struct {
 	db             *gorm.DB
 	gateway        paymentgateway.Gateway
 	gatewayTimeout time.Duration
+	paymentWindow  time.Duration
+	gatewayName    string
+}
+
+// JobHandlerOption customises a PaymentJobHandler.
+type JobHandlerOption func(*PaymentJobHandler)
+
+// WithPaymentWindow sets how long a payment may stay AWAITING_PAYMENT.
+func WithPaymentWindow(window time.Duration) JobHandlerOption {
+	return func(h *PaymentJobHandler) {
+		if window > 0 {
+			h.paymentWindow = window
+		}
+	}
+}
+
+// WithJobGatewayName makes the handler call its gateway only for attempts labelled
+// with that environment. An attempt of another environment is never sent here: its
+// own label decides where it may go, not the process that happened to claim the job.
+func WithJobGatewayName(name string) JobHandlerOption {
+	return func(h *PaymentJobHandler) { h.gatewayName = name }
 }
 
 func NewPaymentJobHandler(
 	db *gorm.DB,
 	gateway paymentgateway.Gateway,
 	gatewayTimeout time.Duration,
+	options ...JobHandlerOption,
 ) *PaymentJobHandler {
-	return &PaymentJobHandler{db: db, gateway: gateway, gatewayTimeout: gatewayTimeout}
+	handler := &PaymentJobHandler{
+		db:             db,
+		gateway:        gateway,
+		gatewayTimeout: gatewayTimeout,
+		paymentWindow:  defaultPaymentWindow,
+	}
+	for _, option := range options {
+		option(handler)
+	}
+	return handler
 }
 
 func (h *PaymentJobHandler) ProcessForJob(
@@ -63,7 +96,7 @@ func (h *PaymentJobHandler) ProcessForJob(
 			return ProcessRetry, err
 		}
 		return ProcessDone, nil
-	case "SUCCEEDED", "FAILED", "UNKNOWN":
+	case "AWAITING_PAYMENT", "SUCCEEDED", "FAILED", "UNKNOWN":
 		return ProcessDone, nil
 	default:
 		return ProcessPermanent, fmt.Errorf("unknown payment status %q", payment.Status)
@@ -74,6 +107,12 @@ func (h *PaymentJobHandler) processCreated(
 	ctx context.Context,
 	payment models.PaymentAttempt,
 ) (ProcessOutcome, error) {
+	if h.gatewayName != "" && payment.Gateway != h.gatewayName {
+		// Permanent, before the claim: the gateway is never called and the row stays CREATED,
+		// so the dead-job path resolves it as "gateway never called".
+		return ProcessPermanent, fmt.Errorf("payment %s belongs to gateway %q, this process serves %q",
+			payment.ID, payment.Gateway, h.gatewayName)
+	}
 	claim := h.db.WithContext(ctx).
 		Session(&gorm.Session{SkipDefaultTransaction: true}).
 		Table("payments.payment_attempts").
@@ -94,7 +133,11 @@ func (h *PaymentJobHandler) processCreated(
 	)
 	cancelGateway()
 
-	if err := h.writeResult(payment.ID, paymentResultUpdates(ref, gatewayErr)); err != nil {
+	updates := paymentResultUpdates(ref, gatewayErr)
+	if updates["status"] == "AWAITING_PAYMENT" {
+		updates["expires_at"] = time.Now().Add(h.paymentWindow)
+	}
+	if err := h.writeResult(payment.ID, updates); err != nil {
 		return ProcessRetry, err
 	}
 	return ProcessDone, nil
@@ -140,6 +183,10 @@ func writePaymentResult(
 		Take(&payment).Error; err != nil {
 		return false, fmt.Errorf("load payment result for reply: %w", err)
 	}
+	// An attempt that only awaits the customer has no outcome to report yet.
+	if payment.Status == "AWAITING_PAYMENT" {
+		return true, nil
+	}
 	if err := enqueuePaymentReply(tx, payment); err != nil {
 		return false, err
 	}
@@ -178,6 +225,23 @@ func paymentResultUpdates(ref string, gatewayErr error) map[string]any {
 		return map[string]any{
 			"status":       "FAILED",
 			"failure_code": "DECLINED",
+		}
+	}
+
+	var awaiting *paymentgateway.ErrAwaitingPayment
+	if errors.As(gatewayErr, &awaiting) {
+		return map[string]any{
+			"status":           "AWAITING_PAYMENT",
+			"gateway_order_id": awaiting.Ref,
+			"failure_code":     nil,
+		}
+	}
+
+	var rejected *paymentgateway.ErrRejected
+	if errors.As(gatewayErr, &rejected) {
+		return map[string]any{
+			"status":       "FAILED",
+			"failure_code": "GATEWAY_REJECTED",
 		}
 	}
 

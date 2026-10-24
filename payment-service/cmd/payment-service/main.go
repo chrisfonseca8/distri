@@ -22,9 +22,11 @@ import (
 	"github.com/chrisfonseca08/distri/payment-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/outbox"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/telemetry"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/webhooks"
 )
 
 const (
@@ -69,6 +71,25 @@ func run(roleValue string) error {
 	}
 	defer sqlDB.Close()
 
+	webhookConfig, err := config.LoadWebhookConfig()
+	if err != nil {
+		return fmt.Errorf("load webhook configuration: %w", err)
+	}
+	var webhookHandler http.Handler
+	if webhookConfig.Enabled() {
+		handler, err := webhooks.NewHandler(
+			webhookConfig.Secret,
+			webhookConfig.MaxBodyBytes,
+			webhooks.NewGormStore(applicationConfig.DB),
+		)
+		if err != nil {
+			return fmt.Errorf("set up webhook handler: %w", err)
+		}
+		webhookHandler = handler
+	} else {
+		slog.Info("webhooks disabled (RAZORPAY_WEBHOOK_SECRET is not set); polling is the only completion path")
+	}
+
 	shutdownContext, stopSignals := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -109,7 +130,14 @@ func run(roleValue string) error {
 			relay.Run(shutdownContext)
 		}()
 
-		paymentHandler := services.NewPaymentInitiateHandler(applicationConfig.DB)
+		gatewayConfig, err := config.LoadGatewayConfig()
+		if err != nil {
+			return fmt.Errorf("load gateway configuration: %w", err)
+		}
+		paymentHandler := services.NewPaymentInitiateHandler(
+			applicationConfig.DB,
+			services.WithGatewayName(applicationConfig.GatewayName),
+		)
 		pool, err := messaging.NewPool(
 			messaging.PoolConfig{
 				URL:            rabbitMQConfig.URL,
@@ -143,6 +171,8 @@ func run(roleValue string) error {
 			applicationConfig.DB,
 			applicationConfig.Gateway,
 			gatewayTimeout,
+			services.WithPaymentWindow(gatewayConfig.PaymentWindow),
+			services.WithJobGatewayName(applicationConfig.GatewayName),
 		)
 		worker, err := jobs.NewWorker(
 			jobs.NewStore(applicationConfig.DB),
@@ -157,6 +187,93 @@ func run(roleValue string) error {
 			defer workerWaitGroup.Done()
 			worker.Run(shutdownContext)
 		}()
+
+		// Durable work is routed by its own gateway label: refuse to start if any
+		// unsettled work carries a label this build cannot route.
+		if err := services.ValidateGatewayLabels(shutdownContext, applicationConfig.DB, applicationConfig.GatewayName); err != nil {
+			return fmt.Errorf("validate gateway labels: %w", err)
+		}
+
+		// Only gateways that finish a payment later (Razorpay) can be polled; the
+		// simulator settles inside CreateCharge and needs no reconciler.
+		var compensationWorker *services.CompensationWorker
+		if _, pollable := applicationConfig.Gateway.(paymentgateway.OrderLookup); pollable {
+			reconciler, err := services.NewPaymentReconciler(
+				applicationConfig.DB,
+				applicationConfig.Gateway,
+				applicationConfig.GatewayName,
+				services.ReconcilerConfig{
+					Interval:       gatewayConfig.ReconcileInterval,
+					MinPoll:        gatewayConfig.ReconcileMinPoll,
+					Batch:          gatewayConfig.ReconcileBatch,
+					PaymentWindow:  gatewayConfig.PaymentWindow,
+					AuditWindow:    gatewayConfig.AuditWindow,
+					AuditInterval:  gatewayConfig.AuditInterval,
+					GatewayTimeout: gatewayTimeout,
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("set up payment reconciler: %w", err)
+			}
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				reconciler.Run(shutdownContext)
+			}()
+
+			compensationConfig, err := config.LoadCompensationConfig()
+			if err != nil {
+				return fmt.Errorf("load compensation configuration: %w", err)
+			}
+			compensationWorker, err = services.NewCompensationWorker(
+				applicationConfig.DB,
+				applicationConfig.Gateway,
+				applicationConfig.GatewayName,
+				services.CompensationConfig{
+					Interval:              compensationConfig.Interval,
+					Batch:                 compensationConfig.Batch,
+					Lease:                 compensationConfig.Lease,
+					GatewayTimeout:        gatewayTimeout,
+					PendingPoll:           compensationConfig.PendingPoll,
+					AbsenceWindow:         compensationConfig.AbsenceWindow,
+					IdempotentRetryWindow: compensationConfig.IdempotentRetryWindow,
+					MaxIdempotentRetries:  compensationConfig.MaxIdempotentRetries,
+					UnknownMaxAge:         compensationConfig.UnknownMaxAge,
+					MaxFailedRetries:      compensationConfig.MaxFailedRetries,
+					RetryDelay:            compensationConfig.RetryDelay,
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("set up compensation worker: %w", err)
+			}
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				compensationWorker.Run(shutdownContext)
+			}()
+		}
+
+		if webhookConfig.Enabled() {
+			processor, err := services.NewWebhookProcessor(applicationConfig.DB, services.WebhookProcessorConfig{
+				Interval:      webhookConfig.Interval,
+				Batch:         webhookConfig.Batch,
+				Lease:         webhookConfig.Lease,
+				MaxAttempts:   webhookConfig.MaxAttempts,
+				BackoffBase:   webhookConfig.BackoffBase,
+				BackoffCap:    webhookConfig.BackoffCap,
+				PaymentWindow: gatewayConfig.PaymentWindow,
+				GatewayName:   applicationConfig.GatewayName,
+			})
+			if err != nil {
+				return fmt.Errorf("set up webhook processor: %w", err)
+			}
+			processor.WithCompensation(compensationWorker)
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				processor.Run(shutdownContext)
+			}()
+		}
 
 		resolverConfig, err := config.LoadResolverConfig()
 		if err != nil {
@@ -180,7 +297,7 @@ func run(roleValue string) error {
 		return nil
 	}
 
-	server, err := config.NewServer(newHandler(applicationConfig, sqlDB))
+	server, err := config.NewServer(newHandler(applicationConfig, sqlDB, webhookHandler))
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}
@@ -208,13 +325,19 @@ func run(roleValue string) error {
 	return errors.Join(runErr, stopServer(server))
 }
 
-func newHandler(applicationConfig *config.Config, sqlDB *sql.DB) http.Handler {
+func newHandler(applicationConfig *config.Config, sqlDB *sql.DB, webhookHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.ServerHandler)
 
-	paymentService := services.NewPaymentService(applicationConfig.DB)
+	paymentService := services.NewPaymentService(
+		applicationConfig.DB,
+		services.WithGatewayName(applicationConfig.GatewayName),
+	)
 	paymentController := controllers.NewPaymentController(paymentService)
 	routes.RegisterPaymentRoutes(mux, paymentController)
+	if webhookHandler != nil {
+		routes.RegisterWebhookRoutes(mux, webhookHandler)
+	}
 
 	telemetryRecorder := telemetry.New(sqlDB)
 	if telemetry.Enabled() {

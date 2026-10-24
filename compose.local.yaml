@@ -47,6 +47,9 @@ services:
       POSTGRES_DB: distri
       POSTGRES_USER: distri
       POSTGRES_PASSWORD: distri
+    # Phase D: statement statistics and lock-wait logging (local only)
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all",
+              "-c", "log_lock_waits=on", "-c", "deadlock_timeout=200ms", "-c", "log_min_duration_statement=-1"]
     ports:
       - "${LOCAL_POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -153,6 +156,43 @@ services:
       retries: 20
     restart: unless-stopped
 
+  gateway-simulator:
+    image: distri-local/gateway-simulator:dev
+    build:
+      context: ./gateway-simulator
+    environment:
+      SIM_ADDR: ":9090"
+      SIM_KEY_ID: "${SIM_KEY_ID:-rzp_test_simulator}"
+      SIM_KEY_SECRET: "${SIM_KEY_SECRET:-simulator_secret}"
+      SIM_SEED: "${SIM_SEED:-1}"
+      SIM_TIME_SCALE: "${SIM_TIME_SCALE:-1}"
+      SIM_AUTO_CAPTURE: "${SIM_AUTO_CAPTURE:-true}"
+      SIM_SCENARIO_MIX: "${SIM_SCENARIO_MIX:-capture=100}"
+      SIM_API_LATENCY: "${SIM_API_LATENCY:-zero}"
+      SIM_PAY_DELAY: "${SIM_PAY_DELAY:-2s}"
+      SIM_CAPTURE_DELAY: "${SIM_CAPTURE_DELAY:-500ms}"
+      SIM_LOOKUP_DELAY_MIN: "${SIM_LOOKUP_DELAY_MIN:-0s}"
+      SIM_LOOKUP_DELAY_MAX: "${SIM_LOOKUP_DELAY_MAX:-0s}"
+      SIM_REFUND_DELAY: "${SIM_REFUND_DELAY:-1s}"
+      SIM_ENFORCE_RECEIPT_UNIQUE: "${SIM_ENFORCE_RECEIPT_UNIQUE:-false}"
+      SIM_DUPLICATE_PAYS: "${SIM_DUPLICATE_PAYS:-first}"
+      SIM_ENFORCE_REFUND_RECEIPT_UNIQUE: "${SIM_ENFORCE_REFUND_RECEIPT_UNIQUE:-false}"
+      SIM_REFUND_KEY_RETENTION: "${SIM_REFUND_KEY_RETENTION:-}"
+      SIM_WEBHOOK_URL: "${SIM_WEBHOOK_URL:-}"
+      SIM_WEBHOOK_SECRET: "${SIM_WEBHOOK_SECRET:-}"
+      SIM_WEBHOOK_PROFILE: "${SIM_WEBHOOK_PROFILE:-standard}"
+      SIM_WEBHOOK_WORKERS: "${SIM_WEBHOOK_WORKERS:-4}"
+      SIM_WEBHOOK_DELAY: "${SIM_WEBHOOK_DELAY:-300ms}"
+    ports:
+      - "${LOCAL_SIMULATOR_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    profiles: ["simulator"]
+    restart: unless-stopped
+
   payment-service:
     image: distri-local/payment-service:dev
     build:
@@ -170,6 +210,29 @@ services:
       PAYMENT_RESOLVE_INTERVAL: "${PAYMENT_RESOLVE_INTERVAL:-30s}"
       GATEWAY_MODE: "${GATEWAY_MODE:-success}"
       GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
+      GATEWAY_PROVIDER: "${GATEWAY_PROVIDER:-simulator}"
+      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:-}"
+      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:-}"
+      RAZORPAY_BASE_URL: "${RAZORPAY_BASE_URL:-}"
+      PAYMENT_WINDOW: "${PAYMENT_WINDOW:-5m}"
+      PAYMENT_RECONCILE_INTERVAL: "${PAYMENT_RECONCILE_INTERVAL:-15s}"
+      PAYMENT_RECONCILE_MIN_POLL: "${PAYMENT_RECONCILE_MIN_POLL:-10s}"
+      RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:-}"
+      PAYMENT_AUDIT_WINDOW: "${PAYMENT_AUDIT_WINDOW:-1h}"
+      PAYMENT_AUDIT_INTERVAL: "${PAYMENT_AUDIT_INTERVAL:-1m}"
+      COMPENSATION_INTERVAL: "${COMPENSATION_INTERVAL:-2s}"
+      COMPENSATION_LEASE: "${COMPENSATION_LEASE:-1m}"
+      COMPENSATION_PENDING_POLL: "${COMPENSATION_PENDING_POLL:-5s}"
+      COMPENSATION_ABSENCE_WINDOW: "${COMPENSATION_ABSENCE_WINDOW:-2m}"
+      COMPENSATION_IDEMPOTENT_RETRY_WINDOW: "${COMPENSATION_IDEMPOTENT_RETRY_WINDOW:-10m}"
+      COMPENSATION_UNKNOWN_MAX_AGE: "${COMPENSATION_UNKNOWN_MAX_AGE:-30m}"
+      COMPENSATION_RETRY_DELAY: "${COMPENSATION_RETRY_DELAY:-30s}"
+      WEBHOOK_PROCESS_INTERVAL: "${WEBHOOK_PROCESS_INTERVAL:-1s}"
+      WEBHOOK_MAX_ATTEMPTS: "${WEBHOOK_MAX_ATTEMPTS:-12}"
+      WEBHOOK_BACKOFF_BASE: "${WEBHOOK_BACKOFF_BASE:-1s}"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${LOCAL_PAYMENT_PORT:-8082}:8082"
     depends_on:

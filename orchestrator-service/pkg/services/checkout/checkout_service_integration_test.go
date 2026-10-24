@@ -327,6 +327,9 @@ func checkoutIntegrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 	return db
 }
 

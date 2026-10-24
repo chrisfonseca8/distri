@@ -8,7 +8,9 @@ import (
 type Config struct {
 	DB      *gorm.DB
 	Gateway paymentgateway.Gateway
-	Worker  WorkerConfig
+	// GatewayName is stored in payment_attempts.gateway ("sim" or "razorpay").
+	GatewayName string
+	Worker      WorkerConfig
 }
 
 func Setup() (*Config, error) {
@@ -22,7 +24,7 @@ func Setup() (*Config, error) {
 		return nil, err
 	}
 
-	gateway, err := paymentgateway.NewSimulatorFromEnv()
+	gateway, gatewayName, err := paymentgateway.NewFromEnv()
 	if err != nil {
 		sqlDB, dbErr := db.DB()
 		if dbErr == nil {
@@ -31,5 +33,5 @@ func Setup() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{DB: db, Gateway: gateway, Worker: workerConfig}, nil
+	return &Config{DB: db, Gateway: gateway, GatewayName: gatewayName, Worker: workerConfig}, nil
 }

@@ -21,6 +21,9 @@ func TestClaimCheckoutAttemptIsIdempotentAndRejectsHashConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 
 	key := "checkout-attempt-test-" + uuid.New().String()
 	t.Cleanup(func() {

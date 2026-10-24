@@ -21,6 +21,9 @@ func TestClaimConcurrentWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 
 	const processCount = 10
 	testDueAt := time.Unix(1, 0).UTC()

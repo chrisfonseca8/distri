@@ -16,11 +16,12 @@ import (
 )
 
 type PaymentInitiateHandler struct {
-	db *gorm.DB
+	db      *gorm.DB
+	gateway string
 }
 
-func NewPaymentInitiateHandler(db *gorm.DB) *PaymentInitiateHandler {
-	return &PaymentInitiateHandler{db: db}
+func NewPaymentInitiateHandler(db *gorm.DB, options ...GatewayOption) *PaymentInitiateHandler {
+	return &PaymentInitiateHandler{db: db, gateway: gatewayNameFrom(options)}
 }
 
 func (h *PaymentInitiateHandler) Handle(ctx context.Context, delivery messaging.Delivery) error {
@@ -53,6 +54,7 @@ func (h *PaymentInitiateHandler) Handle(ctx context.Context, delivery messaging.
 
 		result, err := createPayment(tx, CreatePaymentInput{
 			OrderID: command.OrderID, AmountPaise: command.AmountPaise, Currency: command.Currency,
+			Gateway: h.gateway,
 		})
 		if err != nil {
 			return err

@@ -22,6 +22,9 @@ func TestOrderCreateHandlerTransactionAndIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 
 	orderID := uuid.New()
 	productID := uuid.New()

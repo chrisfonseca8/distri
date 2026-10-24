@@ -55,6 +55,11 @@ func openTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql db: %v", err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	// These tests write outbox/job rows; see config.RequireDedicatedTestDB.
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 	return db
 }
 
@@ -333,5 +338,33 @@ func assertJobCount(t *testing.T, db *gorm.DB, paymentID uuid.UUID, jobType stri
 	}
 	if count != want {
 		t.Fatalf("%s jobs = %d, want %d", jobType, count, want)
+	}
+}
+
+func TestJobHandlerNeverCallsGatewayForAnotherEnvironmentsAttempt(t *testing.T) {
+	db := openTestDB(t)
+	service := NewPaymentService(db, WithGatewayName("razorpay"))
+	gateway := newGateway(t, paymentgateway.ModeSuccess)
+	handler := NewPaymentJobHandler(db, gateway, time.Second, WithJobGatewayName("razorpay-sim"))
+	orderID := uuid.New()
+	cleanupOrder(t, db, orderID)
+
+	result, err := service.CreatePayment(context.Background(), CreatePaymentInput{OrderID: orderID, AmountPaise: 1000})
+	if err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	outcome, err := handler.ProcessForJob(context.Background(), result.Attempt.ID, 1)
+	if err == nil || outcome != ProcessPermanent {
+		t.Fatalf("process = %q, %v; want a permanent refusal", outcome, err)
+	}
+	if gateway.calls.Load() != 0 {
+		t.Fatalf("gateway calls = %d, want 0 for an attempt of another environment", gateway.calls.Load())
+	}
+	var status string
+	if err := db.Raw("SELECT status FROM payments.payment_attempts WHERE id = ?", result.Attempt.ID).Scan(&status).Error; err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != "CREATED" {
+		t.Fatalf("status = %q, want CREATED (never claimed)", status)
 	}
 }

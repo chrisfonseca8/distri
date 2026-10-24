@@ -24,6 +24,8 @@ type CreatePaymentInput struct {
 	OrderID     uuid.UUID
 	AmountPaise int64
 	Currency    string
+	// Gateway is stored on the attempt; empty means the simulator ("sim").
+	Gateway string
 }
 
 type CreatePaymentResult struct {
@@ -32,11 +34,31 @@ type CreatePaymentResult struct {
 }
 
 type PaymentService struct {
-	db *gorm.DB
+	db      *gorm.DB
+	gateway string
 }
 
-func NewPaymentService(db *gorm.DB) *PaymentService {
-	return &PaymentService{db: db}
+// GatewayOption records which gateway new payment attempts belong to.
+type GatewayOption func(*gatewayLabel)
+
+type gatewayLabel struct{ name string }
+
+// WithGatewayName sets payment_attempts.gateway for attempts created through the
+// service or handler it is passed to.
+func WithGatewayName(name string) GatewayOption {
+	return func(label *gatewayLabel) { label.name = name }
+}
+
+func gatewayNameFrom(options []GatewayOption) string {
+	label := gatewayLabel{}
+	for _, option := range options {
+		option(&label)
+	}
+	return label.name
+}
+
+func NewPaymentService(db *gorm.DB, options ...GatewayOption) *PaymentService {
+	return &PaymentService{db: db, gateway: gatewayNameFrom(options)}
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentInput) (CreatePaymentResult, error) {
@@ -56,6 +78,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentI
 	}
 
 	input.Currency = currency
+	input.Gateway = s.gateway
 	var createResult CreatePaymentResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -77,7 +100,7 @@ func createPayment(tx *gorm.DB, input CreatePaymentInput) (CreatePaymentResult, 
 		AmountPaise: input.AmountPaise,
 		Currency:    input.Currency,
 		Status:      "CREATED",
-		Gateway:     "sim",
+		Gateway:     gatewayOrDefault(input.Gateway),
 	}
 	insert := tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "order_id"}},
@@ -96,6 +119,13 @@ func createPayment(tx *gorm.DB, input CreatePaymentInput) (CreatePaymentResult, 
 		return CreatePaymentResult{}, err
 	}
 	return CreatePaymentResult{Attempt: attempt, Created: true}, nil
+}
+
+func gatewayOrDefault(name string) string {
+	if name == "" {
+		return "sim"
+	}
+	return name
 }
 
 func enqueueJob(tx *gorm.DB, jobType string, paymentID uuid.UUID) error {

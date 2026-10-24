@@ -87,7 +87,9 @@ func TestHandlerAdvancesSagaAndIsIdempotent(t *testing.T) {
 	if steps[0].Step != "CREATE_ORDER" || steps[0].Status != "SUCCEEDED" || steps[0].FinishedAt == nil {
 		t.Fatalf("finished step = %+v", steps[0])
 	}
-	if steps[1].Step != "TAKE_PAYMENT" || steps[1].Status != "PENDING" {
+	// TAKE_PAYMENT has a command mapping: the step starts RUNNING (attempt 1, resend deadline set)
+	// and its command is enqueued in the same transaction.
+	if steps[1].Step != "TAKE_PAYMENT" || steps[1].Status != "RUNNING" || steps[1].Attempts != 1 || steps[1].NextAttemptAt == nil {
 		t.Fatalf("next step = %+v", steps[1])
 	}
 
@@ -97,14 +99,17 @@ func TestHandlerAdvancesSagaAndIsIdempotent(t *testing.T) {
 		Count(&outboxCount).Error; err != nil {
 		t.Fatalf("count outbox rows: %v", err)
 	}
-	if outboxCount != 0 {
-		t.Fatalf("outbox rows = %d, want 0 without TAKE_PAYMENT mapping", outboxCount)
+	if outboxCount != 1 {
+		t.Fatalf("outbox rows = %d, want exactly 1 payment command", outboxCount)
 	}
 
 	if err := handler.Handle(t.Context(), delivery); err != nil {
 		t.Fatalf("handle duplicate reply: %v", err)
 	}
 	assertReplyCounts(t, db, orderID, []string{messageID}, 2)
+	if err := db.Table("orchestrator.outbox").Where("payload ->> 'order_id' = ?", orderID.String()).Count(&outboxCount).Error; err != nil || outboxCount != 1 {
+		t.Fatalf("outbox rows after duplicate = %d (%v), want still 1", outboxCount, err)
+	}
 
 	if err := handler.Handle(t.Context(), messaging.Delivery{
 		MessageId: guardMessageID,
@@ -185,6 +190,9 @@ func replyIntegrationDB(t *testing.T) *gorm.DB {
 	db, err := config.OpenDB()
 	if err != nil {
 		t.Fatalf("open database: %v", err)
+	}
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
 	}
 	return db
 }

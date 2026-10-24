@@ -71,7 +71,20 @@ func (s *ReservationService) CreateReservation(
 	}
 
 	var result CreateReservationResult
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = retryOnConflict(ctx, "create_reservation", func() error {
+		return s.createReservationOnce(ctx, input, items, &result)
+	})
+	return result, err
+}
+
+func (s *ReservationService) createReservationOnce(
+	ctx context.Context,
+	input CreateReservationInput,
+	items []ReservationItemInput,
+	out *CreateReservationResult,
+) error {
+	var result CreateReservationResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		reservation, created, err := claimReservation(tx, input)
 		if err != nil {
 			return err
@@ -101,8 +114,10 @@ func (s *ReservationService) CreateReservation(
 		result.Created = created
 		return err
 	})
-
-	return result, err
+	if err == nil {
+		*out = result
+	}
+	return err
 }
 
 func prepareReservationItems(input CreateReservationInput) ([]ReservationItemInput, error) {
@@ -114,18 +129,38 @@ func prepareReservationItems(input CreateReservationInput) ([]ReservationItemInp
 	}
 
 	items := slices.Clone(input.Items)
-	slices.SortFunc(items, func(left, right ReservationItemInput) int {
-		return strings.Compare(left.ProductID.String(), right.ProductID.String())
-	})
-	for index, item := range items {
+	sorted := slices.Clone(input.Items)
+	slices.SortFunc(sorted, compareItemsByProduct)
+	for index, item := range sorted {
 		if item.ProductID == uuid.Nil() || item.Quantity <= 0 || item.Quantity > maxQuantityPerLine {
 			return nil, ErrInvalidReservationInput
 		}
-		if index > 0 && item.ProductID == items[index-1].ProductID {
+		if index > 0 && item.ProductID == sorted[index-1].ProductID {
 			return nil, ErrInvalidReservationInput
 		}
 	}
 	return items, nil
+}
+
+func compareItemsByProduct(left, right ReservationItemInput) int {
+	return strings.Compare(left.ProductID.String(), right.ProductID.String())
+}
+
+// sortItemsForLocking is the deadlock-avoidance rule: every transaction updates inventory
+// rows in the same (product id) order, so two carts can never each hold what the other
+// needs. Only the Phase D reproduction test turns it off.
+var sortItemsForLocking = true
+
+// afterInventoryLock is a test seam called after each inventory row update (nil in production).
+var afterInventoryLock func(index int)
+
+func lockOrder(items []ReservationItemInput) []ReservationItemInput {
+	if !sortItemsForLocking {
+		return items
+	}
+	ordered := slices.Clone(items)
+	slices.SortFunc(ordered, compareItemsByProduct)
+	return ordered
 }
 
 func claimReservation(
@@ -190,7 +225,7 @@ func loadProducts(
 
 func reserveInventory(tx *gorm.DB, items []ReservationItemInput) error {
 	now := time.Now()
-	for _, item := range items {
+	for index, item := range lockOrder(items) {
 		update := tx.Table("inventory.inventories").
 			Where(
 				"product_id = ? AND on_hand - reserved - allocated >= ?",
@@ -206,6 +241,9 @@ func reserveInventory(tx *gorm.DB, items []ReservationItemInput) error {
 		}
 		if update.RowsAffected != 1 {
 			return fmt.Errorf("%w for product %s", ErrInsufficientStock, item.ProductID)
+		}
+		if afterInventoryLock != nil {
+			afterInventoryLock(index)
 		}
 	}
 	return nil

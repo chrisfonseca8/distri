@@ -22,6 +22,9 @@ func TestEnqueueUsesCallerTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 
 	rolledBackID := uuid.New()
 	rolledBackSagaID := uuid.New()

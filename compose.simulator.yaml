@@ -1,0 +1,33 @@
+# Overlay that runs the stack against the gateway simulator instead of Razorpay.
+# Everything here is a SIMULATION value; none of it is a real credential and the
+# real RAZORPAY_* values in .env are overridden for both services.
+#
+#   docker compose -f compose.local.yaml -f compose.simulator.yaml --profile simulator up -d --build
+#
+# Back to the default stack (whatever .env selects):
+#   docker compose -f compose.local.yaml --profile simulator stop gateway-simulator
+#   docker compose -f compose.local.yaml up -d payment-service
+#
+# Tune a run with environment variables, e.g.
+#   SIM_SCENARIO_MIX="capture=70,decline=20,none=10" SIM_SEED=7 PAYMENT_WINDOW=40s ...
+services:
+  gateway-simulator:
+    environment:
+      SIM_KEY_ID: rzp_test_simulator
+      SIM_KEY_SECRET: simulator_secret
+      SIM_WEBHOOK_URL: http://payment-service:8082/v1/webhooks/razorpay
+      SIM_WEBHOOK_SECRET: simulator_webhook_secret
+      # accelerated retries (1s,2s,4s,8s) for functional checks; use "standard" for the
+      # assumed wall-clock schedule (5s,25s,2m,10m,1h)
+      SIM_WEBHOOK_PROFILE: "${SIM_WEBHOOK_PROFILE:-accelerated}"
+
+  payment-service:
+    environment:
+      GATEWAY_PROVIDER: razorpay
+      RAZORPAY_KEY_ID: rzp_test_simulator
+      RAZORPAY_KEY_SECRET: simulator_secret
+      RAZORPAY_BASE_URL: http://gateway-simulator:9090
+      RAZORPAY_WEBHOOK_SECRET: simulator_webhook_secret
+    depends_on:
+      gateway-simulator:
+        condition: service_healthy

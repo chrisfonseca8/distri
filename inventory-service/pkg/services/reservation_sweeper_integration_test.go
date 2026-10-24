@@ -27,6 +27,9 @@ func openSweeperTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get SQL database: %v", err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := config.RequireDedicatedTestDB(db); err != nil {
+		t.Skip(err)
+	}
 	return db
 }
 

@@ -16,7 +16,7 @@ import (
 
 // failure codes that mean "we gave up waiting", as opposed to a decline. A
 // capture that shows up later on such an attempt is a late success.
-var giveUpFailureCodes = []string{"PAYMENT_EXPIRED", "NO_GATEWAY_ORDER", "AMOUNT_MISMATCH"}
+var giveUpFailureCodes = []string{"PAYMENT_EXPIRED", "NO_GATEWAY_ORDER", "AMOUNT_MISMATCH", "UNCONFIRMED"}
 
 type ReconcilerConfig struct {
 	Interval time.Duration
@@ -32,6 +32,12 @@ type ReconcilerConfig struct {
 	AuditWindow    time.Duration
 	AuditInterval  time.Duration
 	GatewayTimeout time.Duration
+	// UnconfirmedGrace: an attempt still AWAITING_PAYMENT or UNKNOWN this long after its
+	// window ended, because every lookup failed, is decided FAILED (UNCONFIRMED) and the
+	// saga is told. The payment service alone decides the payment, so the saga never has
+	// to give up on it. A capture found afterwards is refunded like any late capture.
+	// Zero disables the rule.
+	UnconfirmedGrace time.Duration
 }
 
 // PaymentReconciler polls the gateway for payments that finish outside the
@@ -135,6 +141,7 @@ func (r *PaymentReconciler) reconcileOne(ctx context.Context, attempt models.Pay
 		// The lookup itself failed: the outcome is still unknown, so change
 		// nothing and ask again on a later pass.
 		slog.Warn("payment lookup failed", "payment_id", attempt.ID, "order_id", attempt.OrderID, "error", err)
+		r.failUnconfirmed(ctx, attempt)
 		return
 	}
 
@@ -164,6 +171,40 @@ func (r *PaymentReconciler) reconcileOne(ctx context.Context, attempt models.Pay
 			"from_status", attempt.Status,
 			"reason", decision.reason,
 		)
+	}
+}
+
+// failUnconfirmed decides an attempt FAILED when the gateway could not be asked for so
+// long after the payment window that waiting further helps nobody. Only the absence of
+// evidence is read as failure: a capture seen later is refunded, never accepted, because
+// the checkout is cancelled by then.
+func (r *PaymentReconciler) failUnconfirmed(ctx context.Context, attempt models.PaymentAttempt) {
+	if r.config.UnconfirmedGrace <= 0 {
+		return
+	}
+	if attempt.Status != "AWAITING_PAYMENT" && attempt.Status != "UNKNOWN" {
+		return
+	}
+	now := r.now()
+	if now.Before(windowEnd(attempt, r.config.PaymentWindow).Add(r.config.UnconfirmedGrace)) {
+		return
+	}
+	if r.captureWaitingInInbox(ctx, attempt) {
+		return
+	}
+	decision := reconcileDecision{
+		updates: map[string]any{"status": "FAILED", "failure_code": "UNCONFIRMED"},
+		expiry:  true,
+		reason:  "no answer from the gateway until the grace period after the payment window ended",
+	}
+	changed, err := r.apply(ctx, attempt, decision)
+	if err != nil {
+		slog.Error("apply unconfirmed payment decision", "payment_id", attempt.ID, "error", err)
+		return
+	}
+	if changed {
+		slog.Warn("payment failed as unconfirmed", "payment_id", attempt.ID, "order_id", attempt.OrderID,
+			"from_status", attempt.Status, "grace", r.config.UnconfirmedGrace)
 	}
 }
 
@@ -220,6 +261,9 @@ const (
 	reasonAmountMismatch = "AMOUNT_MISMATCH"
 	reasonAfterCancel    = "CAPTURE_AFTER_CANCELLATION"
 	reasonExtraCapture   = "EXTRA_CAPTURE"
+	// reasonCheckoutFailedAfterPayment is recorded only on the saga's request: the customer
+	// paid, but the checkout could not be completed within the bounded wait.
+	reasonCheckoutFailedAfterPayment = "CHECKOUT_FAILED_AFTER_PAYMENT"
 )
 
 // decideReconcile maps what the gateway reports onto the attempt's state

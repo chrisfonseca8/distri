@@ -62,6 +62,7 @@ type CompensationRecord struct {
 	Attempts      int        `gorm:"not null;default:0"` // operations started
 	FailureCount  int        `gorm:"not null;default:0"` // definitive failures
 	RetryCount    int        `gorm:"not null;default:0"` // same-key resubmissions after UNKNOWN
+	ReviewRetries int        `gorm:"not null;default:0"` // automatic retries after a rejected refund went to REVIEW
 	NextAttemptAt time.Time  `gorm:"type:timestamptz;not null;default:now();index:idx_compensation_work,priority:2"`
 	LockedBy      *string    `gorm:"type:text"`
 	LockedUntil   *time.Time `gorm:"type:timestamptz"`

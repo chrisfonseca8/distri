@@ -1,0 +1,33 @@
+---
+title: Payment: what if the response is lost
+---
+sequenceDiagram
+  autonumber
+  participant P as Payment worker
+  participant G as Gateway
+  participant C as Customer
+  participant H as Payment webhook
+  participant R as Payment reconciler
+  participant O as Orchestrator
+  P->>P: attempt PENDING (committed first)
+  P->>G: POST /v1/orders (receipt = order id)
+  alt Case A: create-order reply lost
+    G--xP: order created, reply lost (timeout)
+    Note over P: attempt UNKNOWN, NO second call
+    R->>G: look up the order by receipt
+    G-->>R: order found
+    Note over R: attempt AWAITING_PAYMENT
+  else reply received
+    G-->>P: order id, AWAITING_PAYMENT
+  end
+  C->>G: pays, money is taken
+  alt Case B1: webhook arrives
+    G->>H: payment.captured (signed)
+    Note over H: verify, store in inbox, answer 200, worker applies
+  else Case B2: webhook lost or service down
+    G--xH: webhook not received (gateway retries)
+    R->>G: poll the order (about every 15 s)
+    G-->>R: payment captured
+  end
+  Note over P,R: decide with OUR clock: before the deadline SUCCEEDED, after it FAILED plus refund
+  P-->>O: reply Succeeded or Failed (outbox)

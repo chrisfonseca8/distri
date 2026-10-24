@@ -16,6 +16,8 @@ const (
 	MARK_ORDER_CANCELLED Step = "MARK_ORDER_CANCELLED"
 	CONFIRM_STOCK        Step = "CONFIRM_STOCK"
 	RELEASE_STOCK        Step = "RELEASE_STOCK"
+	REFUND_PAYMENT       Step = "REFUND_PAYMENT"
+	CANCEL_PAID_ORDER    Step = "CANCEL_PAID_ORDER"
 )
 
 type Outcome string
@@ -29,6 +31,7 @@ const (
 const (
 	OrderCreateRoutingKey      = "order.create"
 	PaymentInitiateRoutingKey  = "payment.initiate"
+	PaymentRefundRoutingKey    = "payment.refund"
 	OrderMarkPaidRoutingKey    = "order.mark-paid"
 	OrderCancelRoutingKey      = "order.cancel"
 	InventoryConfirmRoutingKey = "inventory.confirm"
@@ -69,6 +72,16 @@ type OrderMarkPaid struct {
 }
 
 type OrderCancel struct {
+	OrderID uuid.UUID `json:"order_id"`
+	// Refunded marks the cancel of an order that had already been paid: the payment is
+	// being refunded, so the paid order may be cancelled. Without it a paid order is
+	// never cancelled.
+	Refunded bool `json:"refunded,omitempty"`
+}
+
+// PaymentRefund asks the payment service to refund the payment that funded an order whose
+// checkout could not be completed after the money was taken.
+type PaymentRefund struct {
 	OrderID uuid.UUID `json:"order_id"`
 }
 

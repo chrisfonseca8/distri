@@ -12,6 +12,7 @@ const (
 	defaultReconcileMinPoll  = 10 * time.Second
 	defaultReconcileBatch    = 20
 	defaultAuditWindow       = time.Hour
+	defaultUnconfirmedGrace  = 5 * time.Minute
 	defaultAuditInterval     = time.Minute
 )
 
@@ -30,8 +31,11 @@ type GatewayConfig struct {
 	// (SUCCEEDED or FAILED) attempts: each is looked up every AuditInterval for
 	// AuditWindow after it last changed, then never again by polling. Outside the
 	// window a late or additional capture is found only if its webhook arrives.
-	AuditWindow   time.Duration
-	AuditInterval time.Duration
+	// UnconfirmedGrace is how long after the payment window the reconciler keeps asking a
+	// gateway that cannot be reached before it decides the payment failed (0 disables).
+	UnconfirmedGrace time.Duration
+	AuditWindow      time.Duration
+	AuditInterval    time.Duration
 }
 
 // LoadGatewayConfig reads the payment window and reconcile settings from the environment.
@@ -55,6 +59,10 @@ func LoadGatewayConfig() (GatewayConfig, error) {
 	if err != nil {
 		return GatewayConfig{}, err
 	}
+	unconfirmedGrace, err := envDuration("PAYMENT_UNCONFIRMED_GRACE", defaultUnconfirmedGrace)
+	if err != nil {
+		return GatewayConfig{}, err
+	}
 	auditWindow, err := envDuration("PAYMENT_AUDIT_WINDOW", defaultAuditWindow)
 	if err != nil {
 		return GatewayConfig{}, err
@@ -69,6 +77,7 @@ func LoadGatewayConfig() (GatewayConfig, error) {
 		ReconcileInterval: interval,
 		ReconcileMinPoll:  minPoll,
 		ReconcileBatch:    batch,
+		UnconfirmedGrace:  unconfirmedGrace,
 		AuditWindow:       auditWindow,
 		AuditInterval:     auditInterval,
 	}
@@ -91,6 +100,9 @@ func (c GatewayConfig) Validate() error {
 	}
 	if c.ReconcileBatch <= 0 {
 		return errors.New("PAYMENT_RECONCILE_BATCH must be greater than zero")
+	}
+	if c.UnconfirmedGrace < 0 {
+		return errors.New("PAYMENT_UNCONFIRMED_GRACE must not be negative")
 	}
 	if c.AuditWindow <= 0 || c.AuditInterval <= 0 {
 		return errors.New("PAYMENT_AUDIT_WINDOW and PAYMENT_AUDIT_INTERVAL must be greater than zero")

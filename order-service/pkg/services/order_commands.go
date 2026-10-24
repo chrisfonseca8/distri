@@ -50,9 +50,12 @@ func (h *OrderCommandHandler) handleTransition(
 	target state.OrderStatus,
 	step messages.Step,
 ) error {
-	orderID, err := decodeOrderTransition(delivery.Body, target)
+	orderID, refunded, err := decodeOrderTransition(delivery.Body, target)
 	if err != nil {
 		return messaging.Permanent(err)
+	}
+	if refunded {
+		step = messages.CANCEL_PAID_ORDER
 	}
 	messageID := strings.TrimSpace(delivery.MessageId)
 	if messageID == "" {
@@ -76,7 +79,24 @@ func (h *OrderCommandHandler) handleTransition(
 			Where("id = ?", orderID).
 			Take(&order)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-			return ErrOrderNotFound
+			// The order does not exist (yet). A cancel is recorded as a tombstone and
+			// succeeds, so a saga that gave up on order.create can finish compensating and
+			// a late order.create for this id does nothing. Any other transition of an
+			// order that was never created is answered Failed instead of being dead-lettered
+			// without a reply.
+			outcome := messages.Failed
+			if target == state.OrderCancelled && !refunded {
+				if err := tx.Table("orders.order_tombstones").
+					Clauses(clause.OnConflict{DoNothing: true}).
+					Create(&models.OrderTombstone{OrderID: orderID}).Error; err != nil {
+					return fmt.Errorf("record order tombstone: %w", err)
+				}
+				outcome = messages.Succeeded
+			} else {
+				slog.Error("order transition for an order that does not exist, replying Failed",
+					"order_id", orderID, "requested_status", target)
+			}
+			return enqueueTransitionReply(tx, orderID, step, outcome)
 		}
 		if query.Error != nil {
 			return fmt.Errorf("load order for transition: %w", query.Error)
@@ -87,6 +107,18 @@ func (h *OrderCommandHandler) handleTransition(
 		switch {
 		case current == target:
 			// Idempotent replay under a new message ID: emit the reply again.
+		case current == state.OrderPaid && target == state.OrderCancelled && refunded:
+			// The customer paid, but the checkout could not be completed and the payment is
+			// being refunded: the paid order is cancelled. Nothing else may cancel a paid order.
+			update := tx.Table("orders.orders").
+				Where("id = ? AND status = ?", orderID, state.OrderPaid).
+				Updates(map[string]any{"status": target, "updated_at": time.Now().UTC()})
+			if update.Error != nil {
+				return fmt.Errorf("cancel paid order: %w", update.Error)
+			}
+			if update.RowsAffected != 1 {
+				return errors.New("order moved during guarded transition")
+			}
 		case current == state.OrderPendingPayment:
 			if !state.CanTransition(current, target) {
 				return fmt.Errorf("invalid order transition %s to %s", current, target)
@@ -110,19 +142,7 @@ func (h *OrderCommandHandler) handleTransition(
 			)
 		}
 
-		body, err := json.Marshal(messages.Reply{
-			OrderID: orderID,
-			Step:    step,
-			Outcome: outcome,
-		})
-		if err != nil {
-			return fmt.Errorf("encode order transition reply: %w", err)
-		}
-		return outbox.Enqueue(tx, outbox.Message{
-			MessageID:  uuid.New(),
-			RoutingKey: messages.OrderReplyRoutingKey,
-			Payload:    body,
-		})
+		return enqueueTransitionReply(tx, orderID, step, outcome)
 	})
 	if err == nil {
 		return nil
@@ -134,27 +154,46 @@ func (h *OrderCommandHandler) handleTransition(
 	return messaging.Transient(wrapped)
 }
 
-// decodeOrderTransition reads the order ID from a mark-paid or cancel command.
-func decodeOrderTransition(body []byte, target state.OrderStatus) (uuid.UUID, error) {
+// decodeOrderTransition reads the order ID from a mark-paid or cancel command, and whether
+// a cancel is the cancel of a paid order whose payment is being refunded.
+func decodeOrderTransition(body []byte, target state.OrderStatus) (uuid.UUID, bool, error) {
 	var orderID uuid.UUID
+	refunded := false
 	switch target {
 	case state.OrderPaid:
 		var command messages.OrderMarkPaid
 		if err := json.Unmarshal(body, &command); err != nil {
-			return uuid.Nil(), fmt.Errorf("decode order.mark-paid: %w", err)
+			return uuid.Nil(), false, fmt.Errorf("decode order.mark-paid: %w", err)
 		}
 		orderID = command.OrderID
 	case state.OrderCancelled:
 		var command messages.OrderCancel
 		if err := json.Unmarshal(body, &command); err != nil {
-			return uuid.Nil(), fmt.Errorf("decode order.cancel: %w", err)
+			return uuid.Nil(), false, fmt.Errorf("decode order.cancel: %w", err)
 		}
-		orderID = command.OrderID
+		orderID, refunded = command.OrderID, command.Refunded
 	default:
-		return uuid.Nil(), fmt.Errorf("unsupported order transition target %q", target)
+		return uuid.Nil(), false, fmt.Errorf("unsupported order transition target %q", target)
 	}
 	if orderID == uuid.Nil() {
-		return uuid.Nil(), errors.New("order transition order_id is required")
+		return uuid.Nil(), false, errors.New("order transition order_id is required")
 	}
-	return orderID, nil
+	return orderID, refunded, nil
+}
+
+// enqueueTransitionReply writes a saga step reply to the outbox in the caller's transaction.
+func enqueueTransitionReply(tx *gorm.DB, orderID uuid.UUID, step messages.Step, outcome messages.Outcome) error {
+	body, err := json.Marshal(messages.Reply{
+		OrderID: orderID,
+		Step:    step,
+		Outcome: outcome,
+	})
+	if err != nil {
+		return fmt.Errorf("encode order transition reply: %w", err)
+	}
+	return outbox.Enqueue(tx, outbox.Message{
+		MessageID:  uuid.New(),
+		RoutingKey: messages.OrderReplyRoutingKey,
+		Payload:    body,
+	})
 }

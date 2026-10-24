@@ -136,6 +136,24 @@ func (h *PaymentJobHandler) processCreated(
 	)
 	cancelGateway()
 
+	var notSent *paymentgateway.ErrNotSent
+	if errors.As(gatewayErr, &notSent) {
+		// The request never left this process, so nothing exists at the gateway and the
+		// call is safe to try again: undo the claim and let the job retry with backoff.
+		// If the gateway stays down the job dies after its attempts and the resolver
+		// answers Failed for a payment that never reached it.
+		revert := h.db.WithContext(context.Background()).
+			Session(&gorm.Session{SkipDefaultTransaction: true}).
+			Table("payments.payment_attempts").
+			Where("id = ? AND status = ?", payment.ID, "PENDING").
+			Update("status", "CREATED")
+		if revert.Error != nil {
+			// Left PENDING: the next claim turns it UNKNOWN and the reconciler looks it up.
+			return ProcessRetry, fmt.Errorf("gateway unreachable and the claim could not be undone: %w", revert.Error)
+		}
+		return ProcessRetry, gatewayErr
+	}
+
 	updates := paymentResultUpdates(ref, gatewayErr)
 	if updates["status"] == "AWAITING_PAYMENT" {
 		updates["expires_at"] = time.Now().Add(h.paymentWindow)

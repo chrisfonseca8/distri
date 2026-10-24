@@ -25,7 +25,10 @@ def sh(cmd, timeout=30):
 
 
 def psql(q):
-    return sh(PG + [q])
+    result = subprocess.run(PG + [q], capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError("psql failed: " + result.stderr.strip())
+    return result.stdout.strip()
 
 
 def http(method, url, body=None, headers=None, timeout=10):
@@ -111,7 +114,7 @@ def backlogs():
          "+(select count(*) from payments.outbox where published_at is null)"
          "+(select count(*) from orchestrator.outbox where published_at is null)"
          " union all select 'jobs_pending', (select count(*) from payments.jobs where status not in ('succeeded','dead'))"
-         "+(select count(*) from orders.jobs where status not in ('succeeded','dead'))"
+         ""
          " union all select 'webhook_inbox_unprocessed', count(*) from payments.webhook_events where status <> 'PROCESSED'"
          " union all select 'sagas_running', count(*) from orchestrator.sagas where status in ('RUNNING','COMPENSATING')"
          " union all select 'compensation_open', count(*) from payments.compensation_records where status not in ('PROCESSED','REVIEW')")
@@ -140,7 +143,7 @@ def snapshot_config():
 
 def counts():
     """Historical-background counters, read before and after; the run reports deltas."""
-    q = ("select 'dead_jobs', (select count(*) from payments.jobs where status='dead')+(select count(*) from orders.jobs where status='dead')"
+    q = ("select 'dead_jobs', (select count(*) from payments.jobs where status='dead')"
          " union all select 'compensation_records', count(*) from payments.compensation_records"
          " union all select 'webhook_events_total', count(*) from payments.webhook_events")
     return {k: int(v) for k, v in (l.split("|") for l in psql(q).splitlines() if l)}

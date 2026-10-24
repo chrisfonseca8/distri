@@ -14,6 +14,9 @@ const (
 	defaultSweepBatch       = 50
 	defaultStepMaxAttempts  = 5
 	defaultResendBackoffCap = 5 * time.Minute
+	defaultStuckRefundAfter = 10 * time.Minute
+	defaultUndoReviveAfter  = 10 * time.Minute
+	defaultUndoMaxRevives   = 3
 )
 
 type SagaConfig struct {
@@ -24,6 +27,15 @@ type SagaConfig struct {
 	SweepBatch       int
 	StepMaxAttempts  int
 	ResendBackoffCap time.Duration
+	// StuckRefundAfter: a saga that stays STUCK on MARK_ORDER_PAID or CONFIRM_STOCK this
+	// long (the customer has paid) is refunded and unwound instead of waiting forever for
+	// a person. Zero disables the rule.
+	StuckRefundAfter time.Duration
+	// UndoReviveAfter / UndoMaxRevives: a saga STUCK on an undo step (cancel, release,
+	// refund) is retried automatically after this long, at most UndoMaxRevives times, then
+	// left for a person. Zero UndoReviveAfter disables the rule.
+	UndoReviveAfter time.Duration
+	UndoMaxRevives  int
 }
 
 // LoadSagaConfig reads the saga deadline, step timeout and retry settings from the environment.
@@ -58,6 +70,20 @@ func LoadSagaConfig() (SagaConfig, error) {
 		return SagaConfig{}, err
 	}
 
+	stuckRefundAfter, err := envDuration("SAGA_STUCK_REFUND_AFTER", defaultStuckRefundAfter)
+	if err != nil {
+		return SagaConfig{}, err
+	}
+
+	undoReviveAfter, err := envDuration("SAGA_UNDO_REVIVE_AFTER", defaultUndoReviveAfter)
+	if err != nil {
+		return SagaConfig{}, err
+	}
+	undoMaxRevives, err := envInt("SAGA_UNDO_MAX_REVIVES", defaultUndoMaxRevives)
+	if err != nil {
+		return SagaConfig{}, err
+	}
+
 	result := SagaConfig{
 		Deadline:         deadline,
 		StepTimeout:      stepTimeout,
@@ -65,6 +91,9 @@ func LoadSagaConfig() (SagaConfig, error) {
 		SweepBatch:       sweepBatch,
 		StepMaxAttempts:  stepMaxAttempts,
 		ResendBackoffCap: resendBackoffCap,
+		StuckRefundAfter: stuckRefundAfter,
+		UndoReviveAfter:  undoReviveAfter,
+		UndoMaxRevives:   undoMaxRevives,
 	}
 	if err := result.Validate(); err != nil {
 		return SagaConfig{}, err
@@ -91,6 +120,12 @@ func (c SagaConfig) Validate() error {
 	}
 	if c.StepMaxAttempts <= 0 {
 		return errors.New("SAGA_STEP_MAX_ATTEMPTS must be greater than zero")
+	}
+	if c.StuckRefundAfter < 0 {
+		return errors.New("SAGA_STUCK_REFUND_AFTER must not be negative")
+	}
+	if c.UndoReviveAfter < 0 || c.UndoMaxRevives < 0 {
+		return errors.New("SAGA_UNDO_REVIVE_AFTER and SAGA_UNDO_MAX_REVIVES must not be negative")
 	}
 	if c.ResendBackoffCap < c.StepTimeout {
 		return errors.New("SAGA_RESEND_BACKOFF_CAP must not be below SAGA_STEP_TIMEOUT")

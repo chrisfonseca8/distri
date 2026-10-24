@@ -82,7 +82,16 @@ func LoadWebhookConfig() (WebhookConfig, error) {
 		BackoffBase:  base,
 		BackoffCap:   limit,
 	}
-	return result, result.Validate()
+	if err := result.Validate(); err != nil {
+		return WebhookConfig{}, err
+	}
+	// Fail closed: with the Razorpay provider a missing secret must not quietly turn
+	// webhooks off. Running on polling alone is allowed only when asked for by name.
+	if result.Secret == "" && strings.EqualFold(strings.TrimSpace(os.Getenv("GATEWAY_PROVIDER")), "razorpay") &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("WEBHOOKS_DISABLED")), "true") {
+		return WebhookConfig{}, errors.New("RAZORPAY_WEBHOOK_SECRET is required with GATEWAY_PROVIDER=razorpay; set WEBHOOKS_DISABLED=true to run on polling alone")
+	}
+	return result, nil
 }
 
 // Validate rejects zero or negative webhook settings.

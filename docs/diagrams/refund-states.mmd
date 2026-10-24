@@ -1,0 +1,21 @@
+---
+title: Refund record (compensation_records) states
+---
+stateDiagram-v2
+  [*] --> REQUIRED : captured money cannot be used
+  REQUIRED --> SUBMITTING : claim with lease, operation id stored first
+  REQUIRED --> REVIEW : identity or amount not established
+  SUBMITTING --> PENDING : accepted, not complete
+  SUBMITTING --> PROCESSED : accepted and complete
+  SUBMITTING --> FAILED : clear rejection, nothing created
+  SUBMITTING --> UNKNOWN : timeout, reset or lost worker
+  PENDING --> PROCESSED : provider processed it (fetch or webhook)
+  PENDING --> REVIEW : provider failed, money not returned
+  UNKNOWN --> PENDING : refund found by lookup
+  UNKNOWN --> PROCESSED : refund found and complete
+  UNKNOWN --> SUBMITTING : same-key retry, bounded
+  UNKNOWN --> REVIEW : unresolved after 30 minutes
+  FAILED --> REQUIRED : retry with a new operation, bounded
+  FAILED --> REVIEW : retries used up
+  PROCESSED --> [*]
+  REVIEW --> [*] : a person resolves it (no tool yet, EDGE-6)

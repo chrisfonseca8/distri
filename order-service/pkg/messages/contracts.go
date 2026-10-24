@@ -16,6 +16,7 @@ const (
 	MARK_ORDER_CANCELLED Step = "MARK_ORDER_CANCELLED"
 	CONFIRM_STOCK        Step = "CONFIRM_STOCK"
 	RELEASE_STOCK        Step = "RELEASE_STOCK"
+	CANCEL_PAID_ORDER    Step = "CANCEL_PAID_ORDER"
 )
 
 type Outcome string
@@ -57,6 +58,9 @@ type OrderMarkPaid struct {
 
 type OrderCancel struct {
 	OrderID uuid.UUID `json:"order_id"`
+	// Refunded marks the cancel of an order that had already been paid because its payment
+	// is being refunded. Only then may a PAID order be cancelled.
+	Refunded bool `json:"refunded,omitempty"`
 }
 
 type Reply struct {

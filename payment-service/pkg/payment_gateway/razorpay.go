@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -454,6 +455,12 @@ func (r *Razorpay) doWith(
 
 	response, err := r.client.Do(request)
 	if err != nil {
+		var opError *net.OpError
+		if errors.As(err, &opError) && opError.Op == "dial" {
+			// The connection was never established, so the request cannot have reached
+			// the provider.
+			return 0, nil, &ErrNotSent{Err: err}
+		}
 		return 0, nil, err
 	}
 	defer response.Body.Close()

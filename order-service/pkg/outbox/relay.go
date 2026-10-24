@@ -31,6 +31,10 @@ type RelayConfig struct {
 	PublishTimeout time.Duration
 	RetryBase      time.Duration
 	RetryCap       time.Duration
+	// AlertAttempts: a row that has failed to publish this many times is logged at ERROR
+	// on every further failure, so a poison or long-blocked row is visible instead of
+	// retrying silently forever. The row itself is never dropped. Zero disables the alert.
+	AlertAttempts int
 }
 
 // DefaultRelayConfig returns the standard batch size, poll interval, lease and retry settings.
@@ -42,6 +46,7 @@ func DefaultRelayConfig() RelayConfig {
 		PublishTimeout: 10 * time.Second,
 		RetryBase:      time.Second,
 		RetryCap:       30 * time.Second,
+		AlertAttempts:  20,
 	}
 }
 
@@ -61,6 +66,9 @@ func (config RelayConfig) Validate() error {
 	}
 	if config.RetryBase <= 0 || config.RetryCap < config.RetryBase {
 		return errors.New("outbox retry durations are invalid")
+	}
+	if config.AlertAttempts < 0 {
+		return errors.New("outbox alert attempts must not be negative")
 	}
 	return nil
 }
@@ -199,6 +207,15 @@ func (r *Relay) publish(ctx context.Context, row models.Outbox) {
 	if !updated {
 		slog.Warn("outbox lease lost after publish failure", "message_id", row.MessageID)
 		return
+	}
+	if r.config.AlertAttempts > 0 && row.Attempts >= r.config.AlertAttempts {
+		slog.Error(
+			"outbox message is not publishing: needs attention",
+			"message_id", row.MessageID,
+			"routing_key", row.RoutingKey,
+			"attempts", row.Attempts,
+			"error", err,
+		)
 	}
 	slog.Warn(
 		"outbox publish failed",

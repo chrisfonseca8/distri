@@ -82,7 +82,8 @@ func writeCheckoutError(w http.ResponseWriter, err error) {
 	case errors.Is(err, checkout.ErrIdempotencyKeyConflict):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 	case errors.Is(err, checkout.ErrCheckoutInventoryUnavailable):
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		slog.Warn("checkout inventory unavailable", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "checkout inventory is unavailable, retry with the same idempotency key"})
 	default:
 		slog.Error("create checkout", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create checkout"})

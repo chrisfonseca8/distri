@@ -68,7 +68,7 @@ func (s *CheckoutService) CreateCheckout(
 			return Response{}, err
 		}
 
-		response, encodeErr := errorResponse(statusCode, err)
+		response, encodeErr := errorResponse(statusCode, publicInventoryMessage(err))
 		if encodeErr != nil {
 			return Response{}, encodeErr
 		}
@@ -82,9 +82,26 @@ func (s *CheckoutService) CreateCheckout(
 	return response, err
 }
 
-// errorResponse builds a JSON error response with the given status.
-func errorResponse(statusCode int, responseErr error) (Response, error) {
-	body, err := json.Marshal(map[string]string{"error": responseErr.Error()})
+// publicInventoryMessage turns an inventory failure into a message that is safe to show
+// to a client: it names the problem and never repeats inventory's own error text.
+func publicInventoryMessage(err error) string {
+	switch {
+	case errors.Is(err, ErrInvalidCheckoutInput):
+		return "invalid checkout input"
+	case errors.Is(err, ErrCheckoutProductNotFound):
+		return "a product in the cart was not found"
+	case errors.Is(err, ErrCheckoutInsufficientStock):
+		return "insufficient stock for an item in the cart"
+	case errors.Is(err, ErrCheckoutReservationInactive):
+		return "checkout reservation is not active"
+	default:
+		return "checkout could not be completed"
+	}
+}
+
+// errorResponse builds a JSON error response with the given status and message.
+func errorResponse(statusCode int, message string) (Response, error) {
+	body, err := json.Marshal(map[string]string{"error": message})
 	if err != nil {
 		return Response{}, fmt.Errorf("encode checkout error response: %w", err)
 	}

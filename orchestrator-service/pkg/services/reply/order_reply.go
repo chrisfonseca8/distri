@@ -56,6 +56,18 @@ var commandMappings = map[saga.Step]commandMapping{
 			return marshalCommand(messages.InventoryConfirm{OrderID: sagaRow.ID})
 		},
 	},
+	saga.REFUND_PAYMENT: {
+		routingKey: messages.PaymentRefundRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.PaymentRefund{OrderID: sagaRow.ID})
+		},
+	},
+	saga.CANCEL_PAID_ORDER: {
+		routingKey: messages.OrderCancelRoutingKey,
+		build: func(sagaRow models.Saga) (json.RawMessage, error) {
+			return marshalCommand(messages.OrderCancel{OrderID: sagaRow.ID, Refunded: true})
+		},
+	},
 	saga.RELEASE_STOCK: {
 		routingKey: messages.InventoryReleaseRoutingKey,
 		build: func(sagaRow models.Saga) (json.RawMessage, error) {
@@ -96,6 +108,24 @@ func NewHandler(db *gorm.DB, stepTimeout time.Duration, options ...HandlerOption
 		option(handler)
 	}
 	return handler
+}
+
+// FailStep applies a synthetic Failed reply for step, as if the participant had reported
+// the failure itself. The saga sweeper uses it for a step that can no longer succeed
+// before any money is involved, so the normal compensation path (cancel the order,
+// release the stock) runs instead of leaving the saga STUCK with stock held. It is
+// idempotent: a reply for a step that is no longer current is ignored.
+func (h *Handler) FailStep(ctx context.Context, orderID uuid.UUID, step messages.Step) error {
+	body, err := json.Marshal(messages.Reply{
+		OrderID: orderID,
+		Step:    step,
+		Outcome: messages.Failed,
+		Error:   "step could not complete before payment started",
+	})
+	if err != nil {
+		return fmt.Errorf("encode synthetic reply: %w", err)
+	}
+	return h.Handle(ctx, messaging.Delivery{MessageId: uuid.New().String(), Body: body})
 }
 
 // Handle applies one reply to its saga, once per message ID, ignoring replies for steps that are no longer active.

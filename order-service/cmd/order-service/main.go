@@ -19,6 +19,7 @@ import (
 	"github.com/chrisfonseca08/distri/order-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/order-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/order-service/pkg/outbox"
+	"github.com/chrisfonseca08/distri/order-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/order-service/pkg/services"
 	"github.com/chrisfonseca08/distri/order-service/pkg/telemetry"
@@ -104,6 +105,17 @@ func run(roleValue string) error {
 		go func() {
 			defer workerWaitGroup.Done()
 			relay.Run(shutdownContext)
+		}()
+
+		retentionConfig, err := retention.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load retention configuration: %w", err)
+		}
+		purger := retention.New(applicationConfig.DB, retentionConfig, retention.Rules())
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			purger.Run(shutdownContext)
 		}()
 
 		orderCommandHandler := services.NewOrderCommandHandler(applicationConfig.DB)

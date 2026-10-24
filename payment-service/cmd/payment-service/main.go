@@ -23,6 +23,7 @@ import (
 	"github.com/chrisfonseca08/distri/payment-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/telemetry"
@@ -132,13 +133,27 @@ func run(roleValue string) error {
 			relay.Run(shutdownContext)
 		}()
 
+		retentionConfig, err := retention.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load retention configuration: %w", err)
+		}
+		purger := retention.New(applicationConfig.DB, retentionConfig, retention.Rules())
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			purger.Run(shutdownContext)
+		}()
+
 		gatewayConfig, err := config.LoadGatewayConfig()
 		if err != nil {
 			return fmt.Errorf("load gateway configuration: %w", err)
 		}
-		paymentHandler := services.NewPaymentInitiateHandler(
-			applicationConfig.DB,
-			services.WithGatewayName(applicationConfig.GatewayName),
+		paymentHandler := services.NewPaymentCommandHandler(
+			services.NewPaymentInitiateHandler(
+				applicationConfig.DB,
+				services.WithGatewayName(applicationConfig.GatewayName),
+			),
+			services.NewPaymentRefundHandler(applicationConfig.DB),
 		)
 		pool, err := messaging.NewPool(
 			messaging.PoolConfig{
@@ -205,13 +220,14 @@ func run(roleValue string) error {
 				applicationConfig.Gateway,
 				applicationConfig.GatewayName,
 				services.ReconcilerConfig{
-					Interval:       gatewayConfig.ReconcileInterval,
-					MinPoll:        gatewayConfig.ReconcileMinPoll,
-					Batch:          gatewayConfig.ReconcileBatch,
-					PaymentWindow:  gatewayConfig.PaymentWindow,
-					AuditWindow:    gatewayConfig.AuditWindow,
-					AuditInterval:  gatewayConfig.AuditInterval,
-					GatewayTimeout: gatewayTimeout,
+					Interval:         gatewayConfig.ReconcileInterval,
+					MinPoll:          gatewayConfig.ReconcileMinPoll,
+					Batch:            gatewayConfig.ReconcileBatch,
+					PaymentWindow:    gatewayConfig.PaymentWindow,
+					AuditWindow:      gatewayConfig.AuditWindow,
+					UnconfirmedGrace: gatewayConfig.UnconfirmedGrace,
+					AuditInterval:    gatewayConfig.AuditInterval,
+					GatewayTimeout:   gatewayTimeout,
 				},
 			)
 			if err != nil {
@@ -243,6 +259,8 @@ func run(roleValue string) error {
 					UnknownMaxAge:         compensationConfig.UnknownMaxAge,
 					MaxFailedRetries:      compensationConfig.MaxFailedRetries,
 					RetryDelay:            compensationConfig.RetryDelay,
+					ReviewRetryAfter:      compensationConfig.ReviewRetryAfter,
+					MaxReviewRetries:      compensationConfig.MaxReviewRetries,
 				},
 			)
 			if err != nil {

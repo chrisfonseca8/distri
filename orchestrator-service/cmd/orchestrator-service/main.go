@@ -18,6 +18,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/reply"
@@ -79,13 +80,22 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up outbox relay: %w", err)
 	}
+	replyHandler := reply.NewHandler(
+		applicationConfig.DB,
+		sagaConfig.StepTimeout,
+		reply.WithSagaDeadline(sagaConfig.Deadline),
+	)
 	sagaSweeper, err := sweeper.NewSagaSweeper(applicationConfig.DB, sweeper.SagaConfig{
 		Interval:         sagaConfig.SweepInterval,
 		Batch:            sagaConfig.SweepBatch,
 		StepTimeout:      sagaConfig.StepTimeout,
 		StepMaxAttempts:  sagaConfig.StepMaxAttempts,
 		ResendBackoffCap: sagaConfig.ResendBackoffCap,
-	})
+		StuckRefundAfter: sagaConfig.StuckRefundAfter,
+		Deadline:         sagaConfig.Deadline,
+		UndoReviveAfter:  sagaConfig.UndoReviveAfter,
+		UndoMaxRevives:   sagaConfig.UndoMaxRevives,
+	}, sweeper.WithStepFailer(replyHandler))
 	if err != nil {
 		return fmt.Errorf("set up saga sweeper: %w", err)
 	}
@@ -101,11 +111,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up reservation sweeper: %w", err)
 	}
-	replyHandler := reply.NewHandler(
-		applicationConfig.DB,
-		sagaConfig.StepTimeout,
-		reply.WithSagaDeadline(sagaConfig.Deadline),
-	)
 	replyConsumers, err := messaging.NewPool(
 		messaging.PoolConfig{
 			URL:            rabbitMQConfig.URL,
@@ -150,7 +155,16 @@ func run() error {
 		syscall.SIGTERM,
 	)
 	var backgroundWorkers sync.WaitGroup
-	backgroundWorkers.Add(4)
+	retentionConfig, err := retention.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("load retention configuration: %w", err)
+	}
+	purger := retention.New(applicationConfig.DB, retentionConfig, retention.Rules())
+	backgroundWorkers.Add(5)
+	go func() {
+		defer backgroundWorkers.Done()
+		purger.Run(shutdownSignal)
+	}()
 	go func() {
 		defer backgroundWorkers.Done()
 		relay.Run(shutdownSignal)

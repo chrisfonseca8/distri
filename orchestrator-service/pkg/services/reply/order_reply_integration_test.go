@@ -217,3 +217,53 @@ func cleanupReplyTest(t *testing.T, db *gorm.DB, orderID uuid.UUID, messageIDs .
 		}
 	})
 }
+
+// FailStep is what lets the sweeper compensate a CREATE_ORDER that can no longer succeed:
+// the saga must cancel the order first (it may exist) and only then release the stock.
+func TestFailStepMovesACreateOrderSagaIntoCompensationOnce(t *testing.T) {
+	db := replyIntegrationDB(t)
+	orderID := uuid.New()
+	cleanupReplyTest(t, db, orderID)
+	now := time.Now().UTC()
+	if err := db.Table("orchestrator.sagas").Create(&models.Saga{
+		ID: orderID, Status: "RUNNING", CurrentStep: "CREATE_ORDER", TotalPaise: 10000, Currency: "INR", Version: 1,
+		DeadlineAt: now.Add(15 * time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("create saga: %v", err)
+	}
+	if err := db.Table("orchestrator.saga_steps").Omit(clause.Associations).Create(&models.SagaStep{
+		SagaID: orderID, Step: "CREATE_ORDER", Status: "RUNNING", Attempts: 5, StartedAt: &now,
+	}).Error; err != nil {
+		t.Fatalf("create saga step: %v", err)
+	}
+
+	handler := NewHandler(db, 30*time.Second)
+	if err := handler.FailStep(t.Context(), orderID, messages.CREATE_ORDER); err != nil {
+		t.Fatalf("fail step: %v", err)
+	}
+
+	var saga models.Saga
+	if err := db.Table("orchestrator.sagas").Where("id = ?", orderID).Take(&saga).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saga.Status != "COMPENSATING" || saga.CurrentStep != "MARK_ORDER_CANCELLED" {
+		t.Fatalf("saga = %s at %s, want COMPENSATING at MARK_ORDER_CANCELLED (cancel the order, then release the stock)", saga.Status, saga.CurrentStep)
+	}
+	var routingKeys []string
+	if err := db.Table("orchestrator.outbox").Where("payload ->> 'order_id' = ?", orderID.String()).Pluck("routing_key", &routingKeys).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(routingKeys) != 1 || routingKeys[0] != messages.OrderCancelRoutingKey {
+		t.Fatalf("queued commands = %v, want exactly one %s", routingKeys, messages.OrderCancelRoutingKey)
+	}
+
+	// A second call (the sweeper runs every few seconds) must change nothing.
+	if err := handler.FailStep(t.Context(), orderID, messages.CREATE_ORDER); err != nil {
+		t.Fatalf("second fail step: %v", err)
+	}
+	var count int64
+	db.Table("orchestrator.outbox").Where("payload ->> 'order_id' = ?", orderID.String()).Count(&count)
+	if count != 1 {
+		t.Fatalf("queued commands after a repeat = %d, want still 1", count)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 	"uuid"
@@ -27,6 +28,10 @@ func NewOrderCreateHandler(db *gorm.DB) *OrderCreateHandler {
 }
 
 // Handle creates the order and its items from an order.create command, once per message.
+//
+// A command that can never succeed still gets an answer when its order id is known: a
+// Failed reply lets the saga compensate at once instead of waiting for its retries to
+// run out. Only a command that cannot even be read (no order id) is dead-lettered.
 func (h *OrderCreateHandler) Handle(
 	ctx context.Context,
 	delivery messaging.Delivery,
@@ -35,25 +40,21 @@ func (h *OrderCreateHandler) Handle(
 	if err := json.Unmarshal(delivery.Body, &command); err != nil {
 		return messaging.Permanent(fmt.Errorf("decode order.create message: %w", err))
 	}
-	if err := validateOrderCreate(command); err != nil {
-		return messaging.Permanent(err)
-	}
-
 	messageID := strings.TrimSpace(delivery.MessageId)
 	if messageID == "" {
 		return messaging.Permanent(errors.New("order.create AMQP MessageId is required"))
 	}
-
-	replyPayload, err := json.Marshal(messages.Reply{
-		OrderID: command.OrderID,
-		Step:    messages.CREATE_ORDER,
-		Outcome: messages.Succeeded,
-	})
-	if err != nil {
-		return messaging.Permanent(fmt.Errorf("encode order reply: %w", err))
+	if command.OrderID == uuid.Nil() {
+		return messaging.Permanent(errors.New("order.create order_id is required"))
 	}
 
-	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := validateOrderCreate(command); err != nil {
+		slog.Error("order.create rejected, replying Failed", "order_id", command.OrderID, "error", err)
+		return h.replyOnly(ctx, command.OrderID, messageID, messages.Failed)
+	}
+
+	outcome := messages.Succeeded
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		processed := models.ProcessedMessage{MessageID: messageID}
 		insertProcessed := tx.Table("orders.processed_messages").
 			Clauses(clause.OnConflict{DoNothing: true}).
@@ -62,7 +63,20 @@ func (h *OrderCreateHandler) Handle(
 			return fmt.Errorf("record processed order.create message: %w", insertProcessed.Error)
 		}
 		if insertProcessed.RowsAffected == 0 {
+			outcome = ""
 			return nil
+		}
+
+		var tombstones int64
+		if err := tx.Table("orders.order_tombstones").
+			Where("order_id = ?", command.OrderID).Count(&tombstones).Error; err != nil {
+			return fmt.Errorf("check order tombstone: %w", err)
+		}
+		if tombstones > 0 {
+			// The checkout was already cancelled; creating the order now would resurrect it.
+			slog.Warn("order.create ignored: the order was cancelled before it was created", "order_id", command.OrderID)
+			outcome = messages.Failed
+			return h.enqueueReply(tx, command.OrderID, outcome)
 		}
 
 		order := models.Order{
@@ -96,16 +110,20 @@ func (h *OrderCreateHandler) Handle(
 				Create(&items).Error; err != nil {
 				return fmt.Errorf("create order items from command: %w", err)
 			}
+		} else {
+			// A repeat under a new message id. It is only a repeat if the order that already
+			// exists is the one this command describes.
+			matches, err := existingOrderMatches(tx, command)
+			if err != nil {
+				return err
+			}
+			if !matches {
+				slog.Error("order.create conflicts with the existing order, replying Failed", "order_id", command.OrderID)
+				outcome = messages.Failed
+			}
 		}
 
-		if err := outbox.Enqueue(tx, outbox.Message{
-			MessageID:  uuid.New(),
-			RoutingKey: messages.OrderReplyRoutingKey,
-			Payload:    replyPayload,
-		}); err != nil {
-			return err
-		}
-		return nil
+		return h.enqueueReply(tx, command.OrderID, outcome)
 	})
 	if err != nil {
 		wrapped := fmt.Errorf("process order.create message: %w", err)
@@ -115,6 +133,73 @@ func (h *OrderCreateHandler) Handle(
 		return messaging.Transient(wrapped)
 	}
 	return nil
+}
+
+// replyOnly records the message and answers it without creating an order.
+func (h *OrderCreateHandler) replyOnly(ctx context.Context, orderID uuid.UUID, messageID string, outcome messages.Outcome) error {
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		insertProcessed := tx.Table("orders.processed_messages").
+			Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&models.ProcessedMessage{MessageID: messageID})
+		if insertProcessed.Error != nil {
+			return fmt.Errorf("record processed order.create message: %w", insertProcessed.Error)
+		}
+		if insertProcessed.RowsAffected == 0 {
+			return nil
+		}
+		return h.enqueueReply(tx, orderID, outcome)
+	})
+	if err != nil {
+		wrapped := fmt.Errorf("reply to order.create message: %w", err)
+		if isPermanentDatabaseError(err) {
+			return messaging.Permanent(wrapped)
+		}
+		return messaging.Transient(wrapped)
+	}
+	return nil
+}
+
+// enqueueReply writes the CREATE_ORDER reply to the outbox in the caller's transaction.
+func (h *OrderCreateHandler) enqueueReply(tx *gorm.DB, orderID uuid.UUID, outcome messages.Outcome) error {
+	body, err := json.Marshal(messages.Reply{OrderID: orderID, Step: messages.CREATE_ORDER, Outcome: outcome})
+	if err != nil {
+		return messaging.Permanent(fmt.Errorf("encode order reply: %w", err))
+	}
+	return outbox.Enqueue(tx, outbox.Message{
+		MessageID:  uuid.New(),
+		RoutingKey: messages.OrderReplyRoutingKey,
+		Payload:    body,
+	})
+}
+
+// existingOrderMatches reports whether the stored order has the total, currency and
+// lines the command describes.
+func existingOrderMatches(tx *gorm.DB, command messages.OrderCreate) (bool, error) {
+	var order models.Order
+	if err := tx.Table("orders.orders").Where("id = ?", command.OrderID).Take(&order).Error; err != nil {
+		return false, fmt.Errorf("load existing order: %w", err)
+	}
+	if order.TotalPaise != command.TotalPaise || order.Currency != command.Currency {
+		return false, nil
+	}
+	var items []models.OrderItem
+	if err := tx.Table("orders.order_items").Where("order_id = ?", command.OrderID).Find(&items).Error; err != nil {
+		return false, fmt.Errorf("load existing order items: %w", err)
+	}
+	if len(items) != len(command.Items) {
+		return false, nil
+	}
+	stored := make(map[uuid.UUID]models.OrderItem, len(items))
+	for _, item := range items {
+		stored[item.ProductID] = item
+	}
+	for _, item := range command.Items {
+		have, found := stored[item.ProductID]
+		if !found || have.Quantity != item.Quantity || have.UnitPricePaise != item.UnitPricePaise {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 type sqlStateError interface {

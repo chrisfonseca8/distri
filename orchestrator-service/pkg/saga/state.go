@@ -15,6 +15,8 @@ const (
 	MARK_ORDER_CANCELLED Step = "MARK_ORDER_CANCELLED"
 	CONFIRM_STOCK        Step = "CONFIRM_STOCK"
 	RELEASE_STOCK        Step = "RELEASE_STOCK"
+	REFUND_PAYMENT       Step = "REFUND_PAYMENT"
+	CANCEL_PAID_ORDER    Step = "CANCEL_PAID_ORDER"
 )
 
 type Outcome string
@@ -55,7 +57,7 @@ var transitions = map[transition]Decision{
 	{RESERVE_STOCK, Failed}:           {SagaStatus: SagaCompensated},
 	{RESERVE_STOCK, Ambiguous}:        retry(RESERVE_STOCK, SagaRunning),
 	{CREATE_ORDER, Succeeded}:         advance(TAKE_PAYMENT, SagaRunning),
-	{CREATE_ORDER, Failed}:            advance(RELEASE_STOCK, SagaCompensating),
+	{CREATE_ORDER, Failed}:            advance(MARK_ORDER_CANCELLED, SagaCompensating),
 	{CREATE_ORDER, Ambiguous}:         retry(CREATE_ORDER, SagaRunning),
 	{TAKE_PAYMENT, Succeeded}:         advance(MARK_ORDER_PAID, SagaRunning),
 	{TAKE_PAYMENT, Failed}:            advance(MARK_ORDER_CANCELLED, SagaCompensating),
@@ -72,6 +74,16 @@ var transitions = map[transition]Decision{
 	{RELEASE_STOCK, Succeeded}:        {SagaStatus: SagaCompensated},
 	{RELEASE_STOCK, Failed}:           {SagaStatus: SagaStuck},
 	{RELEASE_STOCK, Ambiguous}:        retry(RELEASE_STOCK, SagaCompensating),
+
+	// Undo of a checkout that was paid but could not be completed (entered only by the
+	// sweeper, after the saga stayed STUCK for the configured time): refund the money,
+	// cancel the paid order, give the stock back.
+	{REFUND_PAYMENT, Succeeded}:    advance(CANCEL_PAID_ORDER, SagaCompensating),
+	{REFUND_PAYMENT, Failed}:       {SagaStatus: SagaStuck},
+	{REFUND_PAYMENT, Ambiguous}:    retry(REFUND_PAYMENT, SagaCompensating),
+	{CANCEL_PAID_ORDER, Succeeded}: advance(RELEASE_STOCK, SagaCompensating),
+	{CANCEL_PAID_ORDER, Failed}:    {SagaStatus: SagaStuck},
+	{CANCEL_PAID_ORDER, Ambiguous}: retry(CANCEL_PAID_ORDER, SagaCompensating),
 }
 
 // Next looks up the deterministic transition for a completed step outcome.

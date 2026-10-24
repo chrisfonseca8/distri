@@ -38,6 +38,20 @@ func (e *ErrAwaitingPayment) Error() string {
 	return fmt.Sprintf("gateway order %s is awaiting payment", e.Ref)
 }
 
+// ErrNotSent means the request provably never left this process: the connection to
+// the provider could not be opened (connection refused, DNS failure, dial timeout).
+// Unlike a timeout after sending, nothing can have been created at the provider, so
+// the call is safe to try again.
+type ErrNotSent struct {
+	Err error
+}
+
+// Error describes why the request could not be sent.
+func (e *ErrNotSent) Error() string { return "request was not sent: " + e.Err.Error() }
+
+// Unwrap returns the underlying network error.
+func (e *ErrNotSent) Unwrap() error { return e.Err }
+
 // ErrRejected is a confirmed refusal by the provider of the request itself (for
 // example invalid input): nothing was created. It is different from a payment
 // that was declined, and from an ambiguous failure such as a timeout.

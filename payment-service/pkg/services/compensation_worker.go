@@ -39,6 +39,10 @@ type CompensationConfig struct {
 	// provider created and then failed goes to review immediately.
 	MaxFailedRetries int
 	RetryDelay       time.Duration
+	// ReviewRetryAfter and MaxReviewRetries bound the automatic retry of a refund that
+	// went to REVIEW only because the gateway kept rejecting it. Zero disables.
+	ReviewRetryAfter time.Duration
+	MaxReviewRetries int
 }
 
 // validate rejects zero or negative settings and windows that are out of order.
@@ -136,6 +140,7 @@ func (w *CompensationWorker) RunOnce(ctx context.Context) {
 		{"recover stale submissions", w.recoverStale},
 		{"classify review records", w.classifyReview},
 		{"recover failed", w.recoverFailed},
+		{"retry rejected reviews", w.retryRejectedReviews},
 		{"submit", w.submitRequired},
 		{"reconcile unknown", w.reconcileUnknown},
 		{"reconcile pending", w.reconcilePending},
@@ -279,6 +284,37 @@ func (w *CompensationWorker) classifyReview(ctx context.Context) error {
 	return nil
 }
 
+// retryRejectedReviews gives a refund that the gateway rejected over and over another
+// bounded round once ReviewRetryAfter has passed, so it does not wait forever for a
+// person. Only a DEFINITIVE rejection is retried automatically: nothing was created at the
+// provider, so a retry cannot double-refund. A refund whose outcome is unknown, one that
+// holds a provider refund id, or one that is not eligible never comes back this way.
+func (w *CompensationWorker) retryRejectedReviews(ctx context.Context) error {
+	if w.config.MaxReviewRetries <= 0 || w.config.ReviewRetryAfter <= 0 {
+		return nil
+	}
+	var records []models.CompensationRecord
+	if err := w.db.WithContext(ctx).
+		Where(`gateway = ? AND status = ? AND refund_id IS NULL AND review_reason LIKE 'refund rejected%'
+			AND review_retries < ? AND updated_at < ?`,
+			w.gatewayName, models.CompensationReview, w.config.MaxReviewRetries, w.now().Add(-w.config.ReviewRetryAfter)).
+		Order("updated_at").Limit(w.config.Batch).Find(&records).Error; err != nil {
+		return err
+	}
+	for _, record := range records {
+		if _, err := w.transition(ctx, record, recordGuard{status: models.CompensationReview}, models.CompensationRequired,
+			map[string]any{
+				"next_attempt_at": w.now(), "failure_count": 0, "review_reason": nil,
+				"review_retries": gorm.Expr("review_retries + 1"),
+			},
+			fmt.Sprintf("automatic retry %d of %d after %s in review: the gateway rejected the refund, so nothing was created",
+				record.ReviewRetries+1, w.config.MaxReviewRetries, w.config.ReviewRetryAfter)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // eligibilityProblem returns why a record must not be refunded automatically, or "".
 func (w *CompensationWorker) eligibilityProblem(ctx context.Context, record models.CompensationRecord) string {
 	var attempt models.PaymentAttempt
@@ -296,7 +332,10 @@ func (w *CompensationWorker) eligibilityProblem(ctx context.Context, record mode
 		return fmt.Sprintf("gateway mismatch: record %q, attempt %q", record.Gateway, attempt.Gateway)
 	case attempt.OrderID != record.OrderID:
 		return "order mismatch between the record and its attempt"
-	case attempt.Status == "SUCCEEDED" && attempt.GatewayPaymentID != nil && *attempt.GatewayPaymentID == record.GatewayPaymentID:
+	case attempt.Status == "SUCCEEDED" && attempt.GatewayPaymentID != nil && *attempt.GatewayPaymentID == record.GatewayPaymentID &&
+		record.Reason != reasonCheckoutFailedAfterPayment:
+		// The payment that funded a completed checkout is refunded only when the saga itself
+		// asked for it (reasonCheckoutFailedAfterPayment); never because of a polling finding.
 		return "this payment funded a successful checkout and must not be refunded"
 	case record.Reason == "":
 		return "compensation reason not established"

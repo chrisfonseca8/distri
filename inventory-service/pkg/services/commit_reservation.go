@@ -28,6 +28,10 @@ type stockMovement string
 const (
 	confirmStock stockMovement = "confirm"
 	releaseStock stockMovement = "release"
+	// restockStock undoes a confirm: the sale is cancelled after the stock had been
+	// consumed, so the units come back to on_hand. It happens only when the saga unwinds a
+	// checkout that was paid and then refunded.
+	restockStock stockMovement = "restock"
 )
 
 // ConfirmReservation marks an order's reservation CONFIRMED and moves its reserved stock to sold.
@@ -76,9 +80,12 @@ func changeReservationStatusTx(
 	targetStatus string,
 	movement stockMovement,
 ) (ChangeReservationResult, error) {
-	reservation, changed, err := transitionReservedReservation(tx, orderID, targetStatus)
+	reservation, changed, restock, err := transitionReservedReservation(tx, orderID, targetStatus)
 	if err != nil {
 		return ChangeReservationResult{}, err
+	}
+	if restock {
+		movement = restockStock
 	}
 
 	result := ChangeReservationResult{
@@ -100,12 +107,15 @@ func changeReservationStatusTx(
 	return result, nil
 }
 
-// transitionReservedReservation moves a reservation from RESERVED to targetStatus and reports whether it changed.
+// transitionReservedReservation moves a reservation from RESERVED to targetStatus and reports
+// whether it changed. A release may also undo a CONFIRMED reservation (the third result is
+// then true and the consumed stock must be restocked): that is how a paid and refunded
+// checkout gives its units back.
 func transitionReservedReservation(
 	tx *gorm.DB,
 	orderID uuid.UUID,
 	targetStatus string,
-) (models.Reservation, bool, error) {
+) (models.Reservation, bool, bool, error) {
 	update := tx.Table("inventory.reservations").
 		Where("order_id = ? AND status = ?", orderID, "RESERVED").
 		Updates(map[string]any{
@@ -113,25 +123,35 @@ func transitionReservedReservation(
 			"updated_at": time.Now(),
 		})
 	if update.Error != nil {
-		return models.Reservation{}, false, fmt.Errorf("change reservation status: %w", update.Error)
+		return models.Reservation{}, false, false, fmt.Errorf("change reservation status: %w", update.Error)
+	}
+	restock := false
+	if update.RowsAffected == 0 && targetStatus == "RELEASED" {
+		undo := tx.Table("inventory.reservations").
+			Where("order_id = ? AND status = ?", orderID, "CONFIRMED").
+			Updates(map[string]any{"status": targetStatus, "updated_at": time.Now()})
+		if undo.Error != nil {
+			return models.Reservation{}, false, false, fmt.Errorf("undo confirmed reservation: %w", undo.Error)
+		}
+		update, restock = undo, undo.RowsAffected == 1
 	}
 
 	var reservation models.Reservation
 	query := tx.Table("inventory.reservations").Where("order_id = ?", orderID).First(&reservation)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return models.Reservation{}, false, ErrReservationNotFound
+		return models.Reservation{}, false, false, ErrReservationNotFound
 	}
 	if query.Error != nil {
-		return models.Reservation{}, false, fmt.Errorf("get reservation status: %w", query.Error)
+		return models.Reservation{}, false, false, fmt.Errorf("get reservation status: %w", query.Error)
 	}
 
 	if update.RowsAffected == 1 {
-		return reservation, true, nil
+		return reservation, true, restock, nil
 	}
 	if reservation.Status == targetStatus {
-		return reservation, false, nil
+		return reservation, false, false, nil
 	}
-	return models.Reservation{}, false, fmt.Errorf(
+	return models.Reservation{}, false, false, fmt.Errorf(
 		"%w: cannot change %s to %s",
 		ErrReservationStateConflict,
 		reservation.Status,
@@ -163,6 +183,18 @@ func moveReservedStock(
 ) error {
 	now := time.Now()
 	for _, item := range items {
+		if movement == restockStock {
+			update := tx.Table("inventory.inventories").
+				Where("product_id = ?", item.ProductID).
+				Updates(map[string]any{"on_hand": gorm.Expr("on_hand + ?", item.Quantity), "updated_at": now})
+			if update.Error != nil {
+				return fmt.Errorf("%s stock for product %s: %w", movement, item.ProductID, update.Error)
+			}
+			if update.RowsAffected != 1 {
+				return fmt.Errorf("%s stock for product %s: %w", movement, item.ProductID, errStockInvariant)
+			}
+			continue
+		}
 		updates := map[string]any{
 			"reserved":   gorm.Expr("reserved - ?", item.Quantity),
 			"updated_at": now,

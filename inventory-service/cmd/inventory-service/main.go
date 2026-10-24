@@ -19,6 +19,7 @@ import (
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/outbox"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/services"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/telemetry"
@@ -89,6 +90,17 @@ func run() error {
 	go func() {
 		defer workerWaitGroup.Done()
 		relay.Run(workerContext)
+	}()
+
+	retentionConfig, err := retention.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("load retention configuration: %w", err)
+	}
+	purger := retention.New(applicationConfig.DB, retentionConfig, retention.Rules())
+	workerWaitGroup.Add(1)
+	go func() {
+		defer workerWaitGroup.Done()
+		purger.Run(workerContext)
 	}()
 
 	inventoryHandler := services.NewInventoryCommandHandler(applicationConfig.DB)

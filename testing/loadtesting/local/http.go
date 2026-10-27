@@ -17,10 +17,12 @@ import (
 type loadClient struct {
 	checkoutURL string // orchestrator-service: checkout entry point and saga status
 
-	http     *http.Client
-	metrics  *collector
-	behavior string
-	sequence atomic.Uint64
+	http            *http.Client
+	metrics         *collector
+	behavior        string
+	workflowTimeout time.Duration
+	statusPollEvery time.Duration
+	sequence        atomic.Uint64
 }
 type cartItem struct {
 	ProductID string `json:"product_id"`
@@ -60,7 +62,7 @@ func (c *loadClient) standardWorkflow(parent context.Context, items []cartItem) 
 	defer c.metrics.endWorkflow()
 	started := time.Now()
 	c.metrics.offeredOne()
-	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	ctx, cancel := context.WithTimeout(parent, c.workflowTimeout)
 	defer cancel()
 	checkoutStatus, checkout, latency, transport, decode := c.checkout(ctx, items)
 	c.metrics.checkoutResult(checkoutStatus, latency, transport, decode)
@@ -85,7 +87,7 @@ func (c *loadClient) duplicateCheckoutWorkflow(parent context.Context, items []c
 	defer c.metrics.endWorkflow()
 	started := time.Now()
 	c.metrics.offeredOne()
-	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	ctx, cancel := context.WithTimeout(parent, c.workflowTimeout)
 	defer cancel()
 	key := "load-" + newUUID()
 	first := func() checkoutCall {
@@ -177,7 +179,7 @@ func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResp
 		select {
 		case <-ctx.Done():
 			return orderResponse{}
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(c.statusPollEvery):
 		}
 		var result sagaResponse
 		status, _, transport, decode := c.do(ctx, http.MethodGet, c.checkoutURL+"/v1/checkouts/"+orderID, nil, nil, &result)

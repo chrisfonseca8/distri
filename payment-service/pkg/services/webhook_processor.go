@@ -69,22 +69,75 @@ func NewWebhookProcessor(db *gorm.DB, config WebhookProcessorConfig) (*WebhookPr
 	}, nil
 }
 
-// Run processes pending webhook events on every interval until ctx is cancelled.
+const webhookIdleDelay = 100 * time.Millisecond
+
+// Run drains consecutive batches without sleeping while events are available.
+// When the inbox is empty it polls at a modest rate; pass-level failures use an
+// exponential backoff capped by the configured interval. Event-level failures
+// retain their existing durable retry schedule in reschedule.
 func (p *WebhookProcessor) Run(ctx context.Context) {
-	slog.Info("webhook processor started", "interval", p.config.Interval, "max_attempts", p.config.MaxAttempts)
+	slog.Info("webhook processor started",
+		"idle_delay", webhookIdleDelay,
+		"error_backoff_cap", p.config.Interval,
+		"batch", p.config.Batch,
+		"max_attempts", p.config.MaxAttempts,
+	)
 	defer slog.Info("webhook processor stopped")
-	ticker := time.NewTicker(p.config.Interval)
-	defer ticker.Stop()
+	runWebhookProcessor(ctx, webhookIdleDelay, p.config.Interval, p.processOnce)
+}
+
+func runWebhookProcessor(ctx context.Context, idleDelay, errorBackoffCap time.Duration, process func(context.Context) (int, error)) {
+	errorDelay := idleDelay
 	for {
-		if err := p.ProcessOnce(ctx); err != nil && ctx.Err() == nil {
-			slog.Error("webhook processor pass failed", "error", err)
-		}
-		select {
-		case <-ctx.Done():
+		claimed, err := process(ctx)
+		if ctx.Err() != nil {
 			return
-		case <-ticker.C:
+		}
+		if err != nil {
+			slog.Error("webhook processor pass failed", "error", err)
+			if !waitForWebhookPass(ctx, errorDelay) {
+				return
+			}
+			errorDelay = nextWebhookErrorDelay(errorDelay, errorBackoffCap)
+			continue
+		}
+
+		errorDelay = idleDelay
+		if claimed > 0 {
+			// Do not impose the idle polling delay on an inbox that may still have
+			// due rows. The next claim also catches events received while this batch
+			// was being applied.
+			continue
+		}
+		if !waitForWebhookPass(ctx, idleDelay) {
+			return
 		}
 	}
+}
+
+func waitForWebhookPass(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func nextWebhookErrorDelay(current, cap time.Duration) time.Duration {
+	if cap < webhookIdleDelay {
+		cap = webhookIdleDelay
+	}
+	if current >= cap {
+		return cap
+	}
+	next := current * 2
+	if next > cap {
+		return cap
+	}
+	return next
 }
 
 const claimWebhookQuery = `
@@ -139,22 +192,30 @@ WHERE e.status = 'PARKED'
 // ProcessOnce replays parked events whose mapping now exists, then claims and
 // applies one batch of due events.
 func (p *WebhookProcessor) ProcessOnce(ctx context.Context) error {
+	_, err := p.processOnce(ctx)
+	return err
+}
+
+// processOnce returns the number of events claimed so Run can distinguish an
+// idle inbox from one that should be drained immediately. ProcessOnce remains
+// the stable one-pass entry point used by tests and administrative callers.
+func (p *WebhookProcessor) processOnce(ctx context.Context) (int, error) {
 	if _, err := p.ReplayParked(ctx); err != nil {
-		return err
+		return 0, err
 	}
 	var claimed []models.WebhookEvent
 	if err := p.db.WithContext(ctx).
 		Raw(claimWebhookQuery, p.config.Batch, p.workerID, p.config.Lease.Microseconds()).
 		Scan(&claimed).Error; err != nil {
-		return fmt.Errorf("claim webhook events: %w", err)
+		return 0, fmt.Errorf("claim webhook events: %w", err)
 	}
 	for _, event := range claimed {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return len(claimed), ctx.Err()
 		}
 		p.handle(ctx, event)
 	}
-	return nil
+	return len(claimed), nil
 }
 
 type webhookOutcome int

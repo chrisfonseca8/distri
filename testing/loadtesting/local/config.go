@@ -28,6 +28,8 @@ type config struct {
 	Runs            int
 	ExactOrders     int
 	DrainTimeout    time.Duration
+	WorkflowTimeout time.Duration
+	StatusPollEvery time.Duration
 	SampleEvery     time.Duration
 	Behavior        string
 	DBPoolSize      int
@@ -75,12 +77,20 @@ func loadConfig() (config, error) {
 		CaseName: strings.ToUpper(env("LOAD_CASE", "C1")), OrderURL: strings.TrimRight(env("ORDER_URL", "http://127.0.0.1:8080"), "/"), OrchestratorURL: strings.TrimRight(env("ORCHESTRATOR_URL", "http://127.0.0.1:8083"), "/"),
 		InventoryURL: strings.TrimRight(env("INVENTORY_URL", "http://127.0.0.1:8081"), "/"), PaymentURL: strings.TrimRight(env("PAYMENT_URL", "http://127.0.0.1:8082"), "/"),
 		DatabaseURL: os.Getenv("DATABASE_URL"), ResultsDir: env("RESULTS_DIR", "test-results/load-test"),
-		GatewayMode: env("GATEWAY_MODE", "success"), DrainTimeout: 15 * time.Second, SampleEvery: 500 * time.Millisecond, Workload: "uniform",
+		GatewayMode: env("GATEWAY_MODE", "success"), DrainTimeout: 15 * time.Second, WorkflowTimeout: 15 * time.Second, StatusPollEvery: 100 * time.Millisecond, SampleEvery: 500 * time.Millisecond, Workload: "uniform",
 	}
 	var err error
 	c.GatewayLatency, err = time.ParseDuration(env("GATEWAY_LATENCY", "200ms"))
 	if err != nil || c.GatewayLatency < 0 {
 		return c, fmt.Errorf("GATEWAY_LATENCY must be a non-negative duration")
+	}
+	c.WorkflowTimeout, err = time.ParseDuration(env("LOAD_WORKFLOW_TIMEOUT", c.WorkflowTimeout.String()))
+	if err != nil || c.WorkflowTimeout <= 0 {
+		return c, fmt.Errorf("LOAD_WORKFLOW_TIMEOUT must be a positive duration")
+	}
+	c.StatusPollEvery, err = time.ParseDuration(env("LOAD_STATUS_POLL_INTERVAL", c.StatusPollEvery.String()))
+	if err != nil || c.StatusPollEvery <= 0 {
+		return c, fmt.Errorf("LOAD_STATUS_POLL_INTERVAL must be a positive duration")
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")
@@ -98,7 +108,7 @@ func loadConfig() (config, error) {
 	case "C4":
 		c.Runs, c.Duration, c.Warmup = 4, 30*time.Second, 10*time.Second
 	case "C5":
-		c.Clients, c.Runs, c.Warmup, c.Workload = 50, 2, 10*time.Second, "hot"
+		c.Clients, c.Runs, c.Warmup, c.Workload, c.ExactOrders, c.HotStock = 50, 2, 10*time.Second, "hot", 2000, 1000
 	case "C6":
 		c.Clients, c.Runs, c.Duration, c.Warmup, c.Workload = 50, 1, 60*time.Second, 10*time.Second, "skewed"
 	case "C7":
@@ -125,6 +135,12 @@ func loadConfig() (config, error) {
 	default:
 		return c, fmt.Errorf("unsupported LOAD_CASE %q", c.CaseName)
 	}
+	if raw := strings.TrimSpace(os.Getenv("LOAD_WARMUP")); raw != "" {
+		c.Warmup, err = time.ParseDuration(raw)
+		if err != nil || c.Warmup < 0 {
+			return c, fmt.Errorf("LOAD_WARMUP must be a non-negative duration")
+		}
+	}
 	if c.CaseName == "C1" {
 		if c.ExactOrders, err = envInt("LOAD_ORDERS", c.ExactOrders); err != nil {
 			return c, err
@@ -135,6 +151,16 @@ func loadConfig() (config, error) {
 		if c.Clients, err = envInt("LOAD_CLIENTS", c.Clients); err != nil {
 			return c, err
 		}
+	}
+	if c.CaseName == "C5" {
+		if c.ExactOrders, err = envInt("LOAD_ORDERS", c.ExactOrders); err != nil {
+			return c, err
+		}
+		hotStock := int(c.HotStock)
+		if hotStock, err = envInt("LOAD_HOT_STOCK", hotStock); err != nil {
+			return c, err
+		}
+		c.HotStock = int64(hotStock)
 	}
 	if c.CaseName == "C2" {
 		if c.Runs, err = envInt("LOAD_RUNS", c.Runs); err != nil {
@@ -205,9 +231,14 @@ func (c config) experiment(runNumber int) config {
 	}
 	if c.CaseName == "C5" {
 		if runNumber == 1 {
-			result.Duration, result.HotStock = 60*time.Second, fixtureStock
+			result.Duration, result.HotStock, result.ExactOrders = 60*time.Second, fixtureStock, 0
 		} else {
-			result.ExactOrders, result.HotStock = 2000, 1000
+			if result.ExactOrders == 0 {
+				result.ExactOrders = 2000
+			}
+			if result.HotStock == 0 {
+				result.HotStock = 1000
+			}
 		}
 	}
 	return result

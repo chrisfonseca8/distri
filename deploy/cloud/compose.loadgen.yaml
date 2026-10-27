@@ -1,9 +1,4 @@
-# Runs on the LOAD_TEST host. The runner calls the services on the SERVER by private
-# IP, talks to the managed TEST database directly, and samples the SERVER's
-# containers through its Docker socket, forwarded over SSH to a local unix socket
-# (see README). It truncates tables, so it refuses any database host that is not
-# named in LOAD_TEST_ALLOWED_DB_HOST.
-name: distri-loadgen
+name: distri-staging-loadgen
 
 services:
   loadtest:
@@ -11,11 +6,12 @@ services:
     entrypoint: ["/app/local-loadtest"]
     environment:
       ORDER_URL: "${ORDER_URL:?set ORDER_URL}"
+      ORCHESTRATOR_URL: "${ORCHESTRATOR_URL:?set ORCHESTRATOR_URL}"
       INVENTORY_URL: "${INVENTORY_URL:?set INVENTORY_URL}"
       PAYMENT_URL: "${PAYMENT_URL:?set PAYMENT_URL}"
       DATABASE_URL: "${LOADTEST_DATABASE_URL:?set LOADTEST_DATABASE_URL}"
       LOAD_TEST_ALLOWED_DB_HOST: "${LOAD_TEST_ALLOWED_DB_HOST:?set LOAD_TEST_ALLOWED_DB_HOST}"
-      LOAD_TEST_ENVIRONMENT: "${LOAD_TEST_ENVIRONMENT:-}"
+      LOAD_TEST_ENVIRONMENT: "${LOAD_TEST_ENVIRONMENT:-cloud-staging}"
       RESULTS_DIR: "/results/${RESULTS_SUBDIR:-cloud-load-test}"
       GATEWAY_MODE: "${GATEWAY_MODE:-success}"
       GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
@@ -24,13 +20,46 @@ services:
       LOAD_RUNS: "${LOAD_RUNS:-}"
       LOAD_ORDERS: "${LOAD_ORDERS:-}"
       LOAD_DURATION: "${LOAD_DURATION:-}"
+      LOAD_WARMUP: "${LOAD_WARMUP:-}"
       LOAD_MAX_CONNS: "${LOAD_MAX_CONNS:-}"
       LOAD_CLIENT_STEPS: "${LOAD_CLIENT_STEPS:-}"
       LOAD_RATE_STEPS: "${LOAD_RATE_STEPS:-}"
+      LOAD_HOT_STOCK: "${LOAD_HOT_STOCK:-}"
+      LOAD_WORKFLOW_TIMEOUT: "${LOAD_WORKFLOW_TIMEOUT:-30s}"
+      LOAD_STATUS_POLL_INTERVAL: "${LOAD_STATUS_POLL_INTERVAL:-100ms}"
       DB_POOL_SIZE: "${DB_POOL_SIZE:-}"
       DB_IDLE_SIZE: "${DB_IDLE_SIZE:-}"
+      DOCKER_SOCKET_ORDER: /sockets/order.sock
+      DOCKER_SOCKET_INVENTORY: /sockets/inventory.sock
+      DOCKER_SOCKET_PAYMENT: /sockets/payment.sock
+      DOCKER_SOCKET_ORCHESTRATOR: /sockets/orchestrator.sock
     volumes:
-      - ../../test-results:/results   # relative to this file (deploy/cloud/), i.e. ~/distri/test-results
-      - "${SERVER_DOCKER_SOCK:?set SERVER_DOCKER_SOCK}:/var/run/docker.sock"
+      - ../../test-results:/results
+      - "${ORDER_DOCKER_SOCK:?set ORDER_DOCKER_SOCK}:/sockets/order.sock"
+      - "${INVENTORY_DOCKER_SOCK:?set INVENTORY_DOCKER_SOCK}:/sockets/inventory.sock"
+      - "${PAYMENT_DOCKER_SOCK:?set PAYMENT_DOCKER_SOCK}:/sockets/payment.sock"
+      - "${ORCHESTRATOR_DOCKER_SOCK:?set ORCHESTRATOR_DOCKER_SOCK}:/sockets/orchestrator.sock"
+    group_add:
+      - "${SERVER_DOCKER_GID:-0}"
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    profiles: ["loadtest"]
+    restart: "no"
+
+  correctness:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:loadgen-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/local-correctness"]
+    environment:
+      ORDER_URL: "${ORDER_URL:?set ORDER_URL}"
+      ORCHESTRATOR_URL: "${ORCHESTRATOR_URL:?set ORCHESTRATOR_URL}"
+      INVENTORY_URL: "${INVENTORY_URL:?set INVENTORY_URL}"
+      PAYMENT_URL: "${PAYMENT_URL:?set PAYMENT_URL}"
+      DATABASE_URL: "${LOADTEST_DATABASE_URL:?set LOADTEST_DATABASE_URL}"
+      RESULTS_DIR: "/results/${CORRECTNESS_RESULTS_SUBDIR:-cloud-correctness-test}"
+      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
+      PHASES: "${PHASES:-}"
+      RUN_LABEL: "${RUN_LABEL:-cloud-staging}"
+    volumes:
+      - ../../test-results:/results
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    profiles: ["correctness"]
     restart: "no"

@@ -1,0 +1,36 @@
+name: distri-staging-simulator
+
+services:
+  gateway-simulator:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:gateway-simulator-${IMAGE_TAG:?set IMAGE_TAG}"
+    environment:
+      SIM_ADDR: ":9090"
+      SIM_KEY_ID: "${SIM_KEY_ID:?set SIM_KEY_ID}"
+      SIM_KEY_SECRET: "${SIM_KEY_SECRET:?set SIM_KEY_SECRET}"
+      SIM_SEED: "${SIM_SEED:-1}"
+      SIM_TIME_SCALE: "${SIM_TIME_SCALE:-1}"
+      SIM_AUTO_CAPTURE: "true"
+      SIM_SCENARIO_MIX: "${SIM_SCENARIO_MIX:-capture=100}"
+      SIM_API_LATENCY: "${SIM_API_LATENCY:-zero}"
+      SIM_PAY_DELAY: "${SIM_PAY_DELAY:-5s}"
+      SIM_CAPTURE_DELAY: "${SIM_CAPTURE_DELAY:-0s}"
+      SIM_LOOKUP_DELAY_MIN: "0s"
+      SIM_LOOKUP_DELAY_MAX: "0s"
+      SIM_REFUND_DELAY: "1s"
+      SIM_ENFORCE_RECEIPT_UNIQUE: "false"
+      SIM_DUPLICATE_PAYS: "first"
+      SIM_ENFORCE_REFUND_RECEIPT_UNIQUE: "false"
+      SIM_WEBHOOK_URL: "${SIM_WEBHOOK_URL:?set SIM_WEBHOOK_URL}"
+      SIM_WEBHOOK_SECRET: "${SIM_WEBHOOK_SECRET:?set SIM_WEBHOOK_SECRET}"
+      SIM_WEBHOOK_PROFILE: "${SIM_WEBHOOK_PROFILE:-standard}"
+      SIM_WEBHOOK_WORKERS: "${SIM_WEBHOOK_WORKERS:-4}"
+      SIM_WEBHOOK_DELAY: "${SIM_WEBHOOK_DELAY:-0s}"
+    ports:
+      - "${SIM_BIND_ADDRESS:-0.0.0.0}:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+

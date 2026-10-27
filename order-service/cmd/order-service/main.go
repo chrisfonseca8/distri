@@ -73,12 +73,12 @@ func run(roleValue string) error {
 		syscall.SIGTERM,
 	)
 	var workerWaitGroup sync.WaitGroup
-	var outboxPublisher *messaging.Publisher
+	var outboxPublishers []*messaging.Publisher
 	defer func() {
 		stop()
 		workerWaitGroup.Wait()
-		if outboxPublisher != nil {
-			if err := outboxPublisher.Close(); err != nil {
+		for _, publisher := range outboxPublishers {
+			if err := publisher.Close(); err != nil {
 				slog.Error("close outbox publisher", "error", err)
 			}
 		}
@@ -89,23 +89,36 @@ func run(roleValue string) error {
 		if err != nil {
 			return fmt.Errorf("load RabbitMQ configuration: %w", err)
 		}
-		outboxPublisher, err = messaging.NewPublisher(rabbitMQConfig.URL)
+		outboxConcurrency, err := config.LoadOutboxConcurrency()
 		if err != nil {
-			return fmt.Errorf("set up outbox publisher: %w", err)
+			return fmt.Errorf("load outbox concurrency: %w", err)
 		}
-		relay, err := outbox.NewRelay(
-			outbox.NewStore(applicationConfig.DB),
-			outboxPublisher,
-			outbox.DefaultRelayConfig(),
-		)
+		outboxPollInterval, err := config.LoadOutboxPollInterval()
 		if err != nil {
-			return fmt.Errorf("set up outbox relay: %w", err)
+			return fmt.Errorf("load outbox poll interval: %w", err)
 		}
-		workerWaitGroup.Add(1)
-		go func() {
-			defer workerWaitGroup.Done()
-			relay.Run(shutdownContext)
-		}()
+		relayConfig := outbox.DefaultRelayConfig()
+		relayConfig.PollInterval = outboxPollInterval
+		for range outboxConcurrency {
+			publisher, err := messaging.NewPublisher(rabbitMQConfig.URL)
+			if err != nil {
+				return fmt.Errorf("set up outbox publisher: %w", err)
+			}
+			outboxPublishers = append(outboxPublishers, publisher)
+			relay, err := outbox.NewRelay(
+				outbox.NewStore(applicationConfig.DB),
+				publisher,
+				relayConfig,
+			)
+			if err != nil {
+				return fmt.Errorf("set up outbox relay: %w", err)
+			}
+			workerWaitGroup.Add(1)
+			go func() {
+				defer workerWaitGroup.Done()
+				relay.Run(shutdownContext)
+			}()
+		}
 
 		retentionConfig, err := retention.LoadConfig()
 		if err != nil {

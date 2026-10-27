@@ -23,6 +23,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/reply"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/sweeper"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/telemetry"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -48,6 +49,10 @@ func run() error {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
+	var telemetryRecorder *telemetry.Recorder
+	if telemetry.Enabled() {
+		telemetryRecorder = telemetry.New(sqlDB)
+	}
 
 	inventoryClient, err := clients.NewHTTPInventoryClientFromEnv()
 	if err != nil {
@@ -66,24 +71,47 @@ func run() error {
 		return fmt.Errorf("set up RabbitMQ topology: %w", err)
 	}
 
-	publisher, err := messaging.NewPublisher(rabbitMQConfig.URL)
+	outboxConcurrency, err := config.LoadOutboxConcurrency()
 	if err != nil {
-		return fmt.Errorf("set up RabbitMQ publisher: %w", err)
+		return fmt.Errorf("load outbox concurrency: %w", err)
 	}
-	defer publisher.Close()
-
-	relay, err := outbox.NewRelay(
-		outbox.NewStore(applicationConfig.DB),
-		publisher,
-		outbox.DefaultRelayConfig(),
-	)
+	outboxPollInterval, err := config.LoadOutboxPollInterval()
 	if err != nil {
-		return fmt.Errorf("set up outbox relay: %w", err)
+		return fmt.Errorf("load outbox poll interval: %w", err)
+	}
+	relayConfig := outbox.DefaultRelayConfig()
+	relayConfig.PollInterval = outboxPollInterval
+	outboxPublishers := make([]*messaging.Publisher, 0, outboxConcurrency)
+	outboxRelays := make([]*outbox.Relay, 0, outboxConcurrency)
+	defer func() {
+		for _, publisher := range outboxPublishers {
+			if err := publisher.Close(); err != nil {
+				slog.Error("close outbox publisher", "error", err)
+			}
+		}
+	}()
+	for range outboxConcurrency {
+		publisher, err := messaging.NewPublisher(rabbitMQConfig.URL)
+		if err != nil {
+			return fmt.Errorf("set up RabbitMQ outbox publisher: %w", err)
+		}
+		outboxPublishers = append(outboxPublishers, publisher)
+		relay, err := outbox.NewRelay(
+			outbox.NewStore(applicationConfig.DB),
+			publisher,
+			relayConfig,
+			outbox.WithTelemetry(telemetryRecorder),
+		)
+		if err != nil {
+			return fmt.Errorf("set up outbox relay: %w", err)
+		}
+		outboxRelays = append(outboxRelays, relay)
 	}
 	replyHandler := reply.NewHandler(
 		applicationConfig.DB,
 		sagaConfig.StepTimeout,
 		reply.WithSagaDeadline(sagaConfig.Deadline),
+		reply.WithTelemetry(telemetryRecorder),
 	)
 	sagaSweeper, err := sweeper.NewSagaSweeper(applicationConfig.DB, sweeper.SagaConfig{
 		Interval:         sagaConfig.SweepInterval,
@@ -136,6 +164,9 @@ func run() error {
 
 	mux := http.NewServeMux()
 	routes.RegisterHealthRoutes(mux, applicationConfig.DB)
+	if telemetryRecorder != nil {
+		telemetryRecorder.Register(mux)
+	}
 	checkoutService := checkout.NewCheckoutService(
 		applicationConfig.DB,
 		inventoryClient,
@@ -144,7 +175,11 @@ func run() error {
 	)
 	routes.RegisterCheckoutRoutes(mux, controllers.NewCheckoutController(checkoutService))
 
-	server, err := config.NewServer(mux)
+	var handler http.Handler = mux
+	if telemetryRecorder != nil {
+		handler = telemetryRecorder.Middleware(mux)
+	}
+	server, err := config.NewServer(handler)
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
 	}
@@ -160,15 +195,17 @@ func run() error {
 		return fmt.Errorf("load retention configuration: %w", err)
 	}
 	purger := retention.New(applicationConfig.DB, retentionConfig, retention.Rules())
-	backgroundWorkers.Add(5)
+	backgroundWorkers.Add(4 + len(outboxRelays))
 	go func() {
 		defer backgroundWorkers.Done()
 		purger.Run(shutdownSignal)
 	}()
-	go func() {
-		defer backgroundWorkers.Done()
-		relay.Run(shutdownSignal)
-	}()
+	for _, relay := range outboxRelays {
+		go func() {
+			defer backgroundWorkers.Done()
+			relay.Run(shutdownSignal)
+		}()
+	}
 	go func() {
 		defer backgroundWorkers.Done()
 		replyConsumers.Run(shutdownSignal)

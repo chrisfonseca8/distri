@@ -96,7 +96,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	}
 	transport := &http.Transport{MaxIdleConns: cfg.MaxConns, MaxIdleConnsPerHost: cfg.MaxConns, MaxConnsPerHost: cfg.MaxConns}
 	if cfg.Warmup > 0 {
-		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior}
+		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery}
 		warmupSelector := newCartSelector(cfg.Workload, products)
 		if cfg.CaseName == "C4" {
 			runOpenLoop(ctx, warmupClient, warmupSelector, cfg.OfferedRate, cfg.Warmup)
@@ -134,7 +134,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	cpuBefore, cpuBeforeOK := readCgroupCPUUsec()
 	started := time.Now().UTC()
 	metrics := newCollector()
-	client := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior}
+	client := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery}
 	selector := newCartSelector(cfg.Workload, products)
 
 	measurement := cfg.Duration
@@ -176,6 +176,11 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	if err != nil {
 		return Report{}, err
 	}
+	// Keep Docker CPU/memory alongside the orchestrator's HTTP and DB-pool metrics.
+	orchestratorContainer := containerMetrics["orchestrator"]
+	orchestratorMetrics := services["orchestrator"]
+	orchestratorMetrics.Container = &orchestratorContainer
+	services["orchestrator"] = orchestratorMetrics
 	clientMetrics := metrics.snapshot(measurement)
 	if cpuAfter, ok := readCgroupCPUUsec(); ok && cpuBeforeOK && cpuAfter >= cpuBefore && finished.After(started) {
 		percent := float64(cpuAfter-cpuBefore) / 1e6 / finished.Sub(started).Seconds() * 100
@@ -245,6 +250,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 			Warmup:               cfg.Warmup,
 			Measurement:          measurement,
 			DrainTimeout:         cfg.DrainTimeout,
+			StatusPollInterval:   cfg.StatusPollEvery,
 			SampleInterval:       cfg.SampleEvery,
 			MaxInFlight:          cfg.Clients,
 			OfferedRatePerSecond: cfg.OfferedRate,
@@ -379,7 +385,10 @@ func runPassed(report Report, cfg config) bool {
 	if cfg.CaseName == "C1" && report.Client.Offered != int64(cfg.ExactOrders) {
 		return false
 	}
-	if cfg.CaseName == "C9" && (report.Client.Duplicate.InjectedWorkflows == 0 || report.Client.Duplicate.Mismatches != 0 || report.Client.Duplicate.Replay200 != report.Client.Duplicate.InjectedWorkflows) {
+	// A duplicate received while the saga is still running is an idempotent 202;
+	// a later terminal replay is 200. Identity, not the timing-dependent 200/202
+	// split, is the correctness condition.
+	if cfg.CaseName == "C9" && (report.Client.Duplicate.InjectedWorkflows == 0 || report.Client.Duplicate.Mismatches != 0) {
 		return false
 	}
 	if cfg.CaseName == "C10" && (report.Client.Duplicate.InjectedWorkflows != report.Client.Offered || report.Client.Duplicate.Mismatches != 0) {

@@ -1,29 +1,42 @@
-# Cloud load-test stack: the three services plus the load-test runner on ONE host,
-# against the managed TEST database (Neon). Images are pulled from Docker Hub; see
-# deploy/cloud/README.md.
-#
-# The runner truncates tables and resets inventory. It refuses to run unless
-# LOAD_TEST_ALLOWED_DB_HOST exactly matches the database host it was given.
-#
-# Required (in deploy/cloud/.env.cloud, never committed):
-#   DISTRI_REPO, IMAGE_TAG
-#   ORDER_DATABASE_URL, INVENTORY_DATABASE_URL, PAYMENT_DATABASE_URL
-#   LOADTEST_DATABASE_URL, LOAD_TEST_ALLOWED_DB_HOST
-name: distri
+name: distri-staging-app
 
-x-pool: &pool
+x-db-pool: &db-pool
   DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-10}"
-  # Idle equals open by default: idle < open caused heavy connection churn in the
-  # local runs (about a third of throughput at a 0 ms gateway).
-  DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-${DB_MAX_OPEN_CONNS:-10}}"
+  DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-10}"
   DB_CONN_MAX_LIFETIME: "${DB_CONN_MAX_LIFETIME:-30m}"
+  LOAD_TEST_TELEMETRY: "true"
+
+x-consumer: &consumer
+  CONSUMER_MAX_ATTEMPTS: "${CONSUMER_MAX_ATTEMPTS:-5}"
+  RABBITMQ_URL: "${RABBITMQ_URL:?set RABBITMQ_URL}"
+
+x-saga: &saga
+  SAGA_DEADLINE: "${SAGA_DEADLINE:-15m}"
+  SAGA_STEP_TIMEOUT: "${SAGA_STEP_TIMEOUT:-30s}"
+  SAGA_SWEEP_INTERVAL: "${SAGA_SWEEP_INTERVAL:-5s}"
+  SAGA_SWEEP_BATCH: "${SAGA_SWEEP_BATCH:-50}"
+  SAGA_STEP_MAX_ATTEMPTS: "${SAGA_STEP_MAX_ATTEMPTS:-5}"
+  SAGA_RESEND_BACKOFF_CAP: "${SAGA_RESEND_BACKOFF_CAP:-5m}"
+  SAGA_STUCK_REFUND_AFTER: "${SAGA_STUCK_REFUND_AFTER:-10m}"
+  RESERVATION_SWEEP_TTL: "${RESERVATION_SWEEP_TTL:-10m}"
+  RESERVATION_SWEEP_INTERVAL: "${RESERVATION_SWEEP_INTERVAL:-1m}"
+  RESERVATION_SWEEP_BATCH_SIZE: "${RESERVATION_SWEEP_BATCH_SIZE:-100}"
 
 services:
+  order-migrate:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:order-service-${IMAGE_TAG:?set IMAGE_TAG}"
+    entrypoint: ["/app/migrate"]
+    environment:
+      <<: *db-pool
+      DATABASE_TEST_URL: "${ORDER_DATABASE_URL:?set ORDER_DATABASE_URL}"
+    profiles: ["migrate"]
+    restart: "no"
+
   inventory-migrate:
     image: "${DISTRI_REPO:?set DISTRI_REPO}:inventory-service-${IMAGE_TAG:?set IMAGE_TAG}"
     entrypoint: ["/app/migrate"]
     environment:
-      <<: *pool
+      <<: *db-pool
       DATABASE_TEST_URL: "${INVENTORY_DATABASE_URL:?set INVENTORY_DATABASE_URL}"
     profiles: ["migrate"]
     restart: "no"
@@ -32,26 +45,25 @@ services:
     image: "${DISTRI_REPO:?set DISTRI_REPO}:payment-service-${IMAGE_TAG:?set IMAGE_TAG}"
     entrypoint: ["/app/migrate"]
     environment:
-      <<: *pool
+      <<: *db-pool
       DATABASE_TEST_URL: "${PAYMENT_DATABASE_URL:?set PAYMENT_DATABASE_URL}"
     profiles: ["migrate"]
     restart: "no"
 
-  order-migrate:
-    image: "${DISTRI_REPO:?set DISTRI_REPO}:order-service-${IMAGE_TAG:?set IMAGE_TAG}"
+  orchestrator-migrate:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:orchestrator-service-${IMAGE_TAG:?set IMAGE_TAG}"
     entrypoint: ["/app/migrate"]
     environment:
-      <<: *pool
-      DATABASE_TEST_URL: "${ORDER_DATABASE_URL:?set ORDER_DATABASE_URL}"
+      <<: [*db-pool, *saga]
+      DATABASE_TEST_URL: "${ORCHESTRATOR_DATABASE_URL:?set ORCHESTRATOR_DATABASE_URL}"
     profiles: ["migrate"]
     restart: "no"
 
-  # Seeds the 50 test products. Run once after migrating; it is safe to repeat.
   inventory-seed:
     image: "${DISTRI_REPO:?set DISTRI_REPO}:inventory-service-${IMAGE_TAG:?set IMAGE_TAG}"
     entrypoint: ["/app/seed"]
     environment:
-      <<: *pool
+      <<: *db-pool
       DATABASE_TEST_URL: "${INVENTORY_DATABASE_URL:?set INVENTORY_DATABASE_URL}"
     profiles: ["migrate"]
     restart: "no"
@@ -59,101 +71,115 @@ services:
   inventory-service:
     image: "${DISTRI_REPO:?set DISTRI_REPO}:inventory-service-${IMAGE_TAG:?set IMAGE_TAG}"
     environment:
-      <<: *pool
+      <<: [*db-pool, *consumer]
       DATABASE_TEST_URL: "${INVENTORY_DATABASE_URL:?set INVENTORY_DATABASE_URL}"
       INVENTORY_PORT: "8081"
-      LOAD_TEST_TELEMETRY: "true"
-    expose:
-      - "8081"
+      INVENTORY_CONSUMER_CONCURRENCY: "1"
+      INVENTORY_CONSUMER_PREFETCH: "10"
+      INVENTORY_CONSUMER_MAX_CONCURRENCY: "${INVENTORY_CONSUMER_MAX_CONCURRENCY:-4}"
+      INVENTORY_CONSUMER_SCALE_DEPTH_PER_WORKER: "20"
+      INVENTORY_CONSUMER_SCALE_INTERVAL: "5s"
+      INVENTORY_CONSUMER_SCALE_DOWN_AFTER: "30s"
+    ports: ["8081:8081"]
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "8081"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
-      retries: 5
-      start_period: 10s
+      retries: 20
     restart: unless-stopped
 
   payment-service:
     image: "${DISTRI_REPO:?set DISTRI_REPO}:payment-service-${IMAGE_TAG:?set IMAGE_TAG}"
     environment:
-      <<: *pool
+      <<: [*db-pool, *consumer]
       DATABASE_TEST_URL: "${PAYMENT_DATABASE_URL:?set PAYMENT_DATABASE_URL}"
       PAYMENT_PORT: "8082"
+      PAYMENT_CONSUMER_CONCURRENCY: "1"
+      PAYMENT_CONSUMER_PREFETCH: "10"
+      PAYMENT_CONSUMER_MAX_CONCURRENCY: "${PAYMENT_CONSUMER_MAX_CONCURRENCY:-4}"
+      PAYMENT_CONSUMER_SCALE_DEPTH_PER_WORKER: "20"
+      PAYMENT_CONSUMER_SCALE_INTERVAL: "5s"
+      PAYMENT_CONSUMER_SCALE_DOWN_AFTER: "30s"
+      PAYMENT_RESOLVE_INTERVAL: "30s"
       GATEWAY_MODE: "${GATEWAY_MODE:-success}"
       GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
-      LOAD_TEST_TELEMETRY: "true"
-    expose:
-      - "8082"
+      GATEWAY_PROVIDER: "razorpay"
+      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:?set RAZORPAY_KEY_ID}"
+      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:?set RAZORPAY_KEY_SECRET}"
+      RAZORPAY_BASE_URL: "${RAZORPAY_BASE_URL:?set RAZORPAY_BASE_URL}"
+      RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:?set RAZORPAY_WEBHOOK_SECRET}"
+      WEBHOOKS_DISABLED: "false"
+      PAYMENT_WINDOW: "${PAYMENT_WINDOW:-5m}"
+      PAYMENT_RECONCILE_INTERVAL: "15s"
+      PAYMENT_RECONCILE_MIN_POLL: "10s"
+      PAYMENT_AUDIT_WINDOW: "1h"
+      PAYMENT_UNCONFIRMED_GRACE: "5m"
+      PAYMENT_AUDIT_INTERVAL: "1m"
+      COMPENSATION_INTERVAL: "2s"
+      COMPENSATION_LEASE: "1m"
+      COMPENSATION_PENDING_POLL: "5s"
+      COMPENSATION_ABSENCE_WINDOW: "2m"
+      COMPENSATION_IDEMPOTENT_RETRY_WINDOW: "10m"
+      COMPENSATION_UNKNOWN_MAX_AGE: "30m"
+      COMPENSATION_RETRY_DELAY: "30s"
+      COMPENSATION_REVIEW_RETRY_AFTER: "30m"
+      COMPENSATION_MAX_REVIEW_RETRIES: "3"
+      WEBHOOK_PROCESS_INTERVAL: "${WEBHOOK_PROCESS_INTERVAL:-1s}"
+      WEBHOOK_PROCESS_BATCH: "${WEBHOOK_PROCESS_BATCH:-100}"
+      WEBHOOK_MAX_ATTEMPTS: "12"
+      WEBHOOK_BACKOFF_BASE: "1s"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
+      JOB_RETRY_BASE: "2s"
+      JOB_RETRY_CAP: "60s"
+    ports: ["8082:8082"]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8082/health"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
-      retries: 5
-      start_period: 10s
+      retries: 20
     restart: unless-stopped
     stop_grace_period: 40s
 
   order-service:
     image: "${DISTRI_REPO:?set DISTRI_REPO}:order-service-${IMAGE_TAG:?set IMAGE_TAG}"
     environment:
-      <<: *pool
+      <<: [*db-pool, *consumer]
       DATABASE_TEST_URL: "${ORDER_DATABASE_URL:?set ORDER_DATABASE_URL}"
       PORT: "8080"
-      INVENTORY_URL: http://inventory-service:8081
-      INVENTORY_TIMEOUT: "${INVENTORY_TIMEOUT:-3s}"
-      PAYMENT_URL: http://payment-service:8082
-      PAYMENT_TIMEOUT: "${PAYMENT_TIMEOUT:-3s}"
-      RESERVATION_SWEEP_TTL: "${RESERVATION_SWEEP_TTL:-10m}"
-      RESERVATION_SWEEP_INTERVAL: "${RESERVATION_SWEEP_INTERVAL:-1m}"
-      RESERVATION_SWEEP_BATCH_SIZE: "${RESERVATION_SWEEP_BATCH_SIZE:-100}"
-      LOAD_TEST_TELEMETRY: "true"
-    # Only the order API is published; restrict 8080 in the security group.
-    ports:
-      - "${ORDER_PORT:-8080}:8080"
-    depends_on:
-      inventory-service:
-        condition: service_healthy
-      payment-service:
-        condition: service_healthy
+      ORDER_CONSUMER_CONCURRENCY: "1"
+      ORDER_CONSUMER_MAX_CONCURRENCY: "${ORDER_CONSUMER_MAX_CONCURRENCY:-4}"
+      ORDER_CONSUMER_SCALE_DEPTH_PER_WORKER: "20"
+      ORDER_CONSUMER_SCALE_INTERVAL: "5s"
+      ORDER_CONSUMER_SCALE_DOWN_AFTER: "30s"
+      OUTBOX_CONCURRENCY: "${ORDER_OUTBOX_CONCURRENCY:-4}"
+      OUTBOX_POLL_INTERVAL: "${ORDER_OUTBOX_POLL_INTERVAL:-100ms}"
+    ports: ["8080:8080"]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
-      retries: 5
-      start_period: 10s
+      retries: 20
     restart: unless-stopped
     stop_grace_period: 15s
 
-  # The load-test runner. It reaches the services by name on the private network,
-  # reads their /debug/load-metrics, and samples their containers through the
-  # Docker socket.
-  loadtest:
-    image: "${DISTRI_REPO:?set DISTRI_REPO}:loadgen-${IMAGE_TAG:?set IMAGE_TAG}"
-    entrypoint: ["/app/local-loadtest"]
+  orchestrator:
+    image: "${DISTRI_REPO:?set DISTRI_REPO}:orchestrator-service-${IMAGE_TAG:?set IMAGE_TAG}"
     environment:
-      ORDER_URL: http://order-service:8080
-      INVENTORY_URL: http://inventory-service:8081
-      PAYMENT_URL: http://payment-service:8082
-      DATABASE_URL: "${LOADTEST_DATABASE_URL:?set LOADTEST_DATABASE_URL}"
-      LOAD_TEST_ALLOWED_DB_HOST: "${LOAD_TEST_ALLOWED_DB_HOST:?set LOAD_TEST_ALLOWED_DB_HOST}"
-      RESULTS_DIR: /results/load-test
-      GATEWAY_MODE: "${GATEWAY_MODE:-success}"
-      GATEWAY_LATENCY: "${GATEWAY_LATENCY:-200ms}"
-      LOAD_CASE: "${LOAD_CASE:-C1}"
-      LOAD_CLIENTS: "${LOAD_CLIENTS:-}"
-      LOAD_RUNS: "${LOAD_RUNS:-}"
-      LOAD_ORDERS: "${LOAD_ORDERS:-}"
-      LOAD_DURATION: "${LOAD_DURATION:-}"
-      DB_POOL_SIZE: "${DB_POOL_SIZE:-}"
-      DB_IDLE_SIZE: "${DB_IDLE_SIZE:-}"
-    volumes:
-      - ./test-results:/results
-      - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - "${DOCKER_GID:-0}"
-    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
-    depends_on:
-      order-service:
-        condition: service_healthy
-    profiles: ["loadtest"]
-    restart: "no"
+      <<: [*db-pool, *consumer, *saga]
+      DATABASE_TEST_URL: "${ORCHESTRATOR_DATABASE_URL:?set ORCHESTRATOR_DATABASE_URL}"
+      ORCHESTRATOR_PORT: "8083"
+      INVENTORY_URL: "${INVENTORY_URL:?set INVENTORY_URL}"
+      ORCHESTRATOR_CONSUMER_CONCURRENCY: "1"
+      ORCHESTRATOR_CONSUMER_MAX_CONCURRENCY: "${ORCHESTRATOR_CONSUMER_MAX_CONCURRENCY:-30}"
+      ORCHESTRATOR_CONSUMER_SCALE_DEPTH_PER_WORKER: "20"
+      ORCHESTRATOR_CONSUMER_SCALE_INTERVAL: "5s"
+      ORCHESTRATOR_CONSUMER_SCALE_DOWN_AFTER: "30s"
+      OUTBOX_CONCURRENCY: "${ORCHESTRATOR_OUTBOX_CONCURRENCY:-4}"
+      OUTBOX_POLL_INTERVAL: "${ORCHESTRATOR_OUTBOX_POLL_INTERVAL:-100ms}"
+    ports: ["8083:8083"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8083/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped

@@ -10,6 +10,7 @@ import (
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/database/models"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/telemetry"
 )
 
 const finishTimeout = 5 * time.Second
@@ -78,10 +79,18 @@ type Relay struct {
 	publisher publisher
 	config    RelayConfig
 	workerID  string
+	telemetry *telemetry.Recorder
+}
+
+type RelayOption func(*Relay)
+
+// WithTelemetry records load-test timing around claims and confirmed publishes.
+func WithTelemetry(recorder *telemetry.Recorder) RelayOption {
+	return func(relay *Relay) { relay.telemetry = recorder }
 }
 
 // NewRelay creates a relay that publishes rows from store through messagePublisher.
-func NewRelay(store relayStore, messagePublisher publisher, config RelayConfig) (*Relay, error) {
+func NewRelay(store relayStore, messagePublisher publisher, config RelayConfig, options ...RelayOption) (*Relay, error) {
 	if store == nil {
 		return nil, errors.New("outbox store is required")
 	}
@@ -96,12 +105,16 @@ func NewRelay(store relayStore, messagePublisher publisher, config RelayConfig) 
 	if err != nil {
 		return nil, fmt.Errorf("read hostname: %w", err)
 	}
-	return &Relay{
+	relay := &Relay{
 		store:     store,
 		publisher: messagePublisher,
 		config:    config,
-		workerID:  fmt.Sprintf("%s-%d", hostname, os.Getpid()),
-	}, nil
+		workerID:  fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.New().String()[:8]),
+	}
+	for _, option := range options {
+		option(relay)
+	}
+	return relay, nil
 }
 
 // Run claims and publishes outbox rows in a loop until ctx is cancelled.
@@ -110,8 +123,12 @@ func (r *Relay) Run(ctx context.Context) {
 	defer slog.Info("outbox relay stopped", "worker_id", r.workerID)
 
 	for ctx.Err() == nil {
+		claimStartedAt := time.Now()
 		rows, err := r.store.Claim(ctx, r.workerID, r.config.BatchSize, r.config.Lease)
+		claimFinishedAt := time.Now()
+		r.telemetry.Observe("outbox_claim_query", claimFinishedAt.Sub(claimStartedAt))
 		if err != nil {
+			r.telemetry.Increment("outbox_claim_failed")
 			if ctx.Err() != nil {
 				return
 			}
@@ -128,13 +145,17 @@ func (r *Relay) Run(ctx context.Context) {
 			}
 			continue
 		}
+		r.telemetry.Increment("outbox_claim_nonempty")
 
 		for index, row := range rows {
 			if ctx.Err() != nil {
 				r.releaseClaimed(rows[index:])
 				return
 			}
-			r.publish(ctx, row)
+			if !row.CreatedAt.IsZero() {
+				r.telemetry.Observe("outbox_row_age_at_claim", claimFinishedAt.Sub(row.CreatedAt))
+			}
+			r.publishClaimed(ctx, row, claimFinishedAt)
 		}
 	}
 }
@@ -164,6 +185,12 @@ func (r *Relay) releaseClaimed(rows []models.Outbox) {
 
 // publish sends one row and marks it published, or reschedules it with a delay if sending fails.
 func (r *Relay) publish(ctx context.Context, row models.Outbox) {
+	r.publishClaimed(ctx, row, time.Now())
+}
+
+func (r *Relay) publishClaimed(ctx context.Context, row models.Outbox, claimedAt time.Time) {
+	publishStartedAt := time.Now()
+	r.telemetry.Observe("outbox_claim_to_publish_started", publishStartedAt.Sub(claimedAt))
 	publishContext, cancelPublish := context.WithTimeout(ctx, r.config.PublishTimeout)
 	err := r.publisher.Publish(
 		publishContext,
@@ -172,6 +199,8 @@ func (r *Relay) publish(ctx context.Context, row models.Outbox) {
 		[]byte(row.Payload),
 	)
 	cancelPublish()
+	publishFinishedAt := time.Now()
+	r.telemetry.Observe("outbox_publish_to_broker_confirmation", publishFinishedAt.Sub(publishStartedAt))
 
 	finishContext, cancelFinish := context.WithTimeout(context.Background(), finishTimeout)
 	defer cancelFinish()
@@ -182,15 +211,21 @@ func (r *Relay) publish(ctx context.Context, row models.Outbox) {
 			row.ID,
 			r.workerID,
 		)
+		markedAt := time.Now()
+		r.telemetry.Observe("outbox_confirmation_to_published_mark", markedAt.Sub(publishFinishedAt))
+		r.telemetry.Observe("outbox_claim_to_published_mark", markedAt.Sub(claimedAt))
 		if updateErr != nil {
+			r.telemetry.Increment("outbox_mark_published_failed")
 			slog.Error("mark outbox message published", "message_id", row.MessageID, "error", updateErr)
 			return
 		}
 		if !updated {
 			slog.Warn("outbox lease lost after publish", "message_id", row.MessageID)
 		}
+		r.telemetry.Increment("outbox_publish_confirmed")
 		return
 	}
+	r.telemetry.Increment("outbox_publish_failed")
 
 	delay := retryDelay(row.Attempts, r.config.RetryBase, r.config.RetryCap)
 	updated, updateErr := r.store.Reschedule(

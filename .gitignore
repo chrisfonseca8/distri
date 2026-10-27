@@ -58,3 +58,24 @@ tasks.md
 
 # Private keys must never be committed
 *.pem
+*.key
+*.p12
+
+# Local cloud host inventory
+/deploy/cloud/ip_details.txt
+
+# Terraform local state and generated plans
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+crash.log

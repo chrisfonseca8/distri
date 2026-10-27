@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,21 +19,21 @@ import (
 // (distri-local locally, distri in the cloud) does not matter.
 var logicalContainers = map[string]string{
 	"order": "order-service", "inventory": "inventory-service",
-	"payment": "payment-service", "postgres": "postgres",
+	"payment": "payment-service", "orchestrator": "orchestrator", "postgres": "postgres",
 }
 
 // requiredContainers must be sampled for a run to be valid. PostgreSQL is
 // optional: with a managed database (Neon) there is no local container.
-var requiredContainers = []string{"order", "inventory", "payment"}
+var requiredContainers = []string{"order", "inventory", "payment", "orchestrator"}
 
 const noLocalPostgres = "no local PostgreSQL container (managed database); CPU and memory are not sampled"
 
 type containerSampler struct {
-	client *http.Client
-	every  time.Duration
-	mu     sync.Mutex
-	ids    map[string]string
-	values map[string]*containerAccumulator
+	clients map[string]*http.Client
+	every   time.Duration
+	mu      sync.Mutex
+	ids     map[string]string
+	values  map[string]*containerAccumulator
 }
 
 type containerAccumulator struct {
@@ -63,17 +65,26 @@ type dockerStats struct {
 
 // newContainerSampler creates a sampler that reads container CPU and memory through the Docker socket.
 func newContainerSampler(every time.Duration) *containerSampler {
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", "/var/run/docker.sock")
-	}}
 	values := map[string]*containerAccumulator{}
+	clients := map[string]*http.Client{}
 	for name := range logicalContainers {
 		values[name] = &containerAccumulator{}
+		socket := strings.TrimSpace(os.Getenv("DOCKER_SOCKET_" + strings.ToUpper(name)))
+		if socket == "" {
+			socket = "/var/run/docker.sock"
+		}
+		clients[name] = dockerClient(socket)
 	}
 	return &containerSampler{
-		client: &http.Client{Transport: transport, Timeout: 4 * time.Second},
-		every:  every, ids: map[string]string{}, values: values,
+		clients: clients, every: every, ids: map[string]string{}, values: values,
 	}
+}
+
+func dockerClient(socket string) *http.Client {
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	return &http.Client{Transport: transport, Timeout: 4 * time.Second}
 }
 
 // run samples every container on each tick until ctx is cancelled.
@@ -112,7 +123,7 @@ func (s *containerSampler) readService(ctx context.Context, logicalName, service
 	id := s.ids[logicalName]
 	s.mu.Unlock()
 	if id == "" {
-		found, err := s.findContainer(ctx, service)
+		found, err := s.findContainer(ctx, logicalName, service)
 		if err != nil {
 			return dockerStats{}, err
 		}
@@ -121,7 +132,7 @@ func (s *containerSampler) readService(ctx context.Context, logicalName, service
 		s.ids[logicalName] = id
 		s.mu.Unlock()
 	}
-	stats, status, err := s.readStats(ctx, id)
+	stats, status, err := s.readStats(ctx, logicalName, id)
 	if status == http.StatusNotFound {
 		s.mu.Lock()
 		delete(s.ids, logicalName)
@@ -133,7 +144,7 @@ func (s *containerSampler) readService(ctx context.Context, logicalName, service
 var errNoContainer = errors.New("container not found")
 
 // findContainer returns the ID of the running container for a compose service.
-func (s *containerSampler) findContainer(ctx context.Context, service string) (string, error) {
+func (s *containerSampler) findContainer(ctx context.Context, logicalName, service string) (string, error) {
 	filters, err := json.Marshal(map[string][]string{"label": {
 		"com.docker.compose.service=" + service, "com.docker.compose.oneoff=False",
 	}})
@@ -144,7 +155,7 @@ func (s *containerSampler) findContainer(ctx context.Context, service string) (s
 	if err != nil {
 		return "", err
 	}
-	response, err := s.client.Do(request)
+	response, err := s.clients[logicalName].Do(request)
 	if err != nil {
 		return "", err
 	}
@@ -166,12 +177,12 @@ func (s *containerSampler) findContainer(ctx context.Context, service string) (s
 
 // readStats uses one-shot stats. In one-shot mode Docker does not fill the
 // previous-sample counters, so CPU must be computed from two of our own samples.
-func (s *containerSampler) readStats(ctx context.Context, id string) (dockerStats, int, error) {
+func (s *containerSampler) readStats(ctx context.Context, logicalName, id string) (dockerStats, int, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/containers/"+id+"/stats?stream=false&one-shot=true", nil)
 	if err != nil {
 		return dockerStats{}, 0, err
 	}
-	response, err := s.client.Do(request)
+	response, err := s.clients[logicalName].Do(request)
 	if err != nil {
 		return dockerStats{}, 0, err
 	}

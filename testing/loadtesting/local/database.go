@@ -51,6 +51,9 @@ func resetFixture(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	if _, err := tx.Exec(ctx, `TRUNCATE TABLE
 		orders.order_items,
 		orders.orders,
+		orders.order_tombstones,
+		orders.outbox,
+		orders.processed_messages,
 		orchestrator.checkout_attempts,
 		orchestrator.saga_steps,
 		orchestrator.sagas,
@@ -58,6 +61,14 @@ func resetFixture(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 		orchestrator.processed_messages,
 		inventory.reservation_items,
 		inventory.reservations,
+		inventory.outbox,
+		inventory.processed_messages,
+		payments.jobs,
+		payments.webhook_events,
+		payments.outbox,
+		payments.processed_messages,
+		payments.compensation_events,
+		payments.compensation_records,
 		payments.payment_attempts
 		RESTART IDENTITY CASCADE`); err != nil {
 		return nil, fmt.Errorf("truncate test rows: %w", err)
@@ -236,6 +247,7 @@ func checkInvariants(ctx context.Context, pool *pgxpool.Pool, client ClientMetri
 		{"paid reservations are confirmed", `SELECT count(*) FROM orders.orders o JOIN inventory.reservations r ON r.order_id=o.id WHERE o.status='PAID' AND r.status<>'CONFIRMED'`},
 		{"cancelled reservations are released", `SELECT count(*) FROM orders.orders o JOIN inventory.reservations r ON r.order_id=o.id WHERE o.status='CANCELLED' AND r.status<>'RELEASED'`},
 		{"unknown payments retain pending orders", `SELECT count(*) FROM payments.payment_attempts p JOIN orders.orders o ON o.id=p.order_id WHERE p.status='UNKNOWN' AND o.status<>'PENDING_PAYMENT'`},
+		{"payment amounts match order totals in paise", `SELECT count(*) FROM payments.payment_attempts p JOIN orders.orders o ON o.id=p.order_id WHERE p.amount_paise<>o.total_paise OR p.currency<>o.currency`},
 	}
 	results := make([]InvariantResult, 0, len(checks))
 	for _, check := range checks {

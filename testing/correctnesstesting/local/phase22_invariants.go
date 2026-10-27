@@ -17,6 +17,7 @@ func phase22() phaseDefinition {
 			{"paid reservations are confirmed", `SELECT count(*) FROM orders.orders o JOIN inventory.reservations r ON r.order_id=o.id WHERE o.status='PAID' AND r.status<>'CONFIRMED'`},
 			{"cancelled reservations are released", `SELECT count(*) FROM orders.orders o JOIN inventory.reservations r ON r.order_id=o.id WHERE o.status='CANCELLED' AND r.status<>'RELEASED'`},
 			{"unknown payments retain pending orders", `SELECT count(*) FROM payments.payment_attempts p JOIN orders.orders o ON o.id=p.order_id WHERE p.status='UNKNOWN' AND o.status<>'PENDING_PAYMENT'`},
+			{"payment amounts match order totals in paise", `SELECT count(*) FROM payments.payment_attempts p JOIN orders.orders o ON o.id=p.order_id WHERE p.amount_paise<>o.total_paise OR p.currency<>o.currency`},
 		}
 		for _, check := range checks {
 			violations := p.scalar(check.query)

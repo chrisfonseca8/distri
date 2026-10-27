@@ -12,11 +12,11 @@ page for your region before launching anything.
   growing backlog is not scaling. Say whether a number is peak or sustained.
 - Everything goes through the gateway SIMULATOR. Never real Razorpay in a load test.
   Simulator throughput is labelled "simulated dependency" in every result.
-- Webhooks: WEBHOOKS_DISABLED=true (simulator path) or a set secret. Never leave
-  it unset (the payment service now fails closed).
-- Neon free tier: 512 MB cap. Use a DISPOSABLE BRANCH, write down DB size before and
-  after each run, delete test data after. Warm the compute up before measuring
-  (it auto-suspends).
+- Webhooks use the simulator with a generated shared secret and
+  WEBHOOKS_DISABLED=false. Never use real gateway credentials.
+- Neon: use a DISPOSABLE BRANCH capped at the available 2 CU, write down DB size
+  before and after each run, and delete test data afterward. Warm the compute
+  before measuring because an autosuspended compute distorts the first samples.
 - Put EC2 in the SAME region as the Neon project (us-east-1 per the current URL).
   Cross-region latency would dominate every number (see reference metrics memory).
 - Do NOT run `go run ./cmd/migrate` or integration tests with a .env that points at
@@ -27,19 +27,26 @@ page for your region before launching anything.
 ======================================================================
 1. EC2 INSTANCES TO CREATE
 ======================================================================
-Start small (Stage 1), grow only when a measurement says a box is the limit.
+The fixed first staging topology is provisioned from deploy/cloud/terraform.
 
-STAGE 1 - minimum useful setup (2 instances)
-  #1 app-1        t3.medium (2 vCPU, 4 GB)     ~USD 0.042/h
-       Docker Compose: orchestrator, order, inventory, payment services,
-       gateway-simulator, RabbitMQ.  (Same layout as compose.local.yaml.)
-       Why one box first: gives a baseline with the fewest moving parts.
-  #2 loadgen-1    c6i.large (2 vCPU, 4 GB)     ~USD 0.085/h
-       Runs testing/baseline/baseline.py and any other generator.
-       Why separate: a load generator on the same box steals CPU from the
-       system under test and invalidates the result.
-  Database: Neon (existing project, disposable branch). No EC2 needed.
-  Rough cost: ~USD 0.13/h  => about USD 1 per 8-hour session, plus EBS + transfer.
+STAGE 1 - first staging baseline (6 instances)
+  #1 orchestrator-1 c7i.large (2 vCPU, 4 GiB), orchestrator only
+  #2 order-1        c7i.large (2 vCPU, 4 GiB), order service only
+  #3 inventory-1    c7i.large (2 vCPU, 4 GiB), inventory service only
+  #4 payment-1      c7i.large (2 vCPU, 4 GiB), payment service only
+       Each service host has an encrypted 30 GiB gp3 root volume at 3,000 IOPS
+       and 125 MiB/s. Separate hosts make the per-service bottleneck observable.
+  #5 broker-1     m7i.large (2 vCPU, 8 GiB)
+       RabbitMQ only. Encrypted 20 GiB gp3 root plus a retained encrypted
+       50 GiB gp3 data volume, both 3,000 IOPS and 125 MiB/s.
+  #6 loadgen-1    c7i.large (2 vCPU, 4 GiB)
+       Load generators and test coordination. Encrypted 40 GiB gp3 root.
+       Keeping generation off the four service hosts prevents generator CPU
+       from invalidating the application measurements.
+  Database: disposable Neon branch in the same region, autoscaling maximum 2 CU.
+  Network: single-AZ staging VPC; security-group-to-security-group access only
+  for app APIs, AMQP, simulator, and RabbitMQ metrics. See deploy/cloud/requirements.md.
+  Check current regional pricing before apply; no hourly estimate is assumed here.
 
 STAGE 2 - split the tiers (to find which tier limits throughput)
   #1 orchestrator   c6i.large       orchestrator-service only

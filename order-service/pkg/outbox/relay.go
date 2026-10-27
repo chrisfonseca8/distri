@@ -100,7 +100,7 @@ func NewRelay(store relayStore, messagePublisher publisher, config RelayConfig) 
 		store:     store,
 		publisher: messagePublisher,
 		config:    config,
-		workerID:  fmt.Sprintf("%s-%d", hostname, os.Getpid()),
+		workerID:  fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.New().String()[:8]),
 	}, nil
 }
 

@@ -1,0 +1,21 @@
+aws_region       = "us-east-1"
+availability_zone = "us-east-1a"
+
+# Your current public address only. Leave empty to use SSM exclusively.
+admin_cidr = "203.0.113.10/32"
+
+# Existing EC2 key pair. Required by the documented SSH Docker-socket tunnel.
+key_name = "distri-staging"
+
+service_instance_type = "c7i.large"
+broker_instance_type  = "m7i.large"
+loadgen_instance_type = "c7i.large"
+
+service_root_gib  = 30
+broker_root_gib   = 20
+broker_data_gib   = 50
+loadgen_root_gib  = 40
+
+# Optional; setting this creates forecasted 80% and actual 100% alerts.
+budget_alert_email = "you@example.com"
+monthly_budget_usd = 25

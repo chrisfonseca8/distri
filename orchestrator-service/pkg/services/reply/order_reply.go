@@ -15,6 +15,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/saga"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/telemetry"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -89,6 +90,7 @@ type Handler struct {
 	db           *gorm.DB
 	stepTimeout  time.Duration
 	sagaDeadline time.Duration
+	telemetry    *telemetry.Recorder
 }
 
 // HandlerOption customises a Handler.
@@ -99,6 +101,11 @@ type HandlerOption func(*Handler)
 // the sweeper would mark the saga STUCK again on its next pass.
 func WithSagaDeadline(deadline time.Duration) HandlerOption {
 	return func(h *Handler) { h.sagaDeadline = deadline }
+}
+
+// WithTelemetry records load-test timing without adding writes to the reply transaction.
+func WithTelemetry(recorder *telemetry.Recorder) HandlerOption {
+	return func(h *Handler) { h.telemetry = recorder }
 }
 
 // NewHandler creates the handler for replies from other services.
@@ -130,6 +137,7 @@ func (h *Handler) FailStep(ctx context.Context, orderID uuid.UUID, step messages
 
 // Handle applies one reply to its saga, once per message ID, ignoring replies for steps that are no longer active.
 func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error {
+	receivedAt := time.Now()
 	var reply messages.Reply
 	if err := json.Unmarshal(delivery.Body, &reply); err != nil {
 		return messaging.Permanent(fmt.Errorf("decode order reply: %w", err))
@@ -143,7 +151,11 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		return messaging.Permanent(errors.New("order reply AMQP MessageId is required"))
 	}
 
+	h.telemetry.Increment("reply_received")
+	var txStartedAt, txWorkFinishedAt, outboxCreatedAt time.Time
 	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txStartedAt = time.Now()
+		defer func() { txWorkFinishedAt = time.Now() }()
 		insertProcessed := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(
 			&models.ProcessedMessage{MessageID: messageID},
 		)
@@ -314,8 +326,11 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		}); err != nil {
 			return err
 		}
+		outboxCreatedAt = time.Now()
 		return nil
 	})
+	finishedAt := time.Now()
+	h.recordTiming(receivedAt, txStartedAt, outboxCreatedAt, txWorkFinishedAt, finishedAt, err)
 	if err == nil {
 		return nil
 	}
@@ -327,6 +342,30 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		return messaging.Permanent(wrapped)
 	}
 	return messaging.Transient(wrapped)
+}
+
+func (h *Handler) recordTiming(receivedAt, txStartedAt, outboxCreatedAt, txWorkFinishedAt, finishedAt time.Time, err error) {
+	if h.telemetry == nil || txStartedAt.IsZero() {
+		return
+	}
+	h.telemetry.Observe("reply_received_to_tx_started", txStartedAt.Sub(receivedAt))
+	if !txWorkFinishedAt.IsZero() {
+		h.telemetry.Observe("reply_transaction_work", txWorkFinishedAt.Sub(txStartedAt))
+		h.telemetry.Observe("reply_transaction_finalize", finishedAt.Sub(txWorkFinishedAt))
+	}
+	h.telemetry.Observe("reply_received_to_transaction_finished", finishedAt.Sub(receivedAt))
+	if !outboxCreatedAt.IsZero() {
+		h.telemetry.Increment("reply_outbox_created")
+		h.telemetry.Observe("reply_tx_started_to_outbox_created", outboxCreatedAt.Sub(txStartedAt))
+		if !txWorkFinishedAt.IsZero() {
+			h.telemetry.Observe("reply_outbox_created_to_tx_work_finished", txWorkFinishedAt.Sub(outboxCreatedAt))
+		}
+	}
+	if err == nil {
+		h.telemetry.Increment("reply_transaction_committed")
+	} else {
+		h.telemetry.Increment("reply_transaction_failed")
+	}
 }
 
 // finishedStepStatus maps a reply outcome to the saga step status.

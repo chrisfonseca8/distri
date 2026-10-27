@@ -144,6 +144,7 @@ type RunConfig struct {
 	Warmup               time.Duration `json:"warmup"`
 	Measurement          time.Duration `json:"measurement"`
 	DrainTimeout         time.Duration `json:"drain_timeout"`
+	StatusPollInterval   time.Duration `json:"status_poll_interval"`
 	SampleInterval       time.Duration `json:"sample_interval"`
 	MaxInFlight          int           `json:"max_in_flight"`
 	GatewayMode          string        `json:"gateway_mode"`

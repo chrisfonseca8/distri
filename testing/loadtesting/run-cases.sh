@@ -57,7 +57,7 @@ if [ -n "${DISTRI_REMOTE:-}" ]; then
   }
 
   restart_services() {
-    on_server "cd ~/distri && $(env_prefix)docker compose -f compose.cloud.yaml -f deploy/cloud/compose.publish-internal.yaml --env-file deploy/cloud/.env.cloud up -d --force-recreate --no-deps --wait $*" 2>&1 | grep -vE "^ ?Container .*(Creating|Created|Recreate|Starting|Waiting)" || true
+    on_server "cd ~/distri && $(env_prefix)docker compose -f compose.cloud.yaml --env-file deploy/cloud/.env.cloud up -d --force-recreate --no-deps --wait $*" 2>&1 | grep -vE "^ ?Container .*(Creating|Created|Recreate|Starting|Waiting)" || true
   }
 
   run_case() {

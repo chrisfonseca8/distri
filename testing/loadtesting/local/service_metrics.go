@@ -12,7 +12,7 @@ const serviceMetricsPath = "/debug/load-metrics"
 
 // serviceURLs returns the base URL of each service that exposes telemetry.
 func serviceURLs(cfg config) map[string]string {
-	return map[string]string{"order": cfg.OrderURL, "inventory": cfg.InventoryURL, "payment": cfg.PaymentURL}
+	return map[string]string{"order": cfg.OrderURL, "inventory": cfg.InventoryURL, "payment": cfg.PaymentURL, "orchestrator": cfg.OrchestratorURL}
 }
 
 // resetServiceMetrics clears the telemetry counters of every service before a run.
@@ -38,7 +38,7 @@ func resetServiceMetrics(ctx context.Context, cfg config) error {
 // fetchServiceMetrics reads the telemetry of every service after a run.
 func fetchServiceMetrics(ctx context.Context, cfg config, containers map[string]ContainerMetrics) (map[string]ServiceMetrics, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
-	results := make(map[string]ServiceMetrics, 3)
+	results := make(map[string]ServiceMetrics, 4)
 	for name, baseURL := range serviceURLs(cfg) {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+serviceMetricsPath, nil)
 		if err != nil {

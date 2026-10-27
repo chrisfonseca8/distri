@@ -1,69 +1,196 @@
-# Cloud load-test deployment (Docker Hub → one EC2 host, Neon test database)
+# First staging deployment
 
-Everything runs on one EC2 host: the three services and the load-test runner,
-against the **test** Neon database only. The runner truncates tables and resets
-inventory, so it refuses to start unless `LOAD_TEST_ALLOWED_DB_HOST` equals the
-database host it was given.
+This package creates and runs the fixed first-staging topology described in
+[`requirements.md`](requirements.md): four separate application-service EC2
+hosts, one RabbitMQ EC2 host, one load-generator/simulator EC2 host, and a
+disposable Neon branch capped at 2 CU. It is a single-AZ test environment, not
+production HA.
 
-## 1. Docker Hub (once)
+Nothing in this directory applies infrastructure automatically. Review the plan
+and current AWS pricing before running `terraform apply`.
 
-1. Create a **private** repository, e.g. `ungoodcoder/distri`. One repository holds all
-   four images as tags (`order-service-<tag>`, `inventory-service-<tag>`,
-   `payment-service-<tag>`, `loadgen-<tag>`); the free plan allows one private
-   repository.
-2. Create a **read-only access token** for the EC2 host. Do not share it in chat.
+## 1. Prerequisites
 
-## 2. On your machine
+- AWS CLI credentials and Terraform 1.6+
+- a private container repository and read-only pull credentials for the hosts
+- a disposable Neon branch in the same AWS region, using its direct TLS URL
+- an EC2 key pair if using the remote Docker metrics tunnel
+- `DATABASE_TEST_URL` in the repository `.env` pointing only to that branch
 
-```sh
-deploy/cloud/make-env.sh ungoodcoder/distri 2026-10-19      # writes deploy/cloud/.env.cloud (mode 600, git-ignored)
-CONFIRM_PUSH=yes deploy/cloud/build-push.sh ungoodcoder/distri 2026-10-19
-```
-
-Without `CONFIRM_PUSH=yes` the push script only prints what it would push.
-
-## 3. Security group (from the ports discussion)
-
-Inbound 22/tcp from your IP only. Port 8080 only if you call the order API from
-outside; the runner uses the private Docker network. Never open 8081 or 8082.
-Outbound: the default (Neon on 5432, Docker Hub on 443).
-
-## 4. EC2 host (x86_64, non-burstable, Docker Engine + Compose plugin)
+## 2. Review and provision
 
 ```sh
-docker login -u ungoodcoder                 # paste the read-only token
-mkdir -p ~/distri/deploy/cloud ~/distri/testing/loadtesting ~/distri/test-results
+cd deploy/cloud/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars: region/AZ, your /32 admin CIDR, key name, budget email.
+terraform init
+terraform fmt -check
+terraform validate
+terraform plan -out=staging.tfplan
+# Stop here and review the plan before any AWS creation.
+terraform apply staging.tfplan
+terraform output
 ```
 
-From your machine, copy only what is needed (no source code):
+The defaults provision:
+
+| Host | Type | Root gp3 | Additional storage |
+|---|---|---:|---:|
+| orchestrator | `c7i.large` (2 vCPU, 4 GiB) | 30 GiB | — |
+| order | `c7i.large` (2 vCPU, 4 GiB) | 30 GiB | — |
+| inventory | `c7i.large` (2 vCPU, 4 GiB) | 30 GiB | — |
+| payment | `c7i.large` (2 vCPU, 4 GiB) | 30 GiB | — |
+| broker | `m7i.large` (2 vCPU, 8 GiB) | 20 GiB | 50 GiB RabbitMQ gp3 |
+| loadgen | `c7i.large` (2 vCPU, 4 GiB) | 40 GiB | — |
+
+All volumes are encrypted gp3 at 3,000 IOPS and 125 MiB/s. The separate broker
+volume has `prevent_destroy`; removing the stack requires an explicit retention
+decision and Terraform change for that volume.
+
+## 3. Build the immutable images
+
+Six tags are used: order, inventory, payment, orchestrator, gateway simulator,
+and load generator. The command is a dry run unless explicitly confirmed.
 
 ```sh
-scp -i <key>.pem compose.cloud.yaml                       ec2-user@<ip>:~/distri/
-scp -i <key>.pem deploy/cloud/.env.cloud                  ec2-user@<ip>:~/distri/deploy/cloud/
-scp -i <key>.pem testing/loadtesting/run-cases.sh         ec2-user@<ip>:~/distri/testing/loadtesting/
+deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
+CONFIRM_PUSH=yes deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
 ```
 
-## 5. First run, on the host (in `~/distri`)
+Never configure real Razorpay credentials for a load test. The payment service
+uses the dedicated simulator host through its Razorpay-compatible API.
+
+## 4. Generate host configuration
+
+Use the private addresses shown by `terraform output`:
 
 ```sh
-export DISTRI_ENV="--env-file deploy/cloud/.env.cloud"
-docker compose -f compose.cloud.yaml $DISTRI_ENV pull
-docker compose -f compose.cloud.yaml $DISTRI_ENV --profile migrate run --rm inventory-migrate
-docker compose -f compose.cloud.yaml $DISTRI_ENV --profile migrate run --rm payment-migrate
-docker compose -f compose.cloud.yaml $DISTRI_ENV --profile migrate run --rm order-migrate
-docker compose -f compose.cloud.yaml $DISTRI_ENV --profile migrate run --rm inventory-seed
-docker compose -f compose.cloud.yaml $DISTRI_ENV up -d --wait
+deploy/cloud/make-env.sh your-account/distri <image-tag> \
+  <orchestrator-ip> <order-ip> <inventory-ip> <payment-ip> <broker-ip> <loadgen-ip>
 ```
 
-Warm the Neon compute (it scales to zero), then run the cases with the same script
-used locally:
+This creates three mode-600, git-ignored files: `.env.cloud`, `.env.broker`, and
+`.env.loadgen`. It generates shared broker/simulator secrets and does not print
+them. `.env.cloud` is the shared application-host configuration; `.env.broker`
+and `.env.loadgen` belong only on their corresponding hosts.
+
+## 5. Copy deployment files
+
+The bootstrap creates `/home/ec2-user/distri` on every host. Log in to the
+private container repository on each host, then copy:
+
+```text
+each service host: compose.cloud.yaml, deploy/cloud/.env.cloud
+broker:  deploy/cloud/compose.broker.yaml, deploy/cloud/.env.broker
+loadgen: deploy/cloud/compose.loadgen.yaml, deploy/cloud/compose.simulator.yaml,
+         deploy/cloud/.env.loadgen, testing/loadtesting/run-cases.sh, test-results/
+```
+
+Keep the same repository-relative paths under `~/distri`; the load result mount
+depends on them. SSM Session Manager commands are included in Terraform output.
+
+## 6. Start in dependency order
+
+On the broker host:
 
 ```sh
-export DISTRI_COMPOSE_FILE=compose.cloud.yaml DISTRI_ENV_FILE=deploy/cloud/.env.cloud
-export LOADTEST_SERVICE=loadtest LOADTEST_PROFILE=loadtest
-testing/loadtesting/run-cases.sh c10        # also c11, c12, c13 [latency...], c14 [latency] [size...]
+cd ~/distri
+docker compose --env-file deploy/cloud/.env.broker -f deploy/cloud/compose.broker.yaml pull
+docker compose --env-file deploy/cloud/.env.broker -f deploy/cloud/compose.broker.yaml up -d --wait
 ```
 
-Results are written to `~/distri/test-results/load-test/load-test.md` and `.json`;
-copy them back with `scp`. Record the Neon database size before and after (the
-report does), and stop or terminate the instance when finished.
+On the load-generator host, start the simulator before the app:
+
+```sh
+cd ~/distri
+docker compose --env-file deploy/cloud/.env.loadgen -f deploy/cloud/compose.simulator.yaml pull
+docker compose --env-file deploy/cloud/.env.loadgen -f deploy/cloud/compose.simulator.yaml up -d --wait
+```
+
+On each service host, pull the same immutable image set. Run only that host's
+migration and service. For example, use the corresponding pair below:
+
+```sh
+cd ~/distri
+export SERVICE_COMPOSE='docker compose --env-file deploy/cloud/.env.cloud -f compose.cloud.yaml'
+$SERVICE_COMPOSE pull
+
+# Orchestrator host
+$SERVICE_COMPOSE --profile migrate run --rm orchestrator-migrate
+$SERVICE_COMPOSE up -d --wait orchestrator
+
+# Order host
+$SERVICE_COMPOSE --profile migrate run --rm order-migrate
+$SERVICE_COMPOSE up -d --wait order-service
+
+# Inventory host
+$SERVICE_COMPOSE --profile migrate run --rm inventory-migrate
+$SERVICE_COMPOSE --profile migrate run --rm inventory-seed
+$SERVICE_COMPOSE up -d --wait inventory-service
+
+# Payment host
+$SERVICE_COMPOSE --profile migrate run --rm payment-migrate
+$SERVICE_COMPOSE up -d --wait payment-service
+```
+
+## 7. Enable application-container sampling
+
+The runner samples all four application containers through four SSH-forwarded
+Unix sockets. On the load-generator host, create the directory and one tunnel
+to each service host:
+
+```sh
+mkdir -p /home/ec2-user/sockets
+rm -f /home/ec2-user/sockets/*.sock
+ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-user/sockets/orchestrator.sock:/var/run/docker.sock ec2-user@<orchestrator-ip>
+ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-user/sockets/order.sock:/var/run/docker.sock ec2-user@<order-ip>
+ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-user/sockets/inventory.sock:/var/run/docker.sock ec2-user@<inventory-ip>
+ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-user/sockets/payment.sock:/var/run/docker.sock ec2-user@<payment-ip>
+```
+
+Run it under a supervised systemd unit for long tests. Do not expose the Docker
+TCP API: access to this socket is effectively root access to the app host.
+
+## 8. Preflight and first test
+
+Warm Neon with throwaway requests, then verify all hosts and configuration:
+
+```sh
+cd ~/distri
+docker compose --env-file deploy/cloud/.env.loadgen -f deploy/cloud/compose.loadgen.yaml --profile loadtest config --quiet
+curl -fsS http://<order-private-ip>:8080/health
+curl -fsS http://<orchestrator-private-ip>:8083/readyz
+curl -fsS http://127.0.0.1:9090/healthz
+test -S /home/ec2-user/sockets/order.sock
+test -S /home/ec2-user/sockets/inventory.sock
+test -S /home/ec2-user/sockets/payment.sock
+test -S /home/ec2-user/sockets/orchestrator.sock
+```
+
+Run C1 from the separate load-generator host:
+
+```sh
+docker compose --env-file deploy/cloud/.env.loadgen \
+  -f deploy/cloud/compose.loadgen.yaml --profile loadtest run --rm loadtest
+```
+
+The runner has an unscoped database URL because it resets fixtures and performs
+the audit. Its hostname allow-list must match the Neon host exactly. Run phase 22
+after every correctness or load run:
+
+```sh
+PHASES=22 docker compose --env-file deploy/cloud/.env.loadgen \
+  -f deploy/cloud/compose.loadgen.yaml --profile correctness run --rm correctness
+```
+
+Capture app, broker, loadgen, and Neon metrics with each result.
+
+## 9. Stop and cost control
+
+Stop containers immediately after a session and stop or terminate EC2 instances.
+Elastic IPs and EBS volumes can still incur cost while instances are stopped.
+The optional Terraform budget sends forecasted 80% and actual 100% notifications;
+it does not stop resources automatically.
+
+Before `terraform destroy`, decide whether to snapshot/retain RabbitMQ data. The
+50 GiB data volume is protected by `prevent_destroy` on purpose.

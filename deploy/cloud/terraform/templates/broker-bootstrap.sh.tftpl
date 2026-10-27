@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+dnf update -y
+dnf install -y docker git jq xfsprogs
+systemctl enable --now docker
+systemctl enable --now amazon-ssm-agent
+usermod -aG docker ec2-user
+
+install -d -m 0755 /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+
+device="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_id_nodash}"
+for _ in $(seq 1 180); do
+  [ -b "$device" ] && break
+  sleep 2
+done
+[ -b "$device" ] || { echo "RabbitMQ EBS device not attached: $device" >&2; exit 1; }
+
+if ! blkid "$device" >/dev/null 2>&1; then
+  mkfs.xfs "$device"
+fi
+uuid=$(blkid -s UUID -o value "$device")
+install -d -m 0755 /data/rabbitmq
+grep -q "UUID=$uuid" /etc/fstab || echo "UUID=$uuid /data/rabbitmq xfs defaults,nofail 0 2" >> /etc/fstab
+mountpoint -q /data/rabbitmq || mount /data/rabbitmq
+chown 999:999 /data/rabbitmq
+
+install -d -o ec2-user -g ec2-user /home/ec2-user/distri

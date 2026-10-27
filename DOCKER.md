@@ -2,8 +2,9 @@
 
 ## Local environment
 
-The local stack starts PostgreSQL, runs all schema migrations, seeds the
-inventory schema, and then starts the three APIs. Payment data is never seeded.
+The local stack starts PostgreSQL and RabbitMQ, runs all schema migrations,
+seeds inventory, and then starts the order, inventory, payment, and orchestrator
+services. Payment data is never seeded.
 
 ```bash
 docker compose -f compose.local.yaml up --build --wait
@@ -14,6 +15,7 @@ Endpoints:
 - Order API: `http://localhost:8080`
 - Inventory API: `http://localhost:8081`
 - Payment API: `http://localhost:8082`
+- Orchestrator API: `http://localhost:8083`
 - PostgreSQL: `localhost:5432` (`distri` / `distri`, database `distri`)
 
 The migration containers and the inventory seed container are expected to exit
@@ -47,13 +49,13 @@ The load generator is an opt-in Compose profile and reaches the Order Service
 through the private Compose network at `http://order-service:8080`. It is not
 started during normal local development.
 
-Every correctness or load-test run starts with a fresh PostgreSQL volume:
+The load generator is an opt-in Compose profile. The runner resets its own
+fixture tables before every measured run, so use only this disposable local
+database:
 
 ```bash
-docker compose -f compose.local.yaml down --volumes
 docker compose -f compose.local.yaml up --build --wait
-docker compose -f compose.local.yaml --profile loadtest build loadgen
-docker compose -f compose.local.yaml --profile loadtest run --rm --no-deps loadgen
+testing/loadtesting/run-cases.sh c1
 ```
 
 After collecting the result, remove the test database:
@@ -62,10 +64,8 @@ After collecting the result, remove the test database:
 docker compose -f compose.local.yaml down --volumes
 ```
 
-The loadgen binary is currently only a containerized stub. The next step is to
-implement its checkout workload, completion polling, latency histograms, error
-counts, and open-loop/closed-loop modes. `ORDER_URL` is already wired so that
-the workload code will not need Docker-specific addressing.
+The runner writes Markdown and JSON reports under `test-results/`. See
+`testing/loadtesting/README.md` for the case catalogue and metric definitions.
 
 ## Local correctness suite
 
@@ -91,38 +91,20 @@ request/error counts, duration, and HTTP latency min/mean/p50/p95/p99/max.
 Outcome-specific phases can be selected by rebuilding the fresh stack with
 `GATEWAY_MODE=success`, `decline`, or `timeout`.
 
-## Production environment
+## Deployment Compose files
 
-Production Compose does not run PostgreSQL and does not seed data. Supply
-immutable service images and externally managed PostgreSQL URLs:
+`compose.prod.yaml` predates the orchestrator cutover and is retained only as a
+historical reference; do not deploy it as the current system. The maintained
+multi-host staging definition is `compose.cloud.yaml` together with the files
+under `deploy/cloud/`. Follow `deploy/cloud/README.md`, supply immutable images,
+and use only externally managed test databases for load testing.
 
-```bash
-export ORDER_SERVICE_IMAGE=registry.example.com/distri/order-service:1.0.0
-export INVENTORY_SERVICE_IMAGE=registry.example.com/distri/inventory-service:1.0.0
-export PAYMENT_SERVICE_IMAGE=registry.example.com/distri/payment-service:1.0.0
-
-export ORDER_DATABASE_URL='postgres://.../distri?sslmode=require&search_path=orders'
-export INVENTORY_DATABASE_URL='postgres://.../distri?sslmode=require&search_path=inventory'
-export PAYMENT_DATABASE_URL='postgres://.../distri?sslmode=require&search_path=payments'
-```
-
-Run migrations as a separate deployment step:
+For example, cloud service images are built with:
 
 ```bash
-docker compose -f compose.prod.yaml --profile migrate run --rm inventory-migrate
-docker compose -f compose.prod.yaml --profile migrate run --rm payment-migrate
-docker compose -f compose.prod.yaml --profile migrate run --rm order-migrate
+deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
 ```
 
-Then start the APIs:
-
-```bash
-docker compose -f compose.prod.yaml up -d --wait
-```
-
-Only the Order API is published to the host. Inventory and Payment stay on the
-private Compose network and are reached by their service names.
-
-The current payment implementation uses the simulator in every environment.
-Set `GATEWAY_MODE` and `GATEWAY_LATENCY` explicitly for controlled deployments;
-do not interpret simulator load-test results as real gateway capacity.
+The command is a dry run unless `CONFIRM_PUSH=yes` is explicitly supplied.
+Never interpret gateway-simulator measurements as real payment-provider
+capacity.

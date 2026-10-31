@@ -67,9 +67,14 @@ func (c SagaConfig) validate() error {
 // stock or touches payments: STUCK is a hand-off to an operator, and a late
 // reply for the current step can still move the saga on.
 type SagaSweeper struct {
-	db     *gorm.DB
-	config SagaConfig
-	failer StepFailer
+	db       *gorm.DB
+	config   SagaConfig
+	failer   StepFailer
+	notifier statusNotifier
+}
+
+type statusNotifier interface {
+	Notify(orderID string)
 }
 
 // StepFailer fails a saga step on behalf of the sweeper so the saga compensates.
@@ -87,6 +92,11 @@ type SagaOption func(*SagaSweeper)
 // decides what happened to the money.
 func WithStepFailer(failer StepFailer) SagaOption {
 	return func(s *SagaSweeper) { s.failer = failer }
+}
+
+// WithStatusNotifier publishes committed sweeper transitions to SSE subscribers.
+func WithStatusNotifier(notifier statusNotifier) SagaOption {
+	return func(s *SagaSweeper) { s.notifier = notifier }
 }
 
 // failsBeforePayment reports whether step can be compensated automatically.
@@ -239,6 +249,9 @@ WHERE id = ? AND status = 'STUCK' AND version = ?`, now.Add(s.config.Deadline), 
 		return false, err
 	}
 	if found {
+		if s.notifier != nil {
+			s.notifier.Notify(sagaID.String())
+		}
 		slog.Warn("saga stuck on an undo step: retrying automatically",
 			"saga_id", sagaID, "step", step, "revive", tries, "max_revives", s.config.UndoMaxRevives)
 	}
@@ -338,6 +351,9 @@ VALUES (?, 'REFUND_PAYMENT', 'RUNNING', 1, ?, ?, ?::jsonb, ?, ?, ?)`,
 		return false, err
 	}
 	if found {
+		if s.notifier != nil {
+			s.notifier.Notify(sagaID.String())
+		}
 		slog.Warn("saga stuck after payment: refunding the payment and unwinding the checkout",
 			"saga_id", sagaID, "stuck_step", stuckStep, "stuck_for_at_least", s.config.StuckRefundAfter)
 	}
@@ -427,6 +443,9 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 				return err
 			}
 			afterCommit = func() {
+				if s.notifier != nil {
+					s.notifier.Notify(step.SagaID.String())
+				}
 				slog.Error(
 					"saga STUCK: step has no stored command to resend",
 					"saga_id", step.SagaID,
@@ -442,6 +461,9 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 				return err
 			}
 			afterCommit = func() {
+				if s.notifier != nil {
+					s.notifier.Notify(step.SagaID.String())
+				}
 				slog.Error(
 					"saga STUCK: step exhausted its attempts",
 					"saga_id", step.SagaID,
@@ -567,6 +589,9 @@ func (s *SagaSweeper) markExpiredSagasStuck(ctx context.Context) error {
 		return fmt.Errorf("mark expired sagas stuck: %w", err)
 	}
 	for _, row := range expired {
+		if s.notifier != nil {
+			s.notifier.Notify(row.ID.String())
+		}
 		slog.Error(
 			"saga STUCK: deadline passed",
 			"saga_id", row.ID,

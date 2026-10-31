@@ -145,6 +145,7 @@ type RunConfig struct {
 	Measurement          time.Duration `json:"measurement"`
 	DrainTimeout         time.Duration `json:"drain_timeout"`
 	StatusPollInterval   time.Duration `json:"status_poll_interval"`
+	CompletionMode       string        `json:"completion_mode"`
 	SampleInterval       time.Duration `json:"sample_interval"`
 	MaxInFlight          int           `json:"max_in_flight"`
 	GatewayMode          string        `json:"gateway_mode"`
@@ -164,28 +165,40 @@ type HardwareInfo struct {
 }
 
 type ClientMetrics struct {
-	Offered           int64            `json:"offered"`
-	OfferedRate       float64          `json:"offered_rate_per_second"`
-	Accepted          int64            `json:"accepted"`
-	AcceptedRate      float64          `json:"accepted_per_second"`
-	Completed         int64            `json:"completed"`
-	CompletedRate     float64          `json:"completed_orders_per_second"`
-	Paid              int64            `json:"paid"`
-	Cancelled         int64            `json:"cancelled"`
-	PendingAtDrain    int64            `json:"pending_at_drain"`
-	CheckoutLatency   LatencySummary   `json:"checkout_latency"`
-	PayLatency        LatencySummary   `json:"pay_latency"`
-	EndToEndLatency   LatencySummary   `json:"end_to_end_latency"`
-	CheckoutStatusMix StatusMix        `json:"checkout_status_mix"`
-	PayStatusMix      StatusMix        `json:"pay_status_mix"`
-	InFlight          InFlightSummary  `json:"in_flight"`
-	LittleLaw         LittleLawCheck   `json:"little_law"`
-	Duplicate         DuplicateMetrics `json:"duplicate,omitempty"`
+	Offered         int64          `json:"offered"`
+	OfferedRate     float64        `json:"offered_rate_per_second"`
+	Accepted        int64          `json:"accepted"`
+	AcceptedRate    float64        `json:"accepted_per_second"`
+	Completed       int64          `json:"completed"`
+	CompletedRate   float64        `json:"completed_orders_per_second"`
+	Paid            int64          `json:"paid"`
+	Cancelled       int64          `json:"cancelled"`
+	PendingAtDrain  int64          `json:"pending_at_drain"`
+	CheckoutLatency LatencySummary `json:"checkout_latency"`
+	PayLatency      LatencySummary `json:"pay_latency"`
+	EndToEndLatency LatencySummary `json:"end_to_end_latency"`
+	// ServerCompletionLatency measures terminal saga updated_at-created_at. Unlike
+	// EndToEndLatency it excludes client polling and HTTP observation delay.
+	ServerCompletionLatency LatencySummary    `json:"server_completion_latency"`
+	CompletionObservation   CompletionMetrics `json:"completion_observation"`
+	CheckoutStatusMix       StatusMix         `json:"checkout_status_mix"`
+	PayStatusMix            StatusMix         `json:"pay_status_mix"`
+	InFlight                InFlightSummary   `json:"in_flight"`
+	LittleLaw               LittleLawCheck    `json:"little_law"`
+	Duplicate               DuplicateMetrics  `json:"duplicate,omitempty"`
 	// RunnerCPUPercent and RunnerMemoryBytes describe the load generator itself
 	// (percent of one core over the measured window; cgroup memory at the end), so a
 	// saturated generator is visible instead of being mistaken for server limits.
 	RunnerCPUPercent  *float64 `json:"runner_cpu_percent,omitempty"`
 	RunnerMemoryBytes *uint64  `json:"runner_memory_bytes,omitempty"`
+}
+
+// CompletionMetrics proves whether an SSE-configured run actually observed
+// terminal events over streams or had to recover through status polling.
+type CompletionMetrics struct {
+	SSEAttempts       int64 `json:"sse_attempts"`
+	SSETerminalEvents int64 `json:"sse_terminal_events"`
+	PollingFallbacks  int64 `json:"polling_fallbacks"`
 }
 
 type DuplicateMetrics struct {

@@ -6,6 +6,7 @@ import (
 )
 
 func TestLoadRabbitMQConfigDefaultsConsumerConcurrency(t *testing.T) {
+	isolateRabbitMQConfigTest(t)
 	t.Setenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 	t.Setenv("ORDER_CONSUMER_CONCURRENCY", "")
 
@@ -19,6 +20,7 @@ func TestLoadRabbitMQConfigDefaultsConsumerConcurrency(t *testing.T) {
 }
 
 func TestLoadRabbitMQConfigReadsConsumerConcurrency(t *testing.T) {
+	isolateRabbitMQConfigTest(t)
 	t.Setenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 	t.Setenv("ORDER_CONSUMER_CONCURRENCY", "3")
 
@@ -34,6 +36,7 @@ func TestLoadRabbitMQConfigReadsConsumerConcurrency(t *testing.T) {
 func TestLoadRabbitMQConfigRejectsInvalidConsumerConcurrency(t *testing.T) {
 	for _, value := range []string{"0", "-1", "not-a-number"} {
 		t.Run(value, func(t *testing.T) {
+			isolateRabbitMQConfigTest(t)
 			t.Setenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 			t.Setenv("ORDER_CONSUMER_CONCURRENCY", value)
 
@@ -42,5 +45,21 @@ func TestLoadRabbitMQConfigRejectsInvalidConsumerConcurrency(t *testing.T) {
 				t.Fatalf("LoadRabbitMQConfig() error = %v", err)
 			}
 		})
+	}
+}
+
+func isolateRabbitMQConfigTest(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	for _, name := range []string{
+		"RABBITMQ_URL",
+		"ORDER_CONSUMER_CONCURRENCY",
+		"ORDER_CONSUMER_MAX_CONCURRENCY",
+		"ORDER_CONSUMER_SCALE_INTERVAL",
+		"ORDER_CONSUMER_SCALE_DEPTH_PER_WORKER",
+		"ORDER_CONSUMER_SCALE_DOWN_AFTER",
+		"CONSUMER_MAX_ATTEMPTS",
+	} {
+		t.Setenv(name, "")
 	}
 }

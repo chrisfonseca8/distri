@@ -23,6 +23,8 @@ Every run must include:
 | Checkout latency | min, mean, p50, p95, p99, and max for `POST /v1/checkouts` on the orchestrator. |
 | Pay latency | Retired in OR9: the orchestrator takes the payment itself, so there is no pay call and this column is always empty. |
 | End-to-end latency | Checkout start until the saga is `COMPLETED` or `COMPENSATED`. |
+| Server completion latency | Persisted saga `updated_at - created_at`, excluding client observation delay. |
+| Completion observation | Polling interval, or SSE attempts/terminal events/polling fallbacks. |
 | Status mix | Separate counts for each HTTP status, business conflicts, 5xx, transport errors, and decode errors. |
 | In-flight | Maximum and time-weighted mean active requests/workflows. |
 
@@ -71,6 +73,11 @@ Each experiment has four periods:
 
 Use a fresh database for each experiment. Change only one capacity variable at
 a time and give every run a stable label.
+
+Set `LOAD_COMPLETION_MODE=sse` to observe completion through
+`GET /v1/checkouts/{order_id}/events`. The default remains `poll` for historical
+comparisons. An SSE run retries a broken stream twice, then records and uses a
+polling fallback; the generated report exposes all three counts.
 
 ## Little's law check
 

@@ -37,11 +37,34 @@ variable "admin_cidr" {
   }
 }
 
+variable "additional_admin_cidrs" {
+  description = "Additional trusted administrator CIDRs for connections that use more than one egress address."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.additional_admin_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "Every additional_admin_cidrs entry must be a valid CIDR."
+  }
+}
+
 variable "key_name" {
   description = "Optional existing EC2 key-pair name. Required for the SSH Docker-socket tunnel."
   type        = string
   default     = null
   nullable    = true
+}
+
+variable "create_instance_profile" {
+  description = "Create and attach the SSM instance profile. Disable when the provisioning principal has EC2 access but no IAM permissions."
+  type        = bool
+  default     = true
+}
+
+variable "create_elastic_ips" {
+  description = "Allocate stable public IPv4 addresses. Disable when the regional EIP quota is lower than the six-host topology."
+  type        = bool
+  default     = true
 }
 
 variable "service_instance_type" {

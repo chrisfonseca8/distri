@@ -23,6 +23,9 @@ PY
 
 participant_admin_url="$(read_url PARTICIPANT_NEON_ADMIN_URL)"
 orchestrator_admin_url="$(read_url ORCHESTRATOR_NEON_ADMIN_URL)"
+if [ "${USE_SINGLE_NEON_ADMIN_URL:-}" = "yes" ]; then
+  participant_admin_url="$orchestrator_admin_url"
+fi
 order_password="$(openssl rand -hex 24)"
 inventory_password="$(openssl rand -hex 24)"
 payment_password="$(openssl rand -hex 24)"

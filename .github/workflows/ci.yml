@@ -35,4 +35,57 @@ jobs:
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
+
+  integration:
+    # Runs every database-gated integration test (the RUN_*_INTEGRATION flags) against
+    # a throwaway *_test database. The helper refuses any database not named *_test.
+    name: Go integration tests (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: distri
+          POSTGRES_PASSWORD: distri
+          POSTGRES_DB: distri_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U distri -d distri_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DB_URL: postgres://distri:distri@127.0.0.1:5432/distri_test?sslmode=disable
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: orchestrator-service/go.mod
+          cache-dependency-path: |
+            orchestrator-service/go.sum
+            order-service/go.sum
+            inventory-service/go.sum
+            payment-service/go.sum
+
+      - name: Migrate each service schema
+        run: |
+          for pair in order-service:orders inventory-service:inventory payment-service:payments orchestrator-service:orchestrator; do
+            svc=${pair%%:*}; schema=${pair##*:}
+            (cd "$svc" && go build -o "/tmp/migrate-$svc" ./cmd/migrate)
+            (cd "$(mktemp -d)" && DATABASE_TEST_URL="$TEST_DB_URL&search_path=$schema" "/tmp/migrate-$svc")
+          done
+
+      - name: Integration tests (race detector on)
+        run: testing/run-integration.sh
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: test-results/local/integration

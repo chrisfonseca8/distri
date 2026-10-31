@@ -30,6 +30,7 @@ type config struct {
 	DrainTimeout    time.Duration
 	WorkflowTimeout time.Duration
 	StatusPollEvery time.Duration
+	CompletionMode  string
 	SampleEvery     time.Duration
 	Behavior        string
 	DBPoolSize      int
@@ -77,7 +78,10 @@ func loadConfig() (config, error) {
 		CaseName: strings.ToUpper(env("LOAD_CASE", "C1")), OrderURL: strings.TrimRight(env("ORDER_URL", "http://127.0.0.1:8080"), "/"), OrchestratorURL: strings.TrimRight(env("ORCHESTRATOR_URL", "http://127.0.0.1:8083"), "/"),
 		InventoryURL: strings.TrimRight(env("INVENTORY_URL", "http://127.0.0.1:8081"), "/"), PaymentURL: strings.TrimRight(env("PAYMENT_URL", "http://127.0.0.1:8082"), "/"),
 		DatabaseURL: os.Getenv("DATABASE_URL"), ResultsDir: env("RESULTS_DIR", "test-results/load-test"),
-		GatewayMode: env("GATEWAY_MODE", "success"), DrainTimeout: 15 * time.Second, WorkflowTimeout: 15 * time.Second, StatusPollEvery: 100 * time.Millisecond, SampleEvery: 500 * time.Millisecond, Workload: "uniform",
+		GatewayMode: env("GATEWAY_MODE", "success"), DrainTimeout: 15 * time.Second, WorkflowTimeout: 15 * time.Second, StatusPollEvery: 100 * time.Millisecond, CompletionMode: strings.ToLower(env("LOAD_COMPLETION_MODE", "poll")), SampleEvery: 500 * time.Millisecond, Workload: "uniform",
+	}
+	if c.CompletionMode != "poll" && c.CompletionMode != "sse" {
+		return c, fmt.Errorf("LOAD_COMPLETION_MODE must be poll or sse")
 	}
 	var err error
 	c.GatewayLatency, err = time.ParseDuration(env("GATEWAY_LATENCY", "200ms"))

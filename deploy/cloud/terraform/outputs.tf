@@ -3,7 +3,7 @@ output "services" {
     for name, instance in aws_instance.service : name => {
       instance_id = instance.id
       private_ip  = instance.private_ip
-      public_ip   = aws_eip.service[name].public_ip
+      public_ip   = var.create_elastic_ips ? aws_eip.service[name].public_ip : instance.public_ip
     }
   }
 }
@@ -12,7 +12,7 @@ output "broker" {
   value = {
     instance_id = aws_instance.broker.id
     private_ip  = aws_instance.broker.private_ip
-    public_ip   = aws_eip.broker.public_ip
+    public_ip   = var.create_elastic_ips ? aws_eip.broker[0].public_ip : aws_instance.broker.public_ip
     data_volume = aws_ebs_volume.rabbitmq_data.id
   }
 }
@@ -21,7 +21,7 @@ output "loadgen" {
   value = {
     instance_id = aws_instance.loadgen.id
     private_ip  = aws_instance.loadgen.private_ip
-    public_ip   = aws_eip.loadgen.public_ip
+    public_ip   = var.create_elastic_ips ? aws_eip.loadgen[0].public_ip : aws_instance.loadgen.public_ip
   }
 }
 

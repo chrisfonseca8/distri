@@ -91,6 +91,11 @@ type Handler struct {
 	stepTimeout  time.Duration
 	sagaDeadline time.Duration
 	telemetry    *telemetry.Recorder
+	notifier     statusNotifier
+}
+
+type statusNotifier interface {
+	Notify(orderID string)
 }
 
 // HandlerOption customises a Handler.
@@ -106,6 +111,11 @@ func WithSagaDeadline(deadline time.Duration) HandlerOption {
 // WithTelemetry records load-test timing without adding writes to the reply transaction.
 func WithTelemetry(recorder *telemetry.Recorder) HandlerOption {
 	return func(h *Handler) { h.telemetry = recorder }
+}
+
+// WithStatusNotifier publishes committed saga changes to local SSE subscribers.
+func WithStatusNotifier(notifier statusNotifier) HandlerOption {
+	return func(h *Handler) { h.notifier = notifier }
 }
 
 // NewHandler creates the handler for replies from other services.
@@ -153,6 +163,7 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 
 	h.telemetry.Increment("reply_received")
 	var txStartedAt, txWorkFinishedAt, outboxCreatedAt time.Time
+	var stateChanged bool
 	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txStartedAt = time.Now()
 		defer func() { txWorkFinishedAt = time.Now() }()
@@ -173,6 +184,36 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			Take(&sagaRow)
 		if loadSaga.Error != nil {
 			return fmt.Errorf("load order reply saga: %w", loadSaga.Error)
+		}
+
+		// A payment reported as successful after compensation started is not an
+		// ordinary stale reply: the customer may have been charged while the order
+		// and reservation are being cancelled. Stop automatic progress so an
+		// operator can reconcile the payment and the compensation commands.
+		if reply.Step == messages.TAKE_PAYMENT && reply.Outcome == messages.Succeeded &&
+			(sagaRow.Status == string(saga.SagaCompensating) || sagaRow.Status == string(saga.SagaCompensated)) {
+			now := time.Now().UTC()
+			updateSaga := tx.Table("orchestrator.sagas").
+				Where("id = ? AND version = ?", sagaRow.ID, sagaRow.Version).
+				Updates(map[string]any{
+					"status":     string(saga.SagaStuck),
+					"version":    sagaRow.Version + 1,
+					"updated_at": now,
+				})
+			if updateSaga.Error != nil {
+				return fmt.Errorf("mark saga stuck after conflicting payment result: %w", updateSaga.Error)
+			}
+			if updateSaga.RowsAffected == 0 {
+				return errConcurrentSagaTransition
+			}
+			stateChanged = true
+			slog.Error(
+				"saga STUCK: payment succeeded after compensation started",
+				"order_id", reply.OrderID,
+				"saga_status", sagaRow.Status,
+				"current_step", sagaRow.CurrentStep,
+			)
+			return nil
 		}
 
 		if reply.Step != messages.Step(sagaRow.CurrentStep) {
@@ -243,6 +284,7 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		if updateSaga.RowsAffected == 0 {
 			return errConcurrentSagaTransition
 		}
+		stateChanged = true
 
 		mapping, hasCommandMapping := commandMappings[decision.Command]
 		var payload json.RawMessage
@@ -332,6 +374,9 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 	finishedAt := time.Now()
 	h.recordTiming(receivedAt, txStartedAt, outboxCreatedAt, txWorkFinishedAt, finishedAt, err)
 	if err == nil {
+		if stateChanged && h.notifier != nil {
+			h.notifier.Notify(reply.OrderID.String())
+		}
 		return nil
 	}
 

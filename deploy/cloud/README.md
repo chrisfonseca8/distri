@@ -17,6 +17,10 @@ and current AWS pricing before running `terraform apply`.
 - an EC2 key pair if using the remote Docker metrics tunnel
 - `DATABASE_TEST_URL` in the repository `.env` pointing only to that branch
 
+If one empty Neon project hosts all four service databases, run database setup
+with `USE_SINGLE_NEON_ADMIN_URL=yes`; this uses `ORCHESTRATOR_NEON_ADMIN_URL`
+for every database while retaining separate databases and application roles.
+
 ## 2. Review and provision
 
 ```sh
@@ -31,6 +35,13 @@ terraform plan -out=staging.tfplan
 terraform apply staging.tfplan
 terraform output
 ```
+
+Set `create_instance_profile = false` when the provisioning principal has EC2
+permissions but cannot create IAM roles. In that mode SSM is unavailable and a
+working `key_name` plus a narrow `admin_cidr` are required for administration.
+The full topology needs six Elastic IPs. Set `create_elastic_ips = false` when
+the regional EIP quota is lower; instances will still receive public addresses,
+but those addresses can change after a stop/start cycle.
 
 The defaults provision:
 

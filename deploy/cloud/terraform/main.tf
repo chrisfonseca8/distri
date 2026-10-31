@@ -146,6 +146,15 @@ resource "aws_vpc_security_group_ingress_rule" "broker_ui_from_loadgen" {
   description                  = "Load-test RabbitMQ metrics"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "broker_ssh_from_loadgen" {
+  security_group_id            = aws_security_group.broker.id
+  referenced_security_group_id = aws_security_group.loadgen.id
+  ip_protocol                  = "tcp"
+  from_port                    = 22
+  to_port                      = 22
+  description                  = "Load-generator bastion to broker SSH"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "simulator_from_app" {
   security_group_id            = aws_security_group.loadgen.id
   referenced_security_group_id = aws_security_group.app.id
@@ -181,7 +190,43 @@ resource "aws_vpc_security_group_ingress_rule" "admin_rabbit_ui" {
   description       = "Administrator RabbitMQ UI"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "additional_admin_ssh" {
+  for_each = {
+    for pair in setproduct(
+      [
+        { name = "app", group_id = aws_security_group.app.id },
+        { name = "broker", group_id = aws_security_group.broker.id },
+        { name = "loadgen", group_id = aws_security_group.loadgen.id },
+      ],
+      var.additional_admin_cidrs,
+      ) : "${pair[0].name}-${replace(pair[1], "/", "-")}" => {
+      group_id = pair[0].group_id
+      cidr     = pair[1]
+    }
+  }
+
+  security_group_id = each.value.group_id
+  cidr_ipv4         = each.value.cidr
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
+  description       = "Additional administrator SSH address"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "additional_admin_rabbit_ui" {
+  for_each = var.additional_admin_cidrs
+
+  security_group_id = aws_security_group.broker.id
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = 15672
+  to_port           = 15672
+  description       = "Additional administrator RabbitMQ UI address"
+}
+
 resource "aws_iam_role" "instance" {
+  count = var.create_instance_profile ? 1 : 0
+
   name = "${var.project_name}-instance"
 
   assume_role_policy = jsonencode({
@@ -195,13 +240,17 @@ resource "aws_iam_role" "instance" {
 }
 
 resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.instance.name
+  count = var.create_instance_profile ? 1 : 0
+
+  role       = aws_iam_role.instance[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "instance" {
+  count = var.create_instance_profile ? 1 : 0
+
   name = "${var.project_name}-instance"
-  role = aws_iam_role.instance.name
+  role = aws_iam_role.instance[0].name
 }
 
 locals {
@@ -225,7 +274,7 @@ resource "aws_instance" "service" {
   private_ip                  = cidrhost(var.public_subnet_cidr, each.value)
   associate_public_ip_address = true
   vpc_security_group_ids      = [aws_security_group.app.id]
-  iam_instance_profile        = aws_iam_instance_profile.instance.name
+  iam_instance_profile        = var.create_instance_profile ? aws_iam_instance_profile.instance[0].name : null
   key_name                    = var.key_name
   monitoring                  = true
   user_data_replace_on_change = true
@@ -274,7 +323,7 @@ resource "aws_instance" "broker" {
   private_ip                  = cidrhost(var.public_subnet_cidr, 20)
   associate_public_ip_address = true
   vpc_security_group_ids      = [aws_security_group.broker.id]
-  iam_instance_profile        = aws_iam_instance_profile.instance.name
+  iam_instance_profile        = var.create_instance_profile ? aws_iam_instance_profile.instance[0].name : null
   key_name                    = var.key_name
   monitoring                  = true
   user_data_replace_on_change = true
@@ -314,7 +363,7 @@ resource "aws_instance" "loadgen" {
   private_ip                  = cidrhost(var.public_subnet_cidr, 30)
   associate_public_ip_address = true
   vpc_security_group_ids      = [aws_security_group.loadgen.id]
-  iam_instance_profile        = aws_iam_instance_profile.instance.name
+  iam_instance_profile        = var.create_instance_profile ? aws_iam_instance_profile.instance[0].name : null
   key_name                    = var.key_name
   monitoring                  = true
   user_data_replace_on_change = true
@@ -338,19 +387,23 @@ resource "aws_instance" "loadgen" {
 }
 
 resource "aws_eip" "service" {
-  for_each = aws_instance.service
+  for_each = var.create_elastic_ips ? aws_instance.service : {}
   domain   = "vpc"
   instance = each.value.id
   tags     = { Name = "${var.project_name}-${each.key}" }
 }
 
 resource "aws_eip" "broker" {
+  count = var.create_elastic_ips ? 1 : 0
+
   domain   = "vpc"
   instance = aws_instance.broker.id
   tags     = { Name = "${var.project_name}-broker" }
 }
 
 resource "aws_eip" "loadgen" {
+  count = var.create_elastic_ips ? 1 : 0
+
   domain   = "vpc"
   instance = aws_instance.loadgen.id
   tags     = { Name = "${var.project_name}-loadgen" }

@@ -71,9 +71,10 @@ func run() error {
 		if err := writeAggregate(cfg.ResultsDir, result); err != nil {
 			return err
 		}
-		fmt.Printf("%s: offered=%d accepted=%d completed=%d accepted/s=%.2f completed/s=%.2f e2e-p95=%.2fms\n",
+		fmt.Printf("%s: offered=%d accepted=%d completed=%d accepted/s=%.2f completed/s=%.2f e2e-p95=%.2fms server-p95=%.2fms\n",
 			result.Label, result.Client.Offered, result.Client.Accepted, result.Client.Completed,
-			result.Client.AcceptedRate, result.Client.CompletedRate, result.Client.EndToEndLatency.P95MS)
+			result.Client.AcceptedRate, result.Client.CompletedRate, result.Client.EndToEndLatency.P95MS,
+			result.Client.ServerCompletionLatency.P95MS)
 		if !runPassed(result, experiment) {
 			failedRuns = append(failedRuns, result.Label)
 		}
@@ -96,7 +97,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	}
 	transport := &http.Transport{MaxIdleConns: cfg.MaxConns, MaxIdleConnsPerHost: cfg.MaxConns, MaxConnsPerHost: cfg.MaxConns}
 	if cfg.Warmup > 0 {
-		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery}
+		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery, completionMode: cfg.CompletionMode}
 		warmupSelector := newCartSelector(cfg.Workload, products)
 		if cfg.CaseName == "C4" {
 			runOpenLoop(ctx, warmupClient, warmupSelector, cfg.OfferedRate, cfg.Warmup)
@@ -134,7 +135,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	cpuBefore, cpuBeforeOK := readCgroupCPUUsec()
 	started := time.Now().UTC()
 	metrics := newCollector()
-	client := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery}
+	client := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery, completionMode: cfg.CompletionMode}
 	selector := newCartSelector(cfg.Workload, products)
 
 	measurement := cfg.Duration
@@ -182,6 +183,11 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	orchestratorMetrics.Container = &orchestratorContainer
 	services["orchestrator"] = orchestratorMetrics
 	clientMetrics := metrics.snapshot(measurement)
+	serverCompletionLatency, err := readServerCompletionLatency(ctx, pool)
+	if err != nil {
+		return Report{}, err
+	}
+	clientMetrics.ServerCompletionLatency = serverCompletionLatency
 	if cpuAfter, ok := readCgroupCPUUsec(); ok && cpuBeforeOK && cpuAfter >= cpuBefore && finished.After(started) {
 		percent := float64(cpuAfter-cpuBefore) / 1e6 / finished.Sub(started).Seconds() * 100
 		clientMetrics.RunnerCPUPercent = &percent
@@ -251,6 +257,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 			Measurement:          measurement,
 			DrainTimeout:         cfg.DrainTimeout,
 			StatusPollInterval:   cfg.StatusPollEvery,
+			CompletionMode:       cfg.CompletionMode,
 			SampleInterval:       cfg.SampleEvery,
 			MaxInFlight:          cfg.Clients,
 			OfferedRatePerSecond: cfg.OfferedRate,

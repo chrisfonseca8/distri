@@ -3,9 +3,17 @@ availability_zone = "us-east-1a"
 
 # Your current public address only. Leave empty to use SSM exclusively.
 admin_cidr = "203.0.113.10/32"
+additional_admin_cidrs = []
 
 # Existing EC2 key pair. Required by the documented SSH Docker-socket tunnel.
 key_name = "distri-staging"
+
+# Set false if the provisioning principal cannot create/pass IAM roles.
+# SSM Session Manager will be unavailable; retain a working SSH key instead.
+create_instance_profile = true
+
+# The complete topology needs six EIPs; set false if the regional quota is lower.
+create_elastic_ips = true
 
 service_instance_type = "c7i.large"
 broker_instance_type  = "m7i.large"

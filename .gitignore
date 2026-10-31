@@ -79,3 +79,7 @@ override.tf.json
 .terraformrc
 terraform.rc
 crash.log
+
+# Local scratch notes and SSH config that contain real host addresses
+/Run the cloud test from.txt
+/deploy/cloud/ssh_config.loadgen

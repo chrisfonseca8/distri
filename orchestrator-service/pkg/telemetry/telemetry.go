@@ -78,6 +78,10 @@ type statusWriter struct {
 	status int
 }
 
+// Unwrap lets http.ResponseController reach optional interfaces such as Flusher,
+// which the SSE endpoint requires through this telemetry middleware.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)

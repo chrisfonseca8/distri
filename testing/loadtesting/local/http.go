@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -22,6 +23,7 @@ type loadClient struct {
 	behavior        string
 	workflowTimeout time.Duration
 	statusPollEvery time.Duration
+	completionMode  string
 	sequence        atomic.Uint64
 }
 type cartItem struct {
@@ -175,6 +177,27 @@ func (c *loadClient) checkoutWithKey(ctx context.Context, items []cartItem, key 
 // stock released. Reporting the order as done any earlier would race the saga's
 // last inventory step.
 func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResponse {
+	if c.completionMode == "sse" {
+		for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+			if result, terminal := c.streamTerminal(ctx, orderID); terminal {
+				return result
+			}
+			select {
+			case <-ctx.Done():
+				return orderResponse{}
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+		if ctx.Err() == nil {
+			c.metrics.completionObservation(0, 0, 1)
+		}
+	}
+	return c.waitTerminalPoll(ctx, orderID)
+}
+
+// waitTerminalPoll is the compatibility and recovery path when SSE is disabled
+// or two stream attempts fail.
+func (c *loadClient) waitTerminalPoll(ctx context.Context, orderID string) orderResponse {
 	for {
 		select {
 		case <-ctx.Done():
@@ -193,6 +216,61 @@ func (c *loadClient) waitTerminal(ctx context.Context, orderID string) orderResp
 			return orderResponse{ID: orderID, Status: "CANCELLED"}
 		}
 	}
+}
+
+// streamTerminal waits for checkout.status SSE events. A stream failure is not a
+// workflow failure: the caller reconnects and ultimately falls back to status polling.
+func (c *loadClient) streamTerminal(ctx context.Context, orderID string) (orderResponse, bool) {
+	c.metrics.completionObservation(1, 0, 0)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.checkoutURL+"/v1/checkouts/"+orderID+"/events", nil)
+	if err != nil {
+		return orderResponse{}, false
+	}
+	request.Header.Set("Accept", "text/event-stream")
+	c.metrics.beginRequest()
+	response, err := c.http.Do(request)
+	if err != nil {
+		c.metrics.endRequest()
+		return orderResponse{}, false
+	}
+	defer response.Body.Close()
+	defer c.metrics.endRequest()
+	if response.StatusCode != http.StatusOK {
+		return orderResponse{}, false
+	}
+
+	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 4096), 64<<10)
+	var data []byte
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			if len(data) == 0 {
+				continue
+			}
+			var event sagaResponse
+			if json.Unmarshal(data, &event) == nil {
+				switch event.Status {
+				case "COMPLETED":
+					c.metrics.completionObservation(0, 1, 0)
+					return orderResponse{ID: orderID, Status: "PAID"}, true
+				case "COMPENSATED":
+					c.metrics.completionObservation(0, 1, 0)
+					return orderResponse{ID: orderID, Status: "CANCELLED"}, true
+				}
+			}
+			data = nil
+			continue
+		}
+		if bytes.HasPrefix(line, []byte("data:")) {
+			part := bytes.TrimSpace(line[len("data:"):])
+			if len(data) > 0 {
+				data = append(data, '\n')
+			}
+			data = append(data, part...)
+		}
+	}
+	return orderResponse{}, false
 }
 
 // do sends a JSON request and returns the status, latency, transport error and decode error.

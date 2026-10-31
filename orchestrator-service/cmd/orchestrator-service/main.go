@@ -22,6 +22,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/reply"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/statusstream"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/sweeper"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/telemetry"
 )
@@ -107,11 +108,13 @@ func run() error {
 		}
 		outboxRelays = append(outboxRelays, relay)
 	}
+	statusHub := statusstream.NewHub(10_000)
 	replyHandler := reply.NewHandler(
 		applicationConfig.DB,
 		sagaConfig.StepTimeout,
 		reply.WithSagaDeadline(sagaConfig.Deadline),
 		reply.WithTelemetry(telemetryRecorder),
+		reply.WithStatusNotifier(statusHub),
 	)
 	sagaSweeper, err := sweeper.NewSagaSweeper(applicationConfig.DB, sweeper.SagaConfig{
 		Interval:         sagaConfig.SweepInterval,
@@ -123,7 +126,7 @@ func run() error {
 		Deadline:         sagaConfig.Deadline,
 		UndoReviveAfter:  sagaConfig.UndoReviveAfter,
 		UndoMaxRevives:   sagaConfig.UndoMaxRevives,
-	}, sweeper.WithStepFailer(replyHandler))
+	}, sweeper.WithStepFailer(replyHandler), sweeper.WithStatusNotifier(statusHub))
 	if err != nil {
 		return fmt.Errorf("set up saga sweeper: %w", err)
 	}
@@ -173,7 +176,7 @@ func run() error {
 		sagaConfig.Deadline,
 		sagaConfig.StepTimeout,
 	)
-	routes.RegisterCheckoutRoutes(mux, controllers.NewCheckoutController(checkoutService))
+	routes.RegisterCheckoutRoutes(mux, controllers.NewCheckoutController(checkoutService, statusHub))
 
 	var handler http.Handler = mux
 	if telemetryRecorder != nil {

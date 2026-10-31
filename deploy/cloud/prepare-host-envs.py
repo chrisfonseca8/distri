@@ -60,11 +60,11 @@ for service, own_key in db_keys.items():
     for key in db_keys.values():
         lines.append(f"{key}={databases[key] if key == own_key else dummy}")
     lines += [
-        f"RABBITMQ_URL=amqp://{shared['RABBITMQ_DEFAULT_USER']}:{shared['RABBITMQ_DEFAULT_PASS']}@10.200.0.1:5672/",
-        "INVENTORY_URL=http://10.200.0.4:8081",
+        f"RABBITMQ_URL=amqp://{shared['RABBITMQ_DEFAULT_USER']}:{shared['RABBITMQ_DEFAULT_PASS']}@10.40.1.20:5672/",
+        "INVENTORY_URL=http://10.40.1.12:8081",
         f"RAZORPAY_KEY_ID={shared['SIM_KEY_ID']}",
         f"RAZORPAY_KEY_SECRET={shared['SIM_KEY_SECRET']}",
-        "RAZORPAY_BASE_URL=http://10.200.0.6:9090",
+        "RAZORPAY_BASE_URL=http://10.40.1.30:9090",
         f"RAZORPAY_WEBHOOK_SECRET={shared['SIM_WEBHOOK_SECRET']}",
         "DB_MAX_OPEN_CONNS=10", "DB_MAX_IDLE_CONNS=10",
         "WORKER_CONCURRENCY=4", "WEBHOOK_PROCESS_BATCH=100", "WEBHOOK_PROCESS_INTERVAL=1s",
@@ -83,19 +83,19 @@ write_env(".env.simulator", [
     f"SIM_KEY_ID={shared['SIM_KEY_ID']}",
     f"SIM_KEY_SECRET={shared['SIM_KEY_SECRET']}",
     f"SIM_WEBHOOK_SECRET={shared['SIM_WEBHOOK_SECRET']}",
-    "SIM_WEBHOOK_URL=http://10.200.0.6:8082/v1/webhooks/razorpay",
+    "SIM_WEBHOOK_URL=http://10.40.1.13:8082/v1/webhooks/razorpay",
 ])
 write_env(".env.loadgen", [
     f"DISTRI_REPO={repo}", f"IMAGE_TAG={tag}",
-    "ORDER_URL=http://10.200.0.5:8080", "INVENTORY_URL=http://10.200.0.4:8081",
-    "PAYMENT_URL=http://10.200.0.6:8082", "ORCHESTRATOR_URL=http://10.200.0.2:8083",
+    "ORDER_URL=http://10.40.1.11:8080", "INVENTORY_URL=http://10.40.1.12:8081",
+    "PAYMENT_URL=http://10.40.1.13:8082", "ORCHESTRATOR_URL=http://10.40.1.10:8083",
     f"LOADTEST_DATABASE_URL={databases['LOADTEST_DATABASE_URL']}",
     f"LOAD_TEST_ALLOWED_DB_HOST={urlparse(databases['LOADTEST_DATABASE_URL']).hostname}",
     *[f"{key}={value}" for key, value in databases.items() if key.startswith("AUDIT_")],
-    "ORDER_DOCKER_SOCK=/home/ubuntu/sockets/order.sock",
-    "INVENTORY_DOCKER_SOCK=/home/ubuntu/sockets/inventory.sock",
-    "PAYMENT_DOCKER_SOCK=/home/ubuntu/sockets/payment.sock",
-    "ORCHESTRATOR_DOCKER_SOCK=/home/ubuntu/sockets/orchestrator.sock",
+    "ORDER_DOCKER_SOCK=/home/ec2-user/sockets/order.sock",
+    "INVENTORY_DOCKER_SOCK=/home/ec2-user/sockets/inventory.sock",
+    "PAYMENT_DOCKER_SOCK=/home/ec2-user/sockets/payment.sock",
+    "ORCHESTRATOR_DOCKER_SOCK=/home/ec2-user/sockets/orchestrator.sock",
     "LOCAL_UID=1000", "LOCAL_GID=1000", "SERVER_DOCKER_GID=0",
 ])
 

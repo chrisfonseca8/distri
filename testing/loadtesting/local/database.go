@@ -32,6 +32,32 @@ type gaugeAccumulator struct {
 	max   int64
 }
 
+// readServerCompletionLatency returns the persisted time from saga creation to
+// its terminal transition. The fixture is reset before every measured run, so
+// all terminal rows belong to the current experiment.
+func readServerCompletionLatency(ctx context.Context, pool *pgxpool.Pool) (LatencySummary, error) {
+	rows, err := pool.Query(ctx, `SELECT EXTRACT(EPOCH FROM (updated_at - created_at)) * 1000
+		FROM orchestrator.sagas
+		WHERE status IN ('COMPLETED', 'COMPENSATED')`)
+	if err != nil {
+		return LatencySummary{}, fmt.Errorf("query server completion latency: %w", err)
+	}
+	defer rows.Close()
+
+	latencies := make([]time.Duration, 0)
+	for rows.Next() {
+		var milliseconds float64
+		if err := rows.Scan(&milliseconds); err != nil {
+			return LatencySummary{}, fmt.Errorf("scan server completion latency: %w", err)
+		}
+		latencies = append(latencies, time.Duration(milliseconds*float64(time.Millisecond)))
+	}
+	if err := rows.Err(); err != nil {
+		return LatencySummary{}, fmt.Errorf("read server completion latency: %w", err)
+	}
+	return SummarizeLatencies(latencies), nil
+}
+
 // add records one reading, keeping the total and maximum.
 func (g *gaugeAccumulator) add(value int64) {
 	g.total += float64(value)

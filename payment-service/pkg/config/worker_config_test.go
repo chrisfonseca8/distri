@@ -7,6 +7,7 @@ import (
 )
 
 func TestLoadWorkerConfigDefaults(t *testing.T) {
+	t.Chdir(t.TempDir())
 	for _, name := range []string{
 		"WORKER_CONCURRENCY",
 		"JOB_LEASE",

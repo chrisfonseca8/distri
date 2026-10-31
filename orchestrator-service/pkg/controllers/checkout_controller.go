@@ -1,24 +1,44 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/statusstream"
 )
 
 const maxCheckoutRequestBody = 8 << 10
 
+const (
+	sseHeartbeat    = 15 * time.Second
+	sseWriteTimeout = 5 * time.Second
+)
+
 type CheckoutController struct {
-	service *checkout.CheckoutService
+	service checkoutService
+	hub     *statusstream.Hub
+}
+
+type checkoutService interface {
+	CreateCheckout(context.Context, checkout.CreateCheckoutInput) (checkout.Response, error)
+	GetCheckout(context.Context, uuid.UUID) (checkout.GetCheckoutResult, error)
+	GetCheckoutStatus(context.Context, uuid.UUID) (checkout.CheckoutStatusResult, error)
 }
 
 // NewCheckoutController creates the checkout HTTP controller.
-func NewCheckoutController(service *checkout.CheckoutService) *CheckoutController {
-	return &CheckoutController{service: service}
+func NewCheckoutController(service checkoutService, hubs ...*statusstream.Hub) *CheckoutController {
+	controller := &CheckoutController{service: service}
+	if len(hubs) > 0 {
+		controller.hub = hubs[0]
+	}
+	return controller
 }
 
 // CreateCheckout handles POST /v1/checkouts and replies with the stored result of the checkout.
@@ -58,6 +78,110 @@ func (c *CheckoutController) GetCheckout(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+type checkoutStatusEvent struct {
+	OrderID     uuid.UUID `json:"order_id"`
+	Status      string    `json:"status"`
+	CurrentStep string    `json:"current_step"`
+	Version     int64     `json:"version"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	TotalPaise  int64     `json:"total_paise"`
+	Currency    string    `json:"currency"`
+}
+
+// StreamCheckout sends an authoritative snapshot followed by committed saga changes.
+// The snapshot after subscribing closes the commit-before-subscribe race: either the
+// snapshot sees the change or the hub notification causes another read.
+func (c *CheckoutController) StreamCheckout(w http.ResponseWriter, r *http.Request) {
+	if c.hub == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "checkout event stream is unavailable"})
+		return
+	}
+	orderID, err := uuid.Parse(r.PathValue("orderID"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid order ID"})
+		return
+	}
+	changes, cancel, err := c.hub.Subscribe(orderID.String())
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "checkout event stream is at capacity"})
+		return
+	}
+	defer cancel()
+
+	result, err := c.service.GetCheckoutStatus(r.Context(), orderID)
+	if err != nil {
+		if errors.Is(err, checkout.ErrCheckoutNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		} else {
+			slog.Error("stream checkout initial snapshot", "order_id", orderID, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not get checkout"})
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	response := http.NewResponseController(w)
+	lastVersion := int64(0)
+	writeSnapshot := func(result checkout.CheckoutStatusResult) error {
+		if result.Version <= lastVersion {
+			return nil
+		}
+		event := checkoutStatusEvent{
+			OrderID: result.OrderID, Status: result.Status, CurrentStep: result.CurrentStep,
+			Version: result.Version, UpdatedAt: result.UpdatedAt, TotalPaise: result.TotalPaise, Currency: result.Currency,
+		}
+		data, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		_ = response.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		if _, err := fmt.Fprintf(w, "id: %d\nevent: checkout.status\ndata: %s\n\n", result.Version, data); err != nil {
+			return err
+		}
+		if err := response.Flush(); err != nil {
+			return err
+		}
+		lastVersion = result.Version
+		return nil
+	}
+	if err := writeSnapshot(result); err != nil || isTerminalCheckout(result.Status) {
+		return
+	}
+
+	heartbeat := time.NewTicker(sseHeartbeat)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-changes:
+			result, err = c.service.GetCheckoutStatus(r.Context(), orderID)
+			if err != nil {
+				slog.Error("stream checkout snapshot", "order_id", orderID, "error", err)
+				return
+			}
+			if err := writeSnapshot(result); err != nil || isTerminalCheckout(result.Status) {
+				return
+			}
+		case <-heartbeat.C:
+			_ = response.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			if err := response.Flush(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func isTerminalCheckout(status string) bool {
+	return status == "COMPLETED" || status == "COMPENSATED"
 }
 
 // decodeCheckoutInput reads the Idempotency-Key header and JSON body, rejecting unknown fields.

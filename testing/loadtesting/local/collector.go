@@ -20,6 +20,17 @@ type collector struct {
 	checkoutMix, payMix                                                        StatusMix
 	requests, workflows                                                        activity
 	duplicateInjected, duplicateExtra, duplicateReplay200, duplicateMismatches int64
+	sseAttempts, sseTerminalEvents, pollingFallbacks                           int64
+}
+
+// completionObservation records how the load generator learned that a workflow
+// completed, so an SSE run cannot silently look successful after polling fallback.
+func (c *collector) completionObservation(sseAttempts, sseTerminalEvents, pollingFallbacks int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sseAttempts += sseAttempts
+	c.sseTerminalEvents += sseTerminalEvents
+	c.pollingFallbacks += pollingFallbacks
 }
 
 // duplicate adds to the counts for the duplicate-checkout test.
@@ -142,5 +153,5 @@ func (c *collector) snapshot(elapsed time.Duration) ClientMetrics {
 	if expected > 0 {
 		difference = math.Abs(observed-expected) / expected * 100
 	}
-	return ClientMetrics{Offered: c.offered, OfferedRate: float64(c.offered) / seconds, Accepted: c.accepted, AcceptedRate: float64(c.accepted) / seconds, Completed: c.completed, CompletedRate: completedRate, Paid: c.paid, Cancelled: c.cancelled, PendingAtDrain: c.pending, CheckoutLatency: SummarizeLatencies(c.checkout), PayLatency: SummarizeLatencies(c.pay), EndToEndLatency: SummarizeLatencies(c.endToEnd), CheckoutStatusMix: c.checkoutMix, PayStatusMix: c.payMix, InFlight: InFlightSummary{MeanRequests: c.requests.area / seconds, MaxRequests: c.requests.max, MeanWorkflows: observed, MaxWorkflows: c.workflows.max}, LittleLaw: LittleLawCheck{ObservedMeanInFlight: observed, ExpectedMeanInFlight: expected, DifferencePercent: difference}, Duplicate: DuplicateMetrics{InjectedWorkflows: c.duplicateInjected, ExtraRequests: c.duplicateExtra, Replay200: c.duplicateReplay200, Mismatches: c.duplicateMismatches}}
+	return ClientMetrics{Offered: c.offered, OfferedRate: float64(c.offered) / seconds, Accepted: c.accepted, AcceptedRate: float64(c.accepted) / seconds, Completed: c.completed, CompletedRate: completedRate, Paid: c.paid, Cancelled: c.cancelled, PendingAtDrain: c.pending, CheckoutLatency: SummarizeLatencies(c.checkout), PayLatency: SummarizeLatencies(c.pay), EndToEndLatency: SummarizeLatencies(c.endToEnd), CheckoutStatusMix: c.checkoutMix, PayStatusMix: c.payMix, InFlight: InFlightSummary{MeanRequests: c.requests.area / seconds, MaxRequests: c.requests.max, MeanWorkflows: observed, MaxWorkflows: c.workflows.max}, LittleLaw: LittleLawCheck{ObservedMeanInFlight: observed, ExpectedMeanInFlight: expected, DifferencePercent: difference}, Duplicate: DuplicateMetrics{InjectedWorkflows: c.duplicateInjected, ExtraRequests: c.duplicateExtra, Replay200: c.duplicateReplay200, Mismatches: c.duplicateMismatches}, CompletionObservation: CompletionMetrics{SSEAttempts: c.sseAttempts, SSETerminalEvents: c.sseTerminalEvents, PollingFallbacks: c.pollingFallbacks}}
 }

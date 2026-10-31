@@ -20,8 +20,7 @@ func TestHandlerAdvancesSagaAndIsIdempotent(t *testing.T) {
 	db := replyIntegrationDB(t)
 	orderID := uuid.New()
 	messageID := "order-reply-test-" + uuid.New().String()
-	guardMessageID := "order-reply-guard-test-" + uuid.New().String()
-	cleanupReplyTest(t, db, orderID, messageID, guardMessageID)
+	cleanupReplyTest(t, db, orderID, messageID)
 
 	now := time.Now().UTC()
 	sagaRow := models.Saga{
@@ -111,19 +110,148 @@ func TestHandlerAdvancesSagaAndIsIdempotent(t *testing.T) {
 		t.Fatalf("outbox rows after duplicate = %d (%v), want still 1", outboxCount, err)
 	}
 
-	if err := handler.Handle(t.Context(), messaging.Delivery{
-		MessageId: guardMessageID,
-		Body:      body,
-	}); err != nil {
-		t.Fatalf("handle stale reply: %v", err)
-	}
-	assertReplyCounts(t, db, orderID, []string{messageID, guardMessageID}, 2)
-
 	if err := db.Table("orchestrator.sagas").Where("id = ?", orderID).Take(&advanced).Error; err != nil {
 		t.Fatalf("reload advanced saga: %v", err)
 	}
 	if advanced.Version != 2 || advanced.CurrentStep != "TAKE_PAYMENT" {
 		t.Fatalf("stale reply changed saga: %+v", advanced)
+	}
+}
+
+func TestHandlerIgnoresReplyForInactiveStep(t *testing.T) {
+	db := replyIntegrationDB(t)
+	orderID := uuid.New()
+	messageID := "inactive-step-reply-" + uuid.New().String()
+	cleanupReplyTest(t, db, orderID, messageID)
+	now := time.Now().UTC()
+	seedReplySaga(t, db, models.Saga{
+		ID: orderID, Status: "RUNNING", CurrentStep: "TAKE_PAYMENT", TotalPaise: 10000, Currency: "INR",
+		Version: 1, DeadlineAt: now.Add(15 * time.Minute),
+	}, models.SagaStep{
+		SagaID: orderID, Step: "TAKE_PAYMENT", Status: "RUNNING", Attempts: 1, StartedAt: &now,
+	})
+
+	body := replyBody(t, orderID, messages.CREATE_ORDER, messages.Succeeded)
+	if err := NewHandler(db, 30*time.Second).Handle(t.Context(), messaging.Delivery{MessageId: messageID, Body: body}); err != nil {
+		t.Fatalf("handle inactive-step reply: %v", err)
+	}
+
+	var sagaRow models.Saga
+	if err := db.Table("orchestrator.sagas").Where("id = ?", orderID).Take(&sagaRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sagaRow.Status != "RUNNING" || sagaRow.CurrentStep != "TAKE_PAYMENT" || sagaRow.Version != 1 {
+		t.Fatalf("inactive-step reply changed saga: %+v", sagaRow)
+	}
+	var step models.SagaStep
+	if err := db.Table("orchestrator.saga_steps").Where("saga_id = ? AND step = 'TAKE_PAYMENT'", orderID).Take(&step).Error; err != nil {
+		t.Fatal(err)
+	}
+	if step.Status != "RUNNING" || step.Attempts != 1 {
+		t.Fatalf("inactive-step reply changed current step: %+v", step)
+	}
+	assertReplyCounts(t, db, orderID, []string{messageID}, 1)
+	assertReplyOutboxCount(t, db, orderID, 0)
+}
+
+func TestHandlerAcceptsLatePaymentSuccess(t *testing.T) {
+	tests := []struct {
+		name         string
+		sagaStatus   string
+		stepStatus   string
+		attempts     int
+		wantDeadline bool
+	}{
+		{name: "ambiguous step", sagaStatus: "RUNNING", stepStatus: "AMBIGUOUS", attempts: 1},
+		{name: "stuck saga", sagaStatus: "STUCK", stepStatus: "AMBIGUOUS", attempts: 2, wantDeadline: true},
+		{name: "attempt cap reached", sagaStatus: "STUCK", stepStatus: "RUNNING", attempts: 5, wantDeadline: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := replyIntegrationDB(t)
+			orderID := uuid.New()
+			messageID := "late-payment-success-" + uuid.New().String()
+			cleanupReplyTest(t, db, orderID, messageID)
+			now := time.Now().UTC()
+			oldDeadline := now.Add(-time.Hour)
+			seedReplySaga(t, db, models.Saga{
+				ID: orderID, Status: test.sagaStatus, CurrentStep: "TAKE_PAYMENT", TotalPaise: 10000, Currency: "INR",
+				Version: 1, DeadlineAt: oldDeadline,
+			}, models.SagaStep{
+				SagaID: orderID, Step: "TAKE_PAYMENT", Status: test.stepStatus, Attempts: test.attempts, StartedAt: &now,
+			})
+
+			handler := NewHandler(db, 30*time.Second, WithSagaDeadline(15*time.Minute))
+			body := replyBody(t, orderID, messages.TAKE_PAYMENT, messages.Succeeded)
+			if err := handler.Handle(t.Context(), messaging.Delivery{MessageId: messageID, Body: body}); err != nil {
+				t.Fatalf("handle late payment success: %v", err)
+			}
+
+			var sagaRow models.Saga
+			if err := db.Table("orchestrator.sagas").Where("id = ?", orderID).Take(&sagaRow).Error; err != nil {
+				t.Fatal(err)
+			}
+			if sagaRow.Status != "RUNNING" || sagaRow.CurrentStep != "MARK_ORDER_PAID" || sagaRow.Version != 2 {
+				t.Fatalf("saga after late payment success = %+v", sagaRow)
+			}
+			if test.wantDeadline && !sagaRow.DeadlineAt.After(now.Add(14*time.Minute)) {
+				t.Fatalf("revived saga deadline = %v, want a fresh deadline", sagaRow.DeadlineAt)
+			}
+
+			var paymentStep models.SagaStep
+			if err := db.Table("orchestrator.saga_steps").Where("saga_id = ? AND step = 'TAKE_PAYMENT'", orderID).Take(&paymentStep).Error; err != nil {
+				t.Fatal(err)
+			}
+			if paymentStep.Status != "SUCCEEDED" || paymentStep.Attempts != test.attempts {
+				t.Fatalf("payment step = %+v, want SUCCEEDED with %d attempts", paymentStep, test.attempts)
+			}
+			assertReplyCounts(t, db, orderID, []string{messageID}, 2)
+			assertReplyOutboxCount(t, db, orderID, 1)
+		})
+	}
+}
+
+func TestHandlerMarksConflictingPaymentSuccessStuck(t *testing.T) {
+	tests := []struct {
+		name        string
+		sagaStatus  string
+		currentStep string
+	}{
+		{name: "compensation in progress", sagaStatus: "COMPENSATING", currentStep: "MARK_ORDER_CANCELLED"},
+		{name: "compensation finished", sagaStatus: "COMPENSATED", currentStep: "RELEASE_STOCK"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := replyIntegrationDB(t)
+			orderID := uuid.New()
+			messageID := "conflicting-payment-success-" + uuid.New().String()
+			cleanupReplyTest(t, db, orderID, messageID)
+			now := time.Now().UTC()
+			seedReplySaga(t, db, models.Saga{
+				ID: orderID, Status: test.sagaStatus, CurrentStep: test.currentStep, TotalPaise: 10000, Currency: "INR",
+				Version: 1, DeadlineAt: now.Add(15 * time.Minute),
+			},
+				models.SagaStep{SagaID: orderID, Step: "TAKE_PAYMENT", Status: "FAILED", Attempts: 1, StartedAt: &now, FinishedAt: &now},
+				models.SagaStep{SagaID: orderID, Step: test.currentStep, Status: "RUNNING", Attempts: 1, StartedAt: &now},
+			)
+
+			body := replyBody(t, orderID, messages.TAKE_PAYMENT, messages.Succeeded)
+			if err := NewHandler(db, 30*time.Second).Handle(t.Context(), messaging.Delivery{MessageId: messageID, Body: body}); err != nil {
+				t.Fatalf("handle conflicting payment success: %v", err)
+			}
+
+			var sagaRow models.Saga
+			if err := db.Table("orchestrator.sagas").Where("id = ?", orderID).Take(&sagaRow).Error; err != nil {
+				t.Fatal(err)
+			}
+			if sagaRow.Status != "STUCK" || sagaRow.CurrentStep != test.currentStep || sagaRow.Version != 2 {
+				t.Fatalf("saga after conflicting payment success = %+v", sagaRow)
+			}
+			assertReplyCounts(t, db, orderID, []string{messageID}, 2)
+			assertReplyOutboxCount(t, db, orderID, 0)
+		})
 	}
 }
 
@@ -182,11 +310,48 @@ func assertReplyCounts(
 	}
 }
 
+func assertReplyOutboxCount(t *testing.T, db *gorm.DB, orderID uuid.UUID, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Table("orchestrator.outbox").
+		Where("payload ->> 'order_id' = ?", orderID.String()).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count reply outbox rows: %v", err)
+	}
+	if count != want {
+		t.Fatalf("reply outbox rows = %d, want %d", count, want)
+	}
+}
+
+func replyBody(t *testing.T, orderID uuid.UUID, step messages.Step, outcome messages.Outcome) []byte {
+	t.Helper()
+	body, err := json.Marshal(messages.Reply{OrderID: orderID, Step: step, Outcome: outcome})
+	if err != nil {
+		t.Fatalf("encode reply: %v", err)
+	}
+	return body
+}
+
+func seedReplySaga(t *testing.T, db *gorm.DB, sagaRow models.Saga, steps ...models.SagaStep) {
+	t.Helper()
+	if err := db.Table("orchestrator.sagas").Create(&sagaRow).Error; err != nil {
+		t.Fatalf("create reply-test saga: %v", err)
+	}
+	for index := range steps {
+		if err := db.Table("orchestrator.saga_steps").
+			Omit(clause.Associations).
+			Create(&steps[index]).Error; err != nil {
+			t.Fatalf("create reply-test saga step %s: %v", steps[index].Step, err)
+		}
+	}
+}
+
 func replyIntegrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	if os.Getenv("RUN_REPLY_INTEGRATION") != "1" {
 		t.Skip("set RUN_REPLY_INTEGRATION=1 to run database integration tests")
 	}
+	t.Chdir(t.TempDir())
 	db, err := config.OpenDB()
 	if err != nil {
 		t.Fatalf("open database: %v", err)

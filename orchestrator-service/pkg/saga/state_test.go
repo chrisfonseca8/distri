@@ -22,6 +22,7 @@ func TestNext(t *testing.T) {
 		{"refund unclear", REFUND_PAYMENT, Ambiguous, retry(REFUND_PAYMENT, SagaCompensating)},
 		{"paid order cancelled", CANCEL_PAID_ORDER, Succeeded, advance(RELEASE_STOCK, SagaCompensating)},
 		{"paid order cancel refused", CANCEL_PAID_ORDER, Failed, Decision{SagaStatus: SagaStuck}},
+		{"paid order cancel unclear", CANCEL_PAID_ORDER, Ambiguous, retry(CANCEL_PAID_ORDER, SagaCompensating)},
 		{"create is ambiguous", CREATE_ORDER, Ambiguous, retry(CREATE_ORDER, SagaRunning)},
 		{"payment succeeds", TAKE_PAYMENT, Succeeded, advance(MARK_ORDER_PAID, SagaRunning)},
 		{"payment fails", TAKE_PAYMENT, Failed, advance(MARK_ORDER_CANCELLED, SagaCompensating)},

@@ -307,6 +307,11 @@ func renderRun(out *strings.Builder, report Report) {
 	if report.Config.Environment != "" {
 		fmt.Fprintf(out, "**Deployment:** %s\n\n", report.Config.Environment)
 	}
+	fmt.Fprintf(out, "**Completion observation:** `%s`", report.Config.CompletionMode)
+	if report.Config.CompletionMode == "poll" {
+		fmt.Fprintf(out, " every %s", report.Config.StatusPollInterval)
+	}
+	out.WriteString(".\n\n")
 	out.WriteString("### Client metrics\n\n")
 	out.WriteString("| Metric | Value |\n|---|---:|\n")
 	fmt.Fprintf(out, "| Offered rate | %.2f/s |\n| Accepted rate | %.2f/s |\n| Completed rate | %.2f/s |\n", client.OfferedRate, client.AcceptedRate, client.CompletedRate)
@@ -318,11 +323,16 @@ func renderRun(out *strings.Builder, report Report) {
 	if client.RunnerMemoryBytes != nil {
 		fmt.Fprintf(out, "| Load generator memory at end | %.1f MB |\n", float64(*client.RunnerMemoryBytes)/1e6)
 	}
+	if report.Config.CompletionMode == "sse" {
+		observation := client.CompletionObservation
+		fmt.Fprintf(out, "| SSE attempts / terminal events / polling fallbacks | %d / %d / %d |\n", observation.SSEAttempts, observation.SSETerminalEvents, observation.PollingFallbacks)
+	}
 	out.WriteString("\n")
 	out.WriteString("| Latency | Samples | p50 ms | p95 ms | p99 ms | max ms |\n|---|---:|---:|---:|---:|---:|\n")
 	writeLatencyRow(out, "Checkout", client.CheckoutLatency)
 	writeLatencyRow(out, "Pay", client.PayLatency)
 	writeLatencyRow(out, "End to end", client.EndToEndLatency)
+	writeLatencyRow(out, "Server saga completion", client.ServerCompletionLatency)
 	out.WriteString("\n")
 	fmt.Fprintf(out, "Checkout status mix: `%s`  \nPay status mix: `%s`\n\n", statusText(client.CheckoutStatusMix), statusText(client.PayStatusMix))
 	if client.Duplicate.InjectedWorkflows > 0 {
@@ -332,7 +342,7 @@ func renderRun(out *strings.Builder, report Report) {
 	out.WriteString("### Service metrics\n\n")
 	out.WriteString("| Service | Requests | Errors | In-flight max | Handler p95 ms | Goroutines | Heap alloc | DB open/in-use/idle | DB waits | DB wait duration | CPU mean/max | Memory mean/max |\n")
 	out.WriteString("|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---|---|\n")
-	serviceNames := []string{"order", "inventory", "payment"}
+	serviceNames := []string{"orchestrator", "order", "inventory", "payment"}
 	for _, name := range serviceNames {
 		service := report.Services[name]
 		if !service.Available || service.Inbound == nil || service.Runtime == nil || service.DBPool == nil || service.Container == nil {

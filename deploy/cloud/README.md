@@ -196,14 +196,14 @@ PHASES=22 docker compose --env-file deploy/cloud/.env.loadgen \
 
 Capture app, broker, loadgen, and Neon metrics with each result.
 
-For the full correctness suite, use the built-in deterministic payment simulator
-for each of `success`, `decline`, and `timeout`. Recreate only payment-service with
-`GATEWAY_PROVIDER=simulator`, `GATEWAY_MODE=<mode>`, and
-`WEBHOOKS_DISABLED=true` before the matching correctness run. Restore the default
-external simulator afterward by recreating payment-service without those
-overrides. The correctness container mounts the forwarded Order and Payment
-Docker sockets so recovery phases 8 and 16 can stop and restart their participant
-instead of reporting `SKIP`.
+For the full correctness suite, keep payment-service on the project's
+Razorpay-compatible gateway simulator; never configure real payment credentials
+or a real gateway endpoint. Select deterministic success, decline, and timeout
+behaviour by recreating `gateway-simulator` on the load-generator host with the
+matching `SIM_*` scenario settings before each correctness run. The correctness
+container mounts the forwarded Order and Payment Docker sockets so recovery
+phases 8 and 16 can stop and restart their participant instead of reporting
+`SKIP`.
 
 Each mode requires a fresh disposable database. Set
 `CORRECTNESS_RESET_DATA=true` only for this staging branch; the runner refuses the

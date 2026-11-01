@@ -31,6 +31,9 @@ func (p *phaseContext) request(method, url string, body any, headers map[string]
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
+	if p.suite.runLabel != "" {
+		req.Header.Set("X-Test-Run-ID", p.suite.runLabel)
+	}
 	started := time.Now()
 	response, err := p.suite.client.Do(req)
 	duration := time.Since(started)

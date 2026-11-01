@@ -97,7 +97,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	}
 	transport := &http.Transport{MaxIdleConns: cfg.MaxConns, MaxIdleConnsPerHost: cfg.MaxConns, MaxConnsPerHost: cfg.MaxConns}
 	if cfg.Warmup > 0 {
-		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery, completionMode: cfg.CompletionMode}
+		warmupClient := &loadClient{checkoutURL: cfg.OrchestratorURL, testRunID: cfg.TestRunID, http: &http.Client{Transport: transport}, metrics: newCollector(), behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery, completionMode: cfg.CompletionMode}
 		warmupSelector := newCartSelector(cfg.Workload, products)
 		if cfg.CaseName == "C4" {
 			runOpenLoop(ctx, warmupClient, warmupSelector, cfg.OfferedRate, cfg.Warmup)
@@ -135,7 +135,7 @@ func executeRun(ctx context.Context, pool *pgxpool.Pool, cfg config, runNumber i
 	cpuBefore, cpuBeforeOK := readCgroupCPUUsec()
 	started := time.Now().UTC()
 	metrics := newCollector()
-	client := &loadClient{checkoutURL: cfg.OrchestratorURL, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery, completionMode: cfg.CompletionMode}
+	client := &loadClient{checkoutURL: cfg.OrchestratorURL, testRunID: cfg.TestRunID, http: &http.Client{Transport: transport}, metrics: metrics, behavior: cfg.Behavior, workflowTimeout: cfg.WorkflowTimeout, statusPollEvery: cfg.StatusPollEvery, completionMode: cfg.CompletionMode}
 	selector := newCartSelector(cfg.Workload, products)
 
 	measurement := cfg.Duration

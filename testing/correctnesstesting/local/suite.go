@@ -24,6 +24,7 @@ type suite struct {
 	gatewayMode     string
 	runLabel        string
 	composeFile     string
+	dockerSockets   map[string]string
 	resultsDir      string
 	runID           string
 }
@@ -52,18 +53,29 @@ func newSuite(ctx context.Context) (*suite, error) {
 		paymentURL: requiredEnv("PAYMENT_URL"), gatewayMode: envOr("GATEWAY_MODE", "success"),
 		runLabel:    envOr("RUN_LABEL", envOr("GATEWAY_MODE", "success")),
 		composeFile: strings.TrimSpace(os.Getenv("COMPOSE_FILE")),
-		resultsDir:  envOr("RESULTS_DIR", "test-results/correctness-test"),
-		runID:       time.Now().UTC().Format("20060102T150405.000000000Z"),
+		dockerSockets: map[string]string{
+			"order-service":   strings.TrimSpace(os.Getenv("ORDER_DOCKER_SOCKET")),
+			"payment-service": strings.TrimSpace(os.Getenv("PAYMENT_DOCKER_SOCKET")),
+		},
+		resultsDir: envOr("RESULTS_DIR", "test-results/correctness-test"),
+		runID:      time.Now().UTC().Format("20060102T150405.000000000Z"),
 	}, nil
 }
 
-// canControlServices reports whether COMPOSE_FILE is set, so phases can stop and start services.
-func (s *suite) canControlServices() bool { return s.composeFile != "" }
+// canControlService reports whether the runner can stop and start one service.
+// Local runs use Docker Compose; cloud runs use the service host's forwarded
+// Docker Unix socket.
+func (s *suite) canControlService(service string) bool {
+	return s.composeFile != "" || s.dockerSockets[service] != ""
+}
 
 // compose runs a docker compose action on one service, with a timeout.
 func (s *suite) compose(action, service string) error {
-	if !s.canControlServices() {
-		return fmt.Errorf("COMPOSE_FILE is not set")
+	if socket := s.dockerSockets[service]; socket != "" {
+		return dockerContainerAction(s.ctx, socket, action, service)
+	}
+	if s.composeFile == "" {
+		return fmt.Errorf("no Docker control configured for %s", service)
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 45*time.Second)
 	defer cancel()

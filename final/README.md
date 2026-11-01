@@ -38,7 +38,7 @@ Pass criteria are the definition of done for each step. Record raw JSON for ever
 | # | Test | What to do | Pass means | Est. |
 |---|---|---|---|---|
 | 1 | **Smoke run** | Start the stack, run 10 checkouts. | All 10 reach `COMPLETED`. Confirms wiring before spending money. | 10 min |
-| 2 | **Full correctness suite, all 22 phases** (success, decline and timeout modes) | Run the suite in the cloud. | All 22 phases green in each mode, **then** the phase-22 audit is clean: no oversell, no duplicate payment or reservation, no paid order without stock. | 45 min |
+| 2 | **Full correctness suite, all active phases** (success, decline and timeout modes) | Run phases 1–10 and 13–22 in the cloud; phases 11–12 are retired with the removed `/pay` endpoint. | Every applicable phase is green across the three mode reports; only documented outcome-specific skips are allowed. The success run must execute recovery phases 8 and 16, and phase 22 must be clean after every mode: no oversell, duplicate payment or reservation, or paid order without stock. | 45 min |
 | 3 | **Fault tests, one at a time, ~30 clients** | Run each fault below under load; run the phase-22 audit after each. | For all: no duplicate charges or reservations, no stuck sagas, dead queue unchanged. | 1–1.25 h |
 | 3a | `kill -9` payment-service during gateway calls | | Every saga reaches a final state within the payment window plus grace. | |
 | 3b | `kill -9` orchestrator, order-service, inventory-service | one at a time | as above | |

@@ -19,6 +19,8 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$here/hosts.env"
 state="${XDG_RUNTIME_DIR:-/tmp}/distri-obs-tunnels"; mkdir -p "$state"
+bridge="${OBS_DOCKER_BRIDGE_IP:-$(ip -4 -o addr show docker0 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')}"
+[ -n "$bridge" ] || { echo "cannot determine Docker bridge address; set OBS_DOCKER_BRIDGE_IP" >&2; exit 1; }
 SSH_OPTS=(-N -T -i "${SSH_KEY/#\~/$HOME}" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15
           -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o ConnectTimeout=10)
 
@@ -33,19 +35,19 @@ reverse=(-R 13100:127.0.0.1:3100 -R 14318:127.0.0.1:14318)
 
 case "${1:-}" in
   start)
-    run_tunnel orchestrator "$ORCHESTRATOR_HOST" -L 19091:127.0.0.1:9091 -L 19101:127.0.0.1:9100 -L 19111:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel payment      "$PAYMENT_HOST"      -L 19092:127.0.0.1:9092 -L 19102:127.0.0.1:9100 -L 19112:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel inventory    "$INVENTORY_HOST"    -L 19093:127.0.0.1:9093 -L 19103:127.0.0.1:9100 -L 19113:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel order        "$ORDER_HOST"        -L 19094:127.0.0.1:9094 -L 19104:127.0.0.1:9100 -L 19114:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel broker       "$BROKER_HOST"       -L 19105:127.0.0.1:9100 -L 19115:127.0.0.1:15692 "${reverse[@]}"
+    run_tunnel orchestrator "$ORCHESTRATOR_HOST" -L "$bridge":19091:127.0.0.1:9091 -L "$bridge":19101:127.0.0.1:9100 -L "$bridge":19111:127.0.0.1:8088 "${reverse[@]}"
+    run_tunnel payment      "$PAYMENT_HOST"      -L "$bridge":19092:127.0.0.1:9092 -L "$bridge":19102:127.0.0.1:9100 -L "$bridge":19112:127.0.0.1:8088 "${reverse[@]}"
+    run_tunnel inventory    "$INVENTORY_HOST"    -L "$bridge":19093:127.0.0.1:9093 -L "$bridge":19103:127.0.0.1:9100 -L "$bridge":19113:127.0.0.1:8088 "${reverse[@]}"
+    run_tunnel order        "$ORDER_HOST"        -L "$bridge":19094:127.0.0.1:9094 -L "$bridge":19104:127.0.0.1:9100 -L "$bridge":19114:127.0.0.1:8088 "${reverse[@]}"
+    run_tunnel broker       "$BROKER_HOST"       -L "$bridge":19105:127.0.0.1:9100 -L "$bridge":19115:127.0.0.1:15692 "${reverse[@]}"
     wait ;;
   stop)
     for f in "$state"/*.pid; do [ -e "$f" ] || continue; kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"; done
-    pkill -f "ssh .*-L 1909[1-4]" 2>/dev/null || true; echo stopped ;;
+    pkill -f "ssh .*-L .*1909[1-4]:" 2>/dev/null || true; echo stopped ;;
   status)
     for f in "$state"/*.pid; do [ -e "$f" ] || continue; n=$(basename "$f" .pid)
       kill -0 "$(cat "$f")" 2>/dev/null && echo "$n: running" || echo "$n: dead"; done
     for p in 19091 19092 19093 19094 19115; do
-      curl -fs -m 2 "http://127.0.0.1:$p/metrics" -o /dev/null && echo "port $p: scrapeable" || echo "port $p: not reachable"; done ;;
+      curl -fs -m 2 "http://$bridge:$p/metrics" -o /dev/null && echo "port $p: scrapeable" || echo "port $p: not reachable"; done ;;
   *) echo "usage: $0 start|stop|status" >&2; exit 2 ;;
 esac

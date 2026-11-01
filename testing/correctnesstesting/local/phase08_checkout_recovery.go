@@ -9,8 +9,8 @@ func phase08() phaseDefinition {
 			p.skip("Run with GATEWAY_MODE=success so the recovered saga reaches PAID.")
 			return
 		}
-		if !p.suite.canControlServices() {
-			p.skip("Run the correctness binary from the host with COMPOSE_FILE set so it can stop and restart order-service deterministically.")
+		if !p.suite.canControlService("order-service") {
+			p.skip("Configure COMPOSE_FILE or ORDER_DOCKER_SOCKET so the runner can stop and restart order-service deterministically.")
 			return
 		}
 

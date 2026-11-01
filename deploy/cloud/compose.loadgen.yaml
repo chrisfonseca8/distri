@@ -60,8 +60,16 @@ services:
       GATEWAY_MODE: "${GATEWAY_MODE:-success}"
       PHASES: "${PHASES:-}"
       RUN_LABEL: "${RUN_LABEL:-cloud-staging}"
+      CORRECTNESS_RESET_DATA: "${CORRECTNESS_RESET_DATA:-false}"
+      CORRECTNESS_ALLOWED_DB_HOST: "${LOAD_TEST_ALLOWED_DB_HOST:?set LOAD_TEST_ALLOWED_DB_HOST}"
+      ORDER_DOCKER_SOCKET: /sockets/order.sock
+      PAYMENT_DOCKER_SOCKET: /sockets/payment.sock
     volumes:
       - ../../test-results:/results
+      - "${ORDER_DOCKER_SOCK:?set ORDER_DOCKER_SOCK}:/sockets/order.sock"
+      - "${PAYMENT_DOCKER_SOCK:?set PAYMENT_DOCKER_SOCK}:/sockets/payment.sock"
+    group_add:
+      - "${SERVER_DOCKER_GID:-0}"
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     profiles: ["correctness"]
     restart: "no"

@@ -183,6 +183,12 @@ func (s *databaseSampler) sample(ctx context.Context) {
 		(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'),
 		(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'),
 		(SELECT count(*) FROM pg_locks WHERE NOT granted)`).Scan(&connections, &active, &idleInTx, &lockWaiters, &ungranted)
+	// The sampler is deliberately cancelled when the measurement window closes.
+	// A query that is in flight at that instant reports context.Canceled; that is
+	// normal shutdown, not a PostgreSQL telemetry failure for the run.
+	if err != nil && ctx.Err() != nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil {

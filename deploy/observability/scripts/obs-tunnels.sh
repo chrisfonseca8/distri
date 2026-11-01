@@ -35,11 +35,18 @@ reverse=(-R 13100:127.0.0.1:3100 -R 14318:127.0.0.1:14318)
 
 case "${1:-}" in
   start)
-    run_tunnel orchestrator "$ORCHESTRATOR_HOST" -L "$bridge":19091:127.0.0.1:9091 -L "$bridge":19101:127.0.0.1:9100 -L "$bridge":19111:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel payment      "$PAYMENT_HOST"      -L "$bridge":19092:127.0.0.1:9092 -L "$bridge":19102:127.0.0.1:9100 -L "$bridge":19112:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel inventory    "$INVENTORY_HOST"    -L "$bridge":19093:127.0.0.1:9093 -L "$bridge":19103:127.0.0.1:9100 -L "$bridge":19113:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel order        "$ORDER_HOST"        -L "$bridge":19094:127.0.0.1:9094 -L "$bridge":19104:127.0.0.1:9100 -L "$bridge":19114:127.0.0.1:8088 "${reverse[@]}"
-    run_tunnel broker       "$BROKER_HOST"       -L "$bridge":19105:127.0.0.1:9100 -L "$bridge":19115:127.0.0.1:15692 "${reverse[@]}"
+    # Keep scrape forwards independent from reverse telemetry. A stale remote
+    # reverse-forward socket must not prevent Prometheus from reconnecting.
+    run_tunnel orchestrator "$ORCHESTRATOR_HOST" -L "$bridge":19091:127.0.0.1:9091 -L "$bridge":19101:127.0.0.1:9100 -L "$bridge":19111:127.0.0.1:8088
+    run_tunnel payment      "$PAYMENT_HOST"      -L "$bridge":19092:127.0.0.1:9092 -L "$bridge":19102:127.0.0.1:9100 -L "$bridge":19112:127.0.0.1:8088
+    run_tunnel inventory    "$INVENTORY_HOST"    -L "$bridge":19093:127.0.0.1:9093 -L "$bridge":19103:127.0.0.1:9100 -L "$bridge":19113:127.0.0.1:8088
+    run_tunnel order        "$ORDER_HOST"        -L "$bridge":19094:127.0.0.1:9094 -L "$bridge":19104:127.0.0.1:9100 -L "$bridge":19114:127.0.0.1:8088
+    run_tunnel broker       "$BROKER_HOST"       -L "$bridge":19105:127.0.0.1:9100 -L "$bridge":19115:127.0.0.1:15692
+    run_tunnel orchestrator-reverse "$ORCHESTRATOR_HOST" "${reverse[@]}"
+    run_tunnel payment-reverse      "$PAYMENT_HOST"      "${reverse[@]}"
+    run_tunnel inventory-reverse    "$INVENTORY_HOST"    "${reverse[@]}"
+    run_tunnel order-reverse        "$ORDER_HOST"        "${reverse[@]}"
+    run_tunnel broker-reverse       "$BROKER_HOST"       "${reverse[@]}"
     wait ;;
   stop)
     for f in "$state"/*.pid; do [ -e "$f" ] || continue; kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"; done

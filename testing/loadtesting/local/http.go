@@ -17,6 +17,7 @@ import (
 
 type loadClient struct {
 	checkoutURL string // orchestrator-service: checkout entry point and saga status
+	testRunID   string
 
 	http            *http.Client
 	metrics         *collector
@@ -292,6 +293,9 @@ func (c *loadClient) do(ctx context.Context, method, url string, body any, heade
 	}
 	for key, value := range headers {
 		req.Header.Set(key, value)
+	}
+	if c.testRunID != "" {
+		req.Header.Set("X-Test-Run-ID", c.testRunID)
 	}
 	c.metrics.beginRequest()
 	started := time.Now()

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"log/slog"
 	"strings"
 	"time"
@@ -75,7 +77,8 @@ func (h *PaymentRefundHandler) Handle(ctx context.Context, delivery messaging.De
 		return messaging.Permanent(errors.New("payment.refund AMQP MessageId is required"))
 	}
 
-	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: command.OrderID.String(), SagaID: command.OrderID.String()})
+	err := observability.Transaction(ctx, h.db, "payment_refund", func(tx *gorm.DB) error {
 		insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.ProcessedMessage{MessageID: messageID})
 		if insert.Error != nil {
 			return fmt.Errorf("record processed payment.refund: %w", insert.Error)
@@ -133,6 +136,7 @@ func recordFundingRefund(tx *gorm.DB, attempt models.PaymentAttempt) error {
 	if result.RowsAffected == 0 {
 		return nil
 	}
+	businessmetrics.RefundsRequired.WithLabelValues(reasonCheckoutFailedAfterPayment).Inc()
 	return addCompensationEvent(tx, record.ID, "", models.CompensationRequired,
 		fmt.Sprintf("recorded: %s, %d %s, requested by the saga", reasonCheckoutFailedAfterPayment, attempt.AmountPaise, attempt.Currency))
 }

@@ -1,0 +1,126 @@
+# Alerts required before Phase 1. Thresholds are deliberately tight for a test
+# environment: the system is idle between runs, so any of these firing is news.
+groups:
+  - name: correctness
+    rules:
+      - alert: SagaStuck
+        expr: sagas_by_status{status="STUCK"} > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $value }} saga(s) STUCK ({{ $labels.service }}, run {{ $labels.test_run_id }})"
+          description: "A STUCK saga is an operator hand-off. Check `saga_stuck` events in Loki and `admin stuck`."
+      - alert: OutboxRowDead
+        expr: outbox_dead_rows > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $value }} dead outbox row(s) in {{ $labels.service }}"
+          description: "The relay gave up on a permanently unroutable message (`outbox_message_marked_dead`)."
+      - alert: DeadLetterQueueGrowing
+        expr: |
+          sum by (queue, test_run_id, environment) (rabbitmq_detailed_queue_messages{queue=~".*\\.dead"}) > 0
+          and
+          sum by (queue, test_run_id, environment) (delta(rabbitmq_detailed_queue_messages{queue=~".*\\.dead"}[10m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "RabbitMQ dead-letter queue {{ $labels.queue }} grew"
+      - alert: DeadLettersPublished
+        expr: sum by (service, queue) (increase(rabbitmq_dead_letters_total[5m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} dead-lettered messages from {{ $labels.queue }}"
+      - alert: PaymentUnconfirmed
+        expr: payment_attempts_unconfirmed > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $value }} payment attempt(s) ended UNCONFIRMED"
+          description: "The gateway never answered. A capture may still arrive: check `payment_unconfirmed` and `late_capture_refund_required` events."
+      - alert: RefundRequiredNotCompleted
+        expr: payment_refunds_oldest_incomplete_age_seconds > 300
+        labels: { severity: critical }
+        annotations:
+          summary: "A refund has been required but not completed for {{ $value | humanizeDuration }}"
+      - alert: StockInvariantViolated
+        expr: inventory_stock_invariant_violations > 0 or increase(inventory_stock_invariant_failures_total[5m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Stock invariant failed in inventory (`stock_invariant_failed`)"
+  - name: backlog
+    rules:
+      - alert: OutboxBacklogAge
+        expr: outbox_oldest_pending_age_seconds > 30
+        for: 15s
+        labels: { severity: warning }
+        annotations:
+          summary: "Oldest unpublished outbox row in {{ $labels.service }} is {{ $value | humanizeDuration }} old"
+      - alert: WebhookBacklogAge
+        expr: payment_webhook_oldest_pending_age_seconds > 60
+        for: 15s
+        labels: { severity: warning }
+        annotations:
+          summary: "Oldest unapplied webhook event is {{ $value | humanizeDuration }} old"
+      - alert: PaymentJobBacklogAge
+        expr: payment_jobs_oldest_queued_age_seconds > 60
+        for: 15s
+        labels: { severity: warning }
+        annotations:
+          summary: "Oldest due payment job has waited {{ $value | humanizeDuration }}"
+      - alert: ExpiredReservationBacklog
+        expr: inventory_expired_reservation_backlog > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} expired reservation(s) not yet released by the sweeper"
+  - name: saturation
+    rules:
+      - alert: DatabasePoolSaturated
+        expr: |
+          go_sql_in_use_connections / go_sql_max_open_connections > 0.9
+          or rate(go_sql_wait_count_total[1m]) > 0
+        for: 30s
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} database pool saturated (in use {{ $value }})"
+      - alert: ReadinessFailed
+        expr: service_ready == 0
+        for: 10s
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.service }} readiness check is failing"
+      - alert: ServiceDown
+        expr: up{job=~"services|infrastructure"} == 0
+        for: 15s
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.service }} ({{ $labels.job }}) is not being scraped"
+      - alert: HighErrorRate
+        expr: |
+          sum by (service) (rate(http_requests_total{code_class="5xx"}[1m]))
+          / clamp_min(sum by (service) (rate(http_requests_total[1m])), 0.001) > 0.05
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} 5xx ratio {{ $value | humanizePercentage }}"
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[2m]))) > 1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} p95 latency {{ $value | humanizeDuration }}"
+      - alert: HostMemoryPressure
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} host memory above 90%"
+      - alert: HostCPUPressure
+        expr: 1 - avg by (service) (rate(node_cpu_seconds_total{mode="idle"}[2m])) > 0.9
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} host CPU above 90%"
+      - alert: HostDiskPressure
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) > 0.85
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} disk {{ $labels.mountpoint }} above 85%"

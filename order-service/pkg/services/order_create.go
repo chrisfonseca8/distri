@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/order-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/order-service/pkg/observability"
 	"log/slog"
 	"math"
 	"strings"
@@ -47,6 +49,7 @@ func (h *OrderCreateHandler) Handle(
 	if command.OrderID == uuid.Nil() {
 		return messaging.Permanent(errors.New("order.create order_id is required"))
 	}
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: command.OrderID.String(), SagaID: command.OrderID.String()})
 
 	if err := validateOrderCreate(command); err != nil {
 		slog.Error("order.create rejected, replying Failed", "order_id", command.OrderID, "error", err)
@@ -54,7 +57,8 @@ func (h *OrderCreateHandler) Handle(
 	}
 
 	outcome := messages.Succeeded
-	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	created, replayed := false, false
+	err := observability.Transaction(ctx, h.db, "order_create", func(tx *gorm.DB) error {
 		processed := models.ProcessedMessage{MessageID: messageID}
 		insertProcessed := tx.Table("orders.processed_messages").
 			Clauses(clause.OnConflict{DoNothing: true}).
@@ -64,6 +68,7 @@ func (h *OrderCreateHandler) Handle(
 		}
 		if insertProcessed.RowsAffected == 0 {
 			outcome = ""
+			replayed = true
 			return nil
 		}
 
@@ -96,6 +101,7 @@ func (h *OrderCreateHandler) Handle(
 		}
 
 		if insertOrder.RowsAffected == 1 {
+			created = true
 			items := make([]models.OrderItem, 0, len(command.Items))
 			for _, item := range command.Items {
 				items = append(items, models.OrderItem{
@@ -118,14 +124,24 @@ func (h *OrderCreateHandler) Handle(
 				return err
 			}
 			if !matches {
-				slog.Error("order.create conflicts with the existing order, replying Failed", "order_id", command.OrderID)
+				businessmetrics.Conflicts.WithLabelValues("order.create").Inc()
+				slog.ErrorContext(ctx, "order.create conflicts with the existing order, replying Failed", "order_id", command.OrderID)
 				outcome = messages.Failed
 			}
 		}
 
 		return h.enqueueReply(tx, command.OrderID, outcome)
 	})
+	if err == nil {
+		if created {
+			businessmetrics.Transitions.WithLabelValues("created").Inc()
+		}
+		if replayed {
+			businessmetrics.IdempotentReplays.WithLabelValues("order.create").Inc()
+		}
+	}
 	if err != nil {
+		businessmetrics.TransitionFailures.WithLabelValues("created", observability.ClassifyDBError(err)).Inc()
 		wrapped := fmt.Errorf("process order.create message: %w", err)
 		if isPermanentDatabaseError(err) {
 			return messaging.Permanent(wrapped)

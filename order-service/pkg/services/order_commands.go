@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/order-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/order-service/pkg/observability"
 	"log/slog"
 	"strings"
 	"time"
@@ -61,8 +63,10 @@ func (h *OrderCommandHandler) handleTransition(
 	if messageID == "" {
 		return messaging.Permanent(errors.New("order transition AMQP MessageId is required"))
 	}
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: orderID.String(), SagaID: orderID.String()})
+	applied, replayed := false, false
 
-	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = observability.Transaction(ctx, h.db, "order_transition", func(tx *gorm.DB) error {
 		insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(
 			&models.ProcessedMessage{MessageID: messageID},
 		)
@@ -93,7 +97,7 @@ func (h *OrderCommandHandler) handleTransition(
 				}
 				outcome = messages.Succeeded
 			} else {
-				slog.Error("order transition for an order that does not exist, replying Failed",
+				slog.ErrorContext(ctx, "order transition for an order that does not exist, replying Failed",
 					"order_id", orderID, "requested_status", target)
 			}
 			return enqueueTransitionReply(tx, orderID, step, outcome)
@@ -107,6 +111,7 @@ func (h *OrderCommandHandler) handleTransition(
 		switch {
 		case current == target:
 			// Idempotent replay under a new message ID: emit the reply again.
+			replayed = true
 		case current == state.OrderPaid && target == state.OrderCancelled && refunded:
 			// The customer paid, but the checkout could not be completed and the payment is
 			// being refunded: the paid order is cancelled. Nothing else may cancel a paid order.
@@ -119,6 +124,7 @@ func (h *OrderCommandHandler) handleTransition(
 			if update.RowsAffected != 1 {
 				return errors.New("order moved during guarded transition")
 			}
+			applied = true
 		case current == state.OrderPendingPayment:
 			if !state.CanTransition(current, target) {
 				return fmt.Errorf("invalid order transition %s to %s", current, target)
@@ -132,9 +138,11 @@ func (h *OrderCommandHandler) handleTransition(
 			if update.RowsAffected != 1 {
 				return errors.New("order moved during guarded transition")
 			}
+			applied = true
 		default:
 			outcome = messages.Failed
-			slog.Error(
+			businessmetrics.Conflicts.WithLabelValues(string(step)).Inc()
+			slog.ErrorContext(ctx,
 				"order transition conflicts with terminal status",
 				"order_id", orderID,
 				"current_status", current,
@@ -145,8 +153,15 @@ func (h *OrderCommandHandler) handleTransition(
 		return enqueueTransitionReply(tx, orderID, step, outcome)
 	})
 	if err == nil {
+		if applied {
+			businessmetrics.Transitions.WithLabelValues(strings.ToLower(string(target))).Inc()
+		}
+		if replayed {
+			businessmetrics.IdempotentReplays.WithLabelValues(string(step)).Inc()
+		}
 		return nil
 	}
+	businessmetrics.TransitionFailures.WithLabelValues(strings.ToLower(string(target)), observability.ClassifyDBError(err)).Inc()
 	wrapped := fmt.Errorf("process order transition: %w", err)
 	if errors.Is(err, ErrOrderNotFound) || isPermanentDatabaseError(err) {
 		return messaging.Permanent(wrapped)

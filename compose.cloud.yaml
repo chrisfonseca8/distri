@@ -80,7 +80,13 @@ services:
       INVENTORY_CONSUMER_SCALE_DEPTH_PER_WORKER: "20"
       INVENTORY_CONSUMER_SCALE_INTERVAL: "5s"
       INVENTORY_CONSUMER_SCALE_DOWN_AFTER: "30s"
-    ports: ["8081:8081"]
+      METRICS_ADDR: ":9093"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-staging}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://host.docker.internal:4318}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
+    ports: ["8081:8081", "127.0.0.1:9093:9093"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "8081"]
       interval: 5s
@@ -131,7 +137,13 @@ services:
       WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
       JOB_RETRY_BASE: "2s"
       JOB_RETRY_CAP: "60s"
-    ports: ["8082:8082"]
+      METRICS_ADDR: ":9092"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-staging}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://host.docker.internal:4318}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
+    ports: ["8082:8082", "127.0.0.1:9092:9092"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8082/health"]
       interval: 5s
@@ -153,7 +165,13 @@ services:
       ORDER_CONSUMER_SCALE_DOWN_AFTER: "30s"
       OUTBOX_CONCURRENCY: "${ORDER_OUTBOX_CONCURRENCY:-4}"
       OUTBOX_POLL_INTERVAL: "${ORDER_OUTBOX_POLL_INTERVAL:-100ms}"
-    ports: ["8080:8080"]
+      METRICS_ADDR: ":9094"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-staging}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://host.docker.internal:4318}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
+    ports: ["8080:8080", "127.0.0.1:9094:9094"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
       interval: 5s
@@ -176,7 +194,13 @@ services:
       ORCHESTRATOR_CONSUMER_SCALE_DOWN_AFTER: "30s"
       OUTBOX_CONCURRENCY: "${ORCHESTRATOR_OUTBOX_CONCURRENCY:-4}"
       OUTBOX_POLL_INTERVAL: "${ORCHESTRATOR_OUTBOX_POLL_INTERVAL:-100ms}"
-    ports: ["8083:8083"]
+      METRICS_ADDR: ":9091"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-staging}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://host.docker.internal:4318}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
+    ports: ["8083:8083", "127.0.0.1:9091:9091"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8083/readyz"]
       interval: 5s

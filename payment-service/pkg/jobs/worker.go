@@ -2,7 +2,10 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
+	"go.opentelemetry.io/otel/trace"
 	"log/slog"
 	"math/rand/v2"
 	"os"
@@ -204,5 +207,12 @@ func (w *Worker) handleJob(
 	if job.Type != jobtypes.ProcessPayment {
 		return services.ProcessPermanent, fmt.Errorf("unknown payment job type %q", job.Type)
 	}
+	// Resume the correlation and trace of the request that queued this job, so the
+	// gateway call, logs and the reply it produces stay in the same trace.
+	var stored observability.CorrelationJSON
+	_ = json.Unmarshal(job.Correlation, &stored)
+	ctx = observability.ContextFromCorrelation(ctx, stored)
+	ctx, span := observability.StartSpan(ctx, "payment.job "+job.Type, trace.SpanKindConsumer)
+	defer func() { observability.EndSpan(span, err) }()
 	return w.processor.ProcessForJob(ctx, job.PaymentID, job.Attempts)
 }

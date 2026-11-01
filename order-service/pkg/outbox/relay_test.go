@@ -3,19 +3,28 @@ package outbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/order-service/database/models"
+	"github.com/chrisfonseca08/distri/order-service/pkg/messaging"
 )
 
 type fakeRelayStore struct {
-	markedID       uuid.UUID
-	rescheduledID  uuid.UUID
-	rescheduledIDs []uuid.UUID
-	rescheduleWait time.Duration
-	lastError      string
+	markedID        uuid.UUID
+	rescheduledID   uuid.UUID
+	rescheduledIDs  []uuid.UUID
+	rescheduleWait  time.Duration
+	lastError       string
+	unpublishableID uuid.UUID
+	dead            bool
+}
+
+func (store *fakeRelayStore) RecordUnpublishable(_ context.Context, rowID uuid.UUID, _ string, _ int, _ time.Duration, _ string) (bool, bool, error) {
+	store.unpublishableID = rowID
+	return true, store.dead, nil
 }
 
 func (*fakeRelayStore) Claim(
@@ -107,6 +116,23 @@ func TestRelayReschedulesFailedPublish(t *testing.T) {
 	}
 	if store.markedID != uuid.Nil() {
 		t.Fatalf("marked failed row %s", store.markedID)
+	}
+}
+
+func TestPoisonMessageBecomesDeadButBrokerOutageDoesNotCount(t *testing.T) {
+	poisonStore := &fakeRelayStore{dead: true}
+	relay := &Relay{store: poisonStore, publisher: &fakePublisher{err: fmt.Errorf("%w: missing binding", messaging.ErrUnroutable)}, config: DefaultRelayConfig(), workerID: "test-worker"}
+	row := models.Outbox{ID: uuid.New(), MessageID: uuid.New(), Attempts: 20, UnpublishableAttempts: 19}
+	relay.publish(context.Background(), row)
+	if poisonStore.unpublishableID != row.ID || poisonStore.rescheduledID != uuid.Nil() {
+		t.Fatalf("poison disposition: dead=%s rescheduled=%s", poisonStore.unpublishableID, poisonStore.rescheduledID)
+	}
+
+	outageStore := &fakeRelayStore{}
+	relay = &Relay{store: outageStore, publisher: &fakePublisher{err: errors.New("broker unavailable")}, config: DefaultRelayConfig(), workerID: "test-worker"}
+	relay.publish(context.Background(), row)
+	if outageStore.unpublishableID != uuid.Nil() || outageStore.rescheduledID != row.ID {
+		t.Fatalf("outage disposition: poison=%s rescheduled=%s", outageStore.unpublishableID, outageStore.rescheduledID)
 	}
 }
 

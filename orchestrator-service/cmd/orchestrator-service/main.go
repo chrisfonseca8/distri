@@ -12,11 +12,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/businessmetrics"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/clients"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/config"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
@@ -31,7 +33,8 @@ const shutdownTimeout = 10 * time.Second
 
 // main starts the orchestrator service and exits non-zero if it stops with an error.
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	observability.SetProcess(observability.Config{Service: "orchestrator-service"})
+	slog.SetDefault(observability.NewLogger(os.Stdout))
 
 	if err := run(); err != nil {
 		slog.Error("orchestrator-service stopped", "error", err)
@@ -50,6 +53,15 @@ func run() error {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
+
+	stopObservability, err := observability.Setup(observability.Options{
+		Service: "orchestrator-service", MetricsAddr: "127.0.0.1:9091", DB: applicationConfig.DB, PoolName: "orchestrator",
+	})
+	if err != nil {
+		return fmt.Errorf("set up observability: %w", err)
+	}
+	defer stopObservability()
+	businessmetrics.Register(sqlDB)
 	var telemetryRecorder *telemetry.Recorder
 	if telemetry.Enabled() {
 		telemetryRecorder = telemetry.New(sqlDB)
@@ -182,6 +194,7 @@ func run() error {
 	if telemetryRecorder != nil {
 		handler = telemetryRecorder.Middleware(mux)
 	}
+	handler = observability.HTTPMiddleware(handler)
 	server, err := config.NewServer(handler)
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)

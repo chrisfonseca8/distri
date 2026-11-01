@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"log/slog"
 	"time"
 	"uuid"
@@ -203,7 +205,9 @@ func (r *PaymentReconciler) failUnconfirmed(ctx context.Context, attempt models.
 		return
 	}
 	if changed {
-		slog.Warn("payment failed as unconfirmed", "payment_id", attempt.ID, "order_id", attempt.OrderID,
+		businessmetrics.Unconfirmed.Inc()
+		slog.WarnContext(observability.WithOrderID(ctx, attempt.OrderID.String()), "payment failed as unconfirmed",
+			"event", observability.EventPaymentUnconfirmed, "payment_id", attempt.ID, "order_id", attempt.OrderID,
 			"from_status", attempt.Status, "grace", r.config.UnconfirmedGrace)
 	}
 }
@@ -541,6 +545,12 @@ func recordCompensation(
 	}
 	if result.RowsAffected == 0 {
 		return false, nil
+	}
+	businessmetrics.RefundsRequired.WithLabelValues(draft.Reason).Inc()
+	if ctx := observability.WithOrderID(tx.Statement.Context, attempt.OrderID.String()); draft.Reason == reasonLateCapture || draft.Reason == reasonAfterCancel {
+		slog.ErrorContext(ctx, "capture arrived after the checkout was abandoned; refund required",
+			"event", observability.EventLateCaptureRefund, "reason", draft.Reason, "gateway_payment_id", draft.PaymentID,
+			"amount_paise", draft.AmountPaise, "source", source)
 	}
 	return true, addCompensationEvent(tx, record.ID, "", draft.Status,
 		fmt.Sprintf("recorded: %s, %d %s, observed by %s", draft.Reason, draft.AmountPaise, draft.Currency, source))

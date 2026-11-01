@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/observability"
 	"math"
 	"slices"
 	"strings"
@@ -72,10 +74,27 @@ func (s *ReservationService) CreateReservation(
 		return CreateReservationResult{}, err
 	}
 
+	ctx = observability.WithOrderID(ctx, input.OrderID.String())
+	ctx = observability.WithSagaID(ctx, input.OrderID.String())
+	started := time.Now()
 	var result CreateReservationResult
 	err = retryOnConflict(ctx, "create_reservation", func() error {
 		return s.createReservationOnce(ctx, input, items, &result)
 	})
+	outcome := "reserved"
+	switch {
+	case errors.Is(err, ErrInsufficientStock):
+		outcome = "insufficient_stock"
+		businessmetrics.InsufficientStock.Inc()
+	case errors.Is(err, ErrInvalidReservationInput):
+		outcome = "invalid"
+	case err != nil:
+		outcome = "error"
+	case !result.Created:
+		outcome = "replayed"
+	}
+	businessmetrics.Reservations.WithLabelValues(outcome).Inc()
+	businessmetrics.ReservationDuration.WithLabelValues(outcome).Observe(time.Since(started).Seconds())
 	return result, err
 }
 
@@ -87,7 +106,7 @@ func (s *ReservationService) createReservationOnce(
 	out *CreateReservationResult,
 ) error {
 	var result CreateReservationResult
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := observability.Transaction(ctx, s.db, "create_reservation", func(tx *gorm.DB) error {
 		reservation, created, err := claimReservation(tx, input)
 		if err != nil {
 			return err

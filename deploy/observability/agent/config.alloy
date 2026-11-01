@@ -1,0 +1,70 @@
+// Alloy collects container logs (JSON, with correlation fields) and OTLP traces,
+// and forwards both. The same file runs on this machine and on each EC2 host:
+// only LOKI_URL and TEMPO_OTLP_ENDPOINT differ (on EC2 they point at reverse SSH
+// tunnels back to the local Loki and Tempo).
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.json.receiver]
+}
+
+// Low-cardinality fields become labels; order_id, saga_id, message_id and
+// trace_id stay inside the log line (filter with `| json | order_id="..."`).
+loki.process "json" {
+  stage.json {
+    expressions = {
+      level       = "level",
+      event       = "event",
+      app_service = "service",
+      test_run_id = "test_run_id",
+    }
+  }
+  stage.labels {
+    values = {
+      level       = "",
+      event       = "",
+      test_run_id = "",
+      service     = "app_service",
+    }
+  }
+  stage.static_labels {
+    values = { environment = sys.env("OBS_ENVIRONMENT") }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = sys.env("LOKI_URL")
+  }
+}
+
+otelcol.receiver.otlp "default" {
+  http { endpoint = sys.env("OTLP_LISTEN") }
+  output { traces = [otelcol.exporter.otlphttp.tempo.input] }
+}
+
+otelcol.exporter.otlphttp "tempo" {
+  client {
+    endpoint = sys.env("TEMPO_OTLP_ENDPOINT")
+    tls { insecure = true }
+  }
+}

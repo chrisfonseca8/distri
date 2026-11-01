@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/observability"
 )
 
 // maxConflictAttempts bounds the retry of a transaction PostgreSQL aborted for a
@@ -45,6 +47,7 @@ func retryOnConflict(ctx context.Context, operation string, run func() error) er
 		}
 		slog.Warn("transaction conflict, retrying", "operation", operation, "sqlstate", code, "attempt", attempt, "max_attempts", maxConflictAttempts)
 		conflictRetries.Add(1)
+		observability.Retries.WithLabelValues("inventory_tx_" + operation).Inc()
 		pause := time.Duration(attempt)*20*time.Millisecond + time.Duration(rand.IntN(20))*time.Millisecond
 		select {
 		case <-ctx.Done():

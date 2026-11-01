@@ -6,12 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 	"uuid"
 )
 
@@ -427,7 +432,32 @@ func (r *Razorpay) doWith(
 	body any,
 	out any,
 	headers map[string]string,
-) (int, *razorpayError, error) {
+) (statusCode int, failure *razorpayError, err error) {
+	operation := gatewayOperation(method, path)
+	ctx, span := observability.StartSpan(ctx, "gateway "+operation, trace.SpanKindClient, attribute.String("peer.service", "razorpay"))
+	started := time.Now()
+	defer func() {
+		result := "ok"
+		var notSent *ErrNotSent
+		switch {
+		case errors.As(err, &notSent):
+			result = "not_sent"
+		case err != nil:
+			result = "ambiguous"
+		case failure != nil && statusCode >= 500, statusCode == http.StatusTooManyRequests:
+			result = "ambiguous"
+		case failure != nil:
+			result = "rejected"
+		}
+		businessmetrics.GatewayCalls.WithLabelValues(operation, result).Inc()
+		businessmetrics.GatewayDuration.WithLabelValues(operation).Observe(time.Since(started).Seconds())
+		span.SetAttributes(attribute.Int("http.response.status_code", statusCode), attribute.String("gateway.result", result))
+		if result == "ambiguous" || result == "not_sent" {
+			observability.EndSpan(span, errors.New("gateway call "+result))
+		} else {
+			span.End()
+		}
+	}()
 	target := r.baseURL + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
@@ -444,6 +474,7 @@ func (r *Razorpay) doWith(
 	if err != nil {
 		return 0, nil, fmt.Errorf("build request: %w", err)
 	}
+	observability.InjectHTTP(ctx, request.Header)
 	request.SetBasicAuth(r.keyID, r.keySecret)
 	request.Header.Set("Accept", "application/json")
 	for key, value := range headers {
@@ -480,6 +511,20 @@ func (r *Razorpay) doWith(
 	var apiErr razorpayError
 	_ = json.Unmarshal(raw, &apiErr)
 	return response.StatusCode, &apiErr, nil
+}
+
+// gatewayOperation names a gateway call for metrics: method plus the path with ids
+// removed, so the label stays bounded (for example "POST /payments/refund").
+func gatewayOperation(method, path string) string {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	parts := []string{}
+	for index, segment := range segments {
+		// Collection names are letters only; ids contain digits or underscores.
+		if index%2 == 0 && !strings.ContainsAny(segment, "0123456789_") {
+			parts = append(parts, segment)
+		}
+	}
+	return method + " /" + strings.Join(parts, "/")
 }
 
 // classifyFailure maps an error response to a typed rejection or an ambiguous

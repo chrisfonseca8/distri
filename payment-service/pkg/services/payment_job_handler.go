@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"time"
 	"uuid"
 
@@ -84,6 +85,7 @@ func (h *PaymentJobHandler) ProcessForJob(
 		return ProcessRetry, err
 	}
 
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: payment.OrderID.String(), SagaID: payment.OrderID.String()})
 	switch payment.Status {
 	case "CREATED":
 		return h.processCreated(ctx, payment)
@@ -91,7 +93,7 @@ func (h *PaymentJobHandler) ProcessForJob(
 		if attempts <= 1 {
 			return ProcessRetry, errors.New("payment is pending on its first job attempt")
 		}
-		if err := h.writeResult(payment.ID, map[string]any{
+		if err := h.writeResult(ctx, payment.ID, map[string]any{
 			"status":       "UNKNOWN",
 			"failure_code": nil,
 		}); err != nil {
@@ -158,7 +160,7 @@ func (h *PaymentJobHandler) processCreated(
 	if updates["status"] == "AWAITING_PAYMENT" {
 		updates["expires_at"] = time.Now().Add(h.paymentWindow)
 	}
-	if err := h.writeResult(payment.ID, updates); err != nil {
+	if err := h.writeResult(ctx, payment.ID, updates); err != nil {
 		return ProcessRetry, err
 	}
 	return ProcessDone, nil
@@ -166,11 +168,15 @@ func (h *PaymentJobHandler) processCreated(
 
 // writeResult stores a payment's result with its own short timeout.
 func (h *PaymentJobHandler) writeResult(
+	ctx context.Context,
 	paymentID uuid.UUID,
 	updates map[string]any,
 ) error {
+	// The write must survive a cancelled request context, so it starts from a fresh
+	// one; the correlation ids and trace are carried over so the reply row keeps them.
 	writeContext, cancelWrite := context.WithTimeout(context.Background(), paymentResultWriteTimeout)
 	defer cancelWrite()
+	writeContext = observability.ContextFromCorrelation(writeContext, observability.CorrelationFromContext(ctx))
 
 	return h.db.WithContext(writeContext).Transaction(func(tx *gorm.DB) error {
 		_, err := writePaymentResult(tx, paymentID, "PENDING", updates)

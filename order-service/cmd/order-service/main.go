@@ -13,11 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrisfonseca08/distri/order-service/pkg/businessmetrics"
 	"github.com/chrisfonseca08/distri/order-service/pkg/config"
 	"github.com/chrisfonseca08/distri/order-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/order-service/pkg/health"
 	"github.com/chrisfonseca08/distri/order-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/order-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/order-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/order-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/order-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/order-service/pkg/routes"
@@ -35,8 +37,8 @@ const (
 
 // main reads the -role flag, starts the service and exits non-zero if it stops with an error.
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	observability.SetProcess(observability.Config{Service: "order-service"})
+	slog.SetDefault(observability.NewLogger(os.Stdout))
 
 	role := flag.String("role", string(roleAll), "process role: api, worker, or all")
 	flag.Parse()
@@ -65,6 +67,13 @@ func run(roleValue string) error {
 	}
 	defer sqlDB.Close()
 
+	observability.InitMetrics()
+	if err := observability.InstrumentGorm(applicationConfig.DB, "order"); err != nil {
+		return fmt.Errorf("instrument database: %w", err)
+	}
+	observability.SetReadinessCheck(sqlDB.PingContext)
+	businessmetrics.Register(sqlDB)
+
 	orderService := services.NewOrderService(applicationConfig.DB)
 
 	shutdownContext, stop := signal.NotifyContext(
@@ -72,6 +81,17 @@ func run(roleValue string) error {
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
+	shutdownTracing, err := observability.InitTracing(shutdownContext)
+	if err != nil {
+		return fmt.Errorf("set up tracing: %w", err)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flush)
+	}()
+	observability.ServeMetrics(shutdownContext, metricsAddress())
+
 	var workerWaitGroup sync.WaitGroup
 	var outboxPublishers []*messaging.Publisher
 	defer func() {
@@ -182,6 +202,7 @@ func run(roleValue string) error {
 	if telemetry.Enabled() {
 		handler = telemetryRecorder.Middleware(mux)
 	}
+	handler = observability.HTTPMiddleware(handler)
 	server, err := config.NewServer(handler)
 	if err != nil {
 		return fmt.Errorf("set up server: %w", err)
@@ -239,5 +260,17 @@ func parseRole(value string) (serviceRole, error) {
 		return role, nil
 	default:
 		return "", fmt.Errorf("invalid role %q: must be api, worker, or all", value)
+	}
+}
+
+// metricsAddress is where /metrics is served: METRICS_ADDR, "off" to disable, else loopback.
+func metricsAddress() string {
+	switch value := os.Getenv("METRICS_ADDR"); value {
+	case "off":
+		return ""
+	case "":
+		return "127.0.0.1:9094"
+	default:
+		return value
 	}
 }

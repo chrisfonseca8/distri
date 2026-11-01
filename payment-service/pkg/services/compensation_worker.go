@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"log/slog"
 	"os"
 	"strings"
@@ -406,6 +407,7 @@ func (w *CompensationWorker) mine(record models.CompensationRecord) recordGuard 
 // submit sends one claimed operation. precheck is false for a same-key resubmission
 // of an unknown operation (the amount_refunded baseline is already stored).
 func (w *CompensationWorker) submit(ctx context.Context, record models.CompensationRecord, precheck bool) {
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: record.OrderID.String(), SagaID: record.OrderID.String()})
 	guard := w.mine(record)
 
 	// Never refund the payment that funded fulfilment, whatever the record says.
@@ -622,6 +624,7 @@ func (w *CompensationWorker) reconcileUnknown(ctx context.Context) error {
 
 // reconcileOneUnknown works out what happened to one refund of unknown outcome, waiting if the gateway cannot tell yet.
 func (w *CompensationWorker) reconcileOneUnknown(ctx context.Context, record models.CompensationRecord) {
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: record.OrderID.String(), SagaID: record.OrderID.String()})
 	guard := recordGuard{status: models.CompensationUnknown, operationID: record.OperationID}
 	wait := func(why string) {
 		_, _ = w.touchUnknown(ctx, record, map[string]any{"next_attempt_at": w.now().Add(w.config.PendingPoll), "last_error": truncateText(why, 300)})

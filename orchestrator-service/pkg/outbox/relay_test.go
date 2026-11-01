@@ -11,11 +11,18 @@ import (
 )
 
 type fakeRelayStore struct {
-	markedID       uuid.UUID
-	rescheduledID  uuid.UUID
-	rescheduledIDs []uuid.UUID
-	rescheduleWait time.Duration
-	lastError      string
+	markedID        uuid.UUID
+	rescheduledID   uuid.UUID
+	rescheduledIDs  []uuid.UUID
+	rescheduleWait  time.Duration
+	lastError       string
+	unpublishableID uuid.UUID
+	dead            bool
+}
+
+func (store *fakeRelayStore) RecordUnpublishable(_ context.Context, rowID uuid.UUID, _ string, _ int, _ time.Duration, _ string) (bool, bool, error) {
+	store.unpublishableID = rowID
+	return true, store.dead, nil
 }
 
 func (*fakeRelayStore) Claim(

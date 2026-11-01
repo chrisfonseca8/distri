@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 	"log/slog"
 	"strings"
 	"time"
@@ -161,10 +162,12 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 		return messaging.Permanent(errors.New("order reply AMQP MessageId is required"))
 	}
 
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: reply.OrderID.String(), SagaID: reply.OrderID.String()})
 	h.telemetry.Increment("reply_received")
+	var observed replyObservation
 	var txStartedAt, txWorkFinishedAt, outboxCreatedAt time.Time
 	var stateChanged bool
-	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := observability.Transaction(ctx, h.db, "saga_reply", func(tx *gorm.DB) error {
 		txStartedAt = time.Now()
 		defer func() { txWorkFinishedAt = time.Now() }()
 		insertProcessed := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(
@@ -207,8 +210,11 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 				return errConcurrentSagaTransition
 			}
 			stateChanged = true
-			slog.Error(
+			observed = replyObservation{changed: true, step: string(reply.Step), outcome: string(reply.Outcome), sagaCreatedAt: sagaRow.CreatedAt,
+				statusBefore: sagaRow.Status, statusAfter: string(saga.SagaStuck)}
+			slog.ErrorContext(ctx,
 				"saga STUCK: payment succeeded after compensation started",
+				"event", observability.EventSagaStuck,
 				"order_id", reply.OrderID,
 				"saga_status", sagaRow.Status,
 				"current_step", sagaRow.CurrentStep,
@@ -285,6 +291,9 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 			return errConcurrentSagaTransition
 		}
 		stateChanged = true
+		observed = replyObservation{changed: true, step: currentStep.Step, outcome: string(reply.Outcome), stepStartedAt: currentStep.StartedAt,
+			sagaCreatedAt: sagaRow.CreatedAt, nextStep: string(decision.NextStep), statusBefore: sagaRow.Status, statusAfter: string(decision.SagaStatus),
+			resend: decision.NextStep == saga.Step(currentStep.Step) && decision.Command != ""}
 
 		mapping, hasCommandMapping := commandMappings[decision.Command]
 		var payload json.RawMessage
@@ -374,6 +383,7 @@ func (h *Handler) Handle(ctx context.Context, delivery messaging.Delivery) error
 	finishedAt := time.Now()
 	h.recordTiming(receivedAt, txStartedAt, outboxCreatedAt, txWorkFinishedAt, finishedAt, err)
 	if err == nil {
+		observed.record(ctx)
 		if stateChanged && h.notifier != nil {
 			h.notifier.Notify(reply.OrderID.String())
 		}

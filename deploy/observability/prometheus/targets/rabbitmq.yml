@@ -1,0 +1,2 @@
+- targets: ["rabbitmq:15692"]
+  labels: { service: "rabbitmq", environment: "local", test_run_id: "acceptance-7" }

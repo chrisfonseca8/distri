@@ -2,7 +2,12 @@ package paymentgateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"math/rand/v2"
 	"os"
 	"strings"
@@ -86,8 +91,34 @@ func NewSimulatorFromEnv() (*Simulator, error) {
 	return NewSimulator(mode, latency)
 }
 
-// CreateCharge simulates success, a final decline, or an ambiguous timeout.
+// CreateCharge simulates success, a final decline, or an ambiguous timeout. The
+// call is timed and counted like a real gateway call, labelled with the in-process
+// simulator's operation name so it is never mistaken for a Razorpay call.
 func (s *Simulator) CreateCharge(
+	ctx context.Context,
+	orderID uuid.UUID,
+	amountPaise int64,
+) (ref string, err error) {
+	const operation = "sim POST /orders"
+	ctx, span := observability.StartSpan(ctx, "gateway "+operation, trace.SpanKindClient, attribute.String("peer.service", "simulator"))
+	started := time.Now()
+	defer func() {
+		result := "ok"
+		var declined *ErrDeclined
+		switch {
+		case errors.As(err, &declined):
+			result = "rejected"
+		case err != nil:
+			result = "ambiguous"
+		}
+		businessmetrics.GatewayCalls.WithLabelValues(operation, result).Inc()
+		businessmetrics.GatewayDuration.WithLabelValues(operation).Observe(time.Since(started).Seconds())
+		observability.EndSpan(span, nil)
+	}()
+	return s.createCharge(ctx, orderID, amountPaise)
+}
+
+func (s *Simulator) createCharge(
 	ctx context.Context,
 	orderID uuid.UUID,
 	amountPaise int64,

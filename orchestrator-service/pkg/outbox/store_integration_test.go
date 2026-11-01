@@ -1,6 +1,7 @@
 package outbox
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -105,6 +106,51 @@ func TestEnqueueUsesCallerTransaction(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("committed transaction has %d sagas, want 1", count)
+	}
+}
+
+func TestUnpublishableRowStopsAtLimitAndCanBeRequeued(t *testing.T) {
+	db := edgeDB(t)
+	messageID := uuid.New()
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return Enqueue(tx, Message{MessageID: messageID, RoutingKey: "no.binding", Payload: json.RawMessage(`{"poison":true}`)})
+	}); err != nil {
+		t.Fatalf("enqueue poison row: %v", err)
+	}
+	t.Cleanup(func() { db.Where("message_id = ?", messageID).Delete(&models.Outbox{}) })
+
+	store := NewStore(db)
+	const worker = "poison-test"
+	for attempt := 1; attempt <= 3; attempt++ {
+		rows, err := store.Claim(context.Background(), worker, 1, time.Minute)
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("claim %d = %d rows, %v", attempt, len(rows), err)
+		}
+		updated, dead, err := store.RecordUnpublishable(context.Background(), rows[0].ID, worker, 3, 0, "unroutable")
+		if err != nil || !updated || dead != (attempt == 3) {
+			t.Fatalf("failure %d: updated=%v dead=%v err=%v", attempt, updated, dead, err)
+		}
+	}
+
+	rows, err := store.Claim(context.Background(), worker, 1, time.Minute)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("dead row was claimable: %d rows, %v", len(rows), err)
+	}
+	var row models.Outbox
+	if err := db.Where("message_id = ?", messageID).First(&row).Error; err != nil {
+		t.Fatalf("load dead row: %v", err)
+	}
+	if row.DeadAt == nil || row.UnpublishableAttempts != 3 {
+		t.Fatalf("dead state = dead_at %v, failures %d", row.DeadAt, row.UnpublishableAttempts)
+	}
+
+	requeued, err := store.Requeue(context.Background(), row.ID)
+	if err != nil || !requeued {
+		t.Fatalf("requeue = %v, %v", requeued, err)
+	}
+	rows, err = store.Claim(context.Background(), worker, 1, time.Minute)
+	if err != nil || len(rows) != 1 || rows[0].UnpublishableAttempts != 0 || rows[0].DeadAt != nil {
+		t.Fatalf("claim after requeue = %+v, %v", rows, err)
 	}
 }
 

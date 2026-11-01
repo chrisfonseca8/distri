@@ -1,0 +1,49 @@
+# Runs on every EC2 host next to the application containers. Nothing listens on a
+# public address: alloy takes OTLP from the docker bridge only, node-exporter and
+# cAdvisor bind to loopback, and the local Prometheus reaches them (and the
+# services' own /metrics) through SSH tunnels from scripts/obs-tunnels.sh.
+#
+#   OBS_ENVIRONMENT=staging docker compose -f compose.agent.yaml up -d
+#
+# LOKI_URL / TEMPO_OTLP_ENDPOINT point at the reverse tunnels (-R) that land on the
+# laptop's Loki and Tempo. If the tunnel is down alloy buffers briefly, then drops:
+# logs stay in the container's own json-file log, which obs-export-run.sh can pull.
+name: distri-obs-agent
+
+services:
+  alloy:
+    image: grafana/alloy:v1.9.1
+    network_mode: host
+    command: ["run", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    environment:
+      LOKI_URL: "${LOKI_URL:-http://127.0.0.1:13100/loki/api/v1/push}"
+      TEMPO_OTLP_ENDPOINT: "${TEMPO_OTLP_ENDPOINT:-http://127.0.0.1:14318}"
+      OTLP_LISTEN: "${OTLP_LISTEN:-172.17.0.1:4318}"
+      OBS_ENVIRONMENT: "${OBS_ENVIRONMENT:-staging}"
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    network_mode: host
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address=127.0.0.1:9100"]
+    volumes: ["/:/host:ro"]
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    ports: ["127.0.0.1:8088:8080"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+    restart: unless-stopped
+
+volumes:
+  alloy-data:

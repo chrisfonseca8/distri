@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 	"log/slog"
 	"math/rand/v2"
 	"time"
@@ -368,6 +370,7 @@ type dueStep struct {
 	RoutingKey     *string
 	CommandPayload []byte
 	SagaVersion    int64
+	TestRunID      *string
 }
 
 // Each due step is handled in its own short transaction: the row locks are
@@ -380,7 +383,8 @@ SELECT st.id AS step_id,
 	st.attempts,
 	st.routing_key,
 	st.command_payload,
-	sg.version AS saga_version
+	sg.version AS saga_version,
+	sg.test_run_id
 FROM orchestrator.saga_steps AS st
 JOIN orchestrator.sagas AS sg ON sg.id = st.saga_id
 WHERE st.status = 'RUNNING'
@@ -409,7 +413,7 @@ func (s *SagaSweeper) resendDueSteps(ctx context.Context) error {
 func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 	var found bool
 	var afterCommit func()
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := observability.Transaction(ctx, s.db, "saga_sweep_step", func(tx *gorm.DB) error {
 		var rows []dueStep
 		if err := tx.Raw(dueStepQuery).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("claim due saga step: %w", err)
@@ -446,8 +450,10 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 				if s.notifier != nil {
 					s.notifier.Notify(step.SagaID.String())
 				}
+				businessmetrics.StuckTransitions.WithLabelValues("no_stored_command").Inc()
 				slog.Error(
 					"saga STUCK: step has no stored command to resend",
+					"event", observability.EventSagaStuck,
 					"saga_id", step.SagaID,
 					"step", step.Step,
 					"attempts", step.Attempts,
@@ -464,8 +470,10 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 				if s.notifier != nil {
 					s.notifier.Notify(step.SagaID.String())
 				}
+				businessmetrics.StuckTransitions.WithLabelValues("attempts_exhausted").Inc()
 				slog.Error(
 					"saga STUCK: step exhausted its attempts",
+					"event", observability.EventSagaStuck,
 					"saga_id", step.SagaID,
 					"step", step.Step,
 					"attempts", step.Attempts,
@@ -475,7 +483,13 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 			return nil
 		}
 
-		if err := outbox.Enqueue(tx, outbox.Message{
+		// A resend is driven by the sweeper, not a request: restore the saga's run id
+		// so the command is still attributable to its test run.
+		resendCtx := observability.WithFields(ctx, observability.Fields{OrderID: step.SagaID.String(), SagaID: step.SagaID.String()})
+		if step.TestRunID != nil {
+			resendCtx = observability.WithTestRunID(resendCtx, *step.TestRunID)
+		}
+		if err := outbox.Enqueue(tx.WithContext(resendCtx), outbox.Message{
 			MessageID:  uuid.New(),
 			RoutingKey: *step.RoutingKey,
 			Payload:    json.RawMessage(step.CommandPayload),
@@ -502,6 +516,8 @@ func (s *SagaSweeper) handleOneDueStep(ctx context.Context) (bool, error) {
 			return errors.New("saga step changed while it was locked")
 		}
 		afterCommit = func() {
+			businessmetrics.StepRetries.WithLabelValues(step.Step).Inc()
+			observability.Retries.WithLabelValues("saga_step_resend").Inc()
 			slog.Info(
 				"resent saga command",
 				"saga_id", step.SagaID,
@@ -592,8 +608,10 @@ func (s *SagaSweeper) markExpiredSagasStuck(ctx context.Context) error {
 		if s.notifier != nil {
 			s.notifier.Notify(row.ID.String())
 		}
+		businessmetrics.StuckTransitions.WithLabelValues("deadline").Inc()
 		slog.Error(
 			"saga STUCK: deadline passed",
+			"event", observability.EventSagaStuck,
 			"saga_id", row.ID,
 			"step", row.CurrentStep,
 			"attempts", row.Attempts,

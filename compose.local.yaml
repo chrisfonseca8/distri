@@ -144,8 +144,14 @@ services:
       INVENTORY_CONSUMER_SCALE_DEPTH_PER_WORKER: "${INVENTORY_CONSUMER_SCALE_DEPTH_PER_WORKER:-20}"
       INVENTORY_CONSUMER_SCALE_INTERVAL: "${INVENTORY_CONSUMER_SCALE_INTERVAL:-5s}"
       INVENTORY_CONSUMER_SCALE_DOWN_AFTER: "${INVENTORY_CONSUMER_SCALE_DOWN_AFTER:-30s}"
+      METRICS_ADDR: ":9093"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-local}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
     ports:
       - "${LOCAL_INVENTORY_PORT:-8081}:8081"
+      - "127.0.0.1:9093:9093"
     depends_on:
       inventory-seed:
         condition: service_completed_successfully
@@ -245,10 +251,16 @@ services:
       WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
       JOB_RETRY_BASE: "${JOB_RETRY_BASE:-2s}"
       JOB_RETRY_CAP: "${JOB_RETRY_CAP:-60s}"
+      METRICS_ADDR: ":9092"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-local}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "${LOCAL_PAYMENT_PORT:-8082}:8082"
+      - "127.0.0.1:9092:9092"
     depends_on:
       payment-migrate:
         condition: service_completed_successfully
@@ -276,8 +288,14 @@ services:
       ORDER_CONSUMER_SCALE_DOWN_AFTER: "${ORDER_CONSUMER_SCALE_DOWN_AFTER:-30s}"
       OUTBOX_CONCURRENCY: "${ORDER_OUTBOX_CONCURRENCY:-4}"
       OUTBOX_POLL_INTERVAL: "${ORDER_OUTBOX_POLL_INTERVAL:-100ms}"
+      METRICS_ADDR: ":9094"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-local}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
     ports:
       - "${LOCAL_ORDER_PORT:-8080}:8080"
+      - "127.0.0.1:9094:9094"
     depends_on:
       order-migrate:
         condition: service_completed_successfully
@@ -306,8 +324,14 @@ services:
       ORCHESTRATOR_CONSUMER_SCALE_DOWN_AFTER: "${ORCHESTRATOR_CONSUMER_SCALE_DOWN_AFTER:-30s}"
       OUTBOX_CONCURRENCY: "${ORCHESTRATOR_OUTBOX_CONCURRENCY:-4}"
       OUTBOX_POLL_INTERVAL: "${ORCHESTRATOR_OUTBOX_POLL_INTERVAL:-100ms}"
+      METRICS_ADDR: ":9091"
+      ENVIRONMENT: "${OBS_ENVIRONMENT:-local}"
+      TEST_RUN_ID: "${TEST_RUN_ID:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-1}"
     ports:
       - "${LOCAL_ORCHESTRATOR_PORT:-8083}:8083"
+      - "127.0.0.1:9091:9091"
     depends_on:
       postgres:
         condition: service_healthy

@@ -97,3 +97,52 @@ func TestNextRejectsUndefinedTransitions(t *testing.T) {
 		})
 	}
 }
+
+// Every documented step/outcome pair must be defined, and every non-terminal
+// decision must still have a path to a terminal saga status. This makes adding a
+// step without completing its transition table fail loudly.
+func TestTransitionTableIsCompleteAndEveryDecisionCanReachATerminalState(t *testing.T) {
+	steps := []Step{RESERVE_STOCK, CREATE_ORDER, TAKE_PAYMENT, MARK_ORDER_PAID, MARK_ORDER_CANCELLED, CONFIRM_STOCK, RELEASE_STOCK, REFUND_PAYMENT, CANCEL_PAID_ORDER}
+	outcomes := []Outcome{Succeeded, Failed, Ambiguous}
+	terminal := map[Status]bool{SagaCompleted: true, SagaCompensated: true, SagaStuck: true}
+
+	for _, step := range steps {
+		for _, outcome := range outcomes {
+			decision, err := Next(step, outcome)
+			if err != nil {
+				t.Errorf("missing transition for %s/%s: %v", step, outcome, err)
+				continue
+			}
+			if decision.SagaStatus == "" {
+				t.Errorf("transition %s/%s has no saga status", step, outcome)
+			}
+			if !terminal[decision.SagaStatus] && decision.NextStep == "" {
+				t.Errorf("transition %s/%s is a non-terminal dead end: %+v", step, outcome, decision)
+			}
+			if decision.NextStep != "" && !canReachTerminal(decision.NextStep, terminal, map[Step]bool{}) {
+				t.Errorf("transition %s/%s cannot reach a terminal state: %+v", step, outcome, decision)
+			}
+		}
+	}
+}
+
+func canReachTerminal(step Step, terminal map[Status]bool, visiting map[Step]bool) bool {
+	if visiting[step] {
+		return false
+	}
+	visiting[step] = true
+	defer delete(visiting, step)
+	for _, outcome := range []Outcome{Succeeded, Failed, Ambiguous} {
+		decision, err := Next(step, outcome)
+		if err != nil {
+			continue
+		}
+		if terminal[decision.SagaStatus] {
+			return true
+		}
+		if decision.NextStep != "" && canReachTerminal(decision.NextStep, terminal, visiting) {
+			return true
+		}
+	}
+	return false
+}

@@ -4,6 +4,13 @@ package main
 func phase03() phaseDefinition {
 	return phaseDefinition{3, "Atomic inventory rollback", "Attempts a two-product reservation whose second line lacks stock and verifies no stock or reservation row is partially committed.", func(p *phaseContext) {
 		first, second := p.productID(2), p.productID(3)
+		originalFirst, originalSecond := p.inventory(first), p.inventory(second)
+		p.setStock(first, 10)
+		p.setStock(second, 10)
+		defer func() {
+			p.setStock(first, originalFirst.OnHand)
+			p.setStock(second, originalSecond.OnHand)
+		}()
 		beforeFirst, beforeSecond := p.inventory(first), p.inventory(second)
 		orderID := newUUID()
 		status, _, err := p.reserve(orderID, "phase03-rollback", []map[string]any{item(first, 1), item(second, 100)})

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
+	"log/slog"
 	"net/http"
 	"time"
 	"uuid"
@@ -30,6 +33,7 @@ func (s *CheckoutService) createSagaFromReservation(
 	if attempt.OrderID == nil {
 		return Response{}, errors.New("checkout attempt has no order ID")
 	}
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: attempt.OrderID.String(), SagaID: attempt.OrderID.String()})
 
 	result := CreateCheckoutResult{
 		OrderID:    *attempt.OrderID,
@@ -51,7 +55,7 @@ func (s *CheckoutService) createSagaFromReservation(
 	now := time.Now().UTC()
 	nextAttemptAt := now.Add(s.stepTimeout)
 	orderCreateRoutingKey := messages.OrderCreateRoutingKey
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = observability.Transaction(ctx, s.db, "create_saga", func(tx *gorm.DB) error {
 		sagaRow := models.Saga{
 			ID:          *attempt.OrderID,
 			Status:      string(saga.SagaRunning),
@@ -59,6 +63,9 @@ func (s *CheckoutService) createSagaFromReservation(
 			TotalPaise:  reservation.TotalPaise,
 			Currency:    reservation.Currency,
 			DeadlineAt:  now.Add(s.sagaDeadline),
+		}
+		if run := observability.FieldsFrom(ctx).TestRunID; run != observability.NoTestRun {
+			sagaRow.TestRunID = &run
 		}
 		if err := tx.Table("orchestrator.sagas").Create(&sagaRow).Error; err != nil {
 			if isUniqueViolation(err) {
@@ -108,6 +115,8 @@ func (s *CheckoutService) createSagaFromReservation(
 	if err != nil {
 		return Response{}, err
 	}
+	businessmetrics.SagasStarted.Inc()
+	observability.Event(ctx, slog.LevelInfo, observability.EventSagaStepStarted, "saga step started", "step", string(saga.CREATE_ORDER))
 	return s.loadCompletedResponse(ctx, attempt.IdempotencyKey)
 }
 

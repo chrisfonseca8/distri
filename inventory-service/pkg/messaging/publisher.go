@@ -9,6 +9,10 @@ import (
 	"uuid"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/observability"
 )
 
 var ErrUnroutable = errors.New("RabbitMQ message was not routed")
@@ -36,7 +40,26 @@ func (p *Publisher) Publish(
 	messageID uuid.UUID,
 	routingKey string,
 	payload []byte,
-) error {
+) (err error) {
+	ctx = observability.WithMessageID(ctx, messageID.String())
+	ctx, span := observability.StartSpan(ctx, "rabbitmq.publish "+routingKey, trace.SpanKindProducer,
+		attribute.String("messaging.system", "rabbitmq"), attribute.String("messaging.destination.name", CommandsExchange),
+		attribute.String("messaging.rabbitmq.routing_key", routingKey))
+	result := "confirmed"
+	defer func() {
+		switch {
+		case err == nil:
+		case errors.Is(err, ErrUnroutable):
+			result = "unroutable"
+		case err.Error() == "RabbitMQ negatively acknowledged message":
+			result = "nacked"
+		default:
+			result = "error"
+		}
+		observability.RabbitPublish.WithLabelValues(routingKey, result).Inc()
+		observability.EndSpan(span, err)
+	}()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -59,6 +82,7 @@ func (p *Publisher) Publish(
 			ContentType:  "application/json",
 			DeliveryMode: amqp.Persistent,
 			MessageId:    messageID.String(),
+			Headers:      observability.InjectAMQP(ctx, nil),
 			Timestamp:    time.Now(),
 			Body:         payload,
 		},

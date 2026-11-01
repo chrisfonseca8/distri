@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 	"net/http"
 	"net/url"
 	"os"
@@ -115,7 +116,8 @@ func NewHTTPInventoryClientFromEnv() (*HTTPInventoryClient, error) {
 	return &HTTPInventoryClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: observability.NewHTTPTransport(nil, "inventory-service"),
 		},
 	}, nil
 }

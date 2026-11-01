@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,7 +11,10 @@ import (
 	"uuid"
 
 	"github.com/chrisfonseca08/distri/orchestrator-service/database/models"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/telemetry"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const finishTimeout = 5 * time.Second
@@ -19,6 +23,7 @@ type relayStore interface {
 	Claim(context.Context, string, int, time.Duration) ([]models.Outbox, error)
 	MarkPublished(context.Context, uuid.UUID, string) (bool, error)
 	Reschedule(context.Context, uuid.UUID, string, time.Duration, string) (bool, error)
+	RecordUnpublishable(context.Context, uuid.UUID, string, int, time.Duration, string) (bool, bool, error)
 }
 
 type publisher interface {
@@ -32,9 +37,7 @@ type RelayConfig struct {
 	PublishTimeout time.Duration
 	RetryBase      time.Duration
 	RetryCap       time.Duration
-	// AlertAttempts: a row that has failed to publish this many times is logged at ERROR
-	// on every further failure, so a poison or long-blocked row is visible instead of
-	// retrying silently forever. The row itself is never dropped. Zero disables the alert.
+	// AlertAttempts is the permanent-unroutable limit. Broker outages never count.
 	AlertAttempts int
 }
 
@@ -189,6 +192,15 @@ func (r *Relay) publish(ctx context.Context, row models.Outbox) {
 }
 
 func (r *Relay) publishClaimed(ctx context.Context, row models.Outbox, claimedAt time.Time) {
+	// Resume the correlation and trace stored with the row, then join the trace.
+	var stored observability.CorrelationJSON
+	_ = json.Unmarshal(row.Correlation, &stored)
+	ctx = observability.ContextFromCorrelation(ctx, stored)
+	ctx = observability.WithMessageID(ctx, row.MessageID.String())
+	ctx, span := observability.StartSpan(ctx, "outbox.publish "+row.RoutingKey, trace.SpanKindInternal)
+	var publishErr error
+	defer func() { observability.EndSpan(span, publishErr) }()
+
 	publishStartedAt := time.Now()
 	r.telemetry.Observe("outbox_claim_to_publish_started", publishStartedAt.Sub(claimedAt))
 	publishContext, cancelPublish := context.WithTimeout(ctx, r.config.PublishTimeout)
@@ -199,6 +211,7 @@ func (r *Relay) publishClaimed(ctx context.Context, row models.Outbox, claimedAt
 		[]byte(row.Payload),
 	)
 	cancelPublish()
+	publishErr = err
 	publishFinishedAt := time.Now()
 	r.telemetry.Observe("outbox_publish_to_broker_confirmation", publishFinishedAt.Sub(publishStartedAt))
 
@@ -220,14 +233,37 @@ func (r *Relay) publishClaimed(ctx context.Context, row models.Outbox, claimedAt
 			return
 		}
 		if !updated {
-			slog.Warn("outbox lease lost after publish", "message_id", row.MessageID)
+			observability.OutboxPublish.WithLabelValues("lease_lost").Inc()
+			slog.WarnContext(ctx, "outbox lease lost after publish", "message_id", row.MessageID)
+			return
 		}
 		r.telemetry.Increment("outbox_publish_confirmed")
+		observability.OutboxPublish.WithLabelValues("published").Inc()
+		observability.OutboxLatency.WithLabelValues(row.RoutingKey).Observe(time.Since(row.CreatedAt).Seconds())
 		return
 	}
 	r.telemetry.Increment("outbox_publish_failed")
 
 	delay := retryDelay(row.Attempts, r.config.RetryBase, r.config.RetryCap)
+	if errors.Is(err, messaging.ErrUnroutable) && r.config.AlertAttempts > 0 {
+		updated, dead, updateErr := r.store.RecordUnpublishable(finishContext, row.ID, r.workerID, r.config.AlertAttempts, delay, err.Error())
+		if updateErr != nil {
+			slog.Error("record unpublishable outbox message", "message_id", row.MessageID, "error", updateErr)
+			return
+		}
+		if !updated {
+			slog.Warn("outbox lease lost after unpublishable failure", "message_id", row.MessageID)
+			return
+		}
+		if dead {
+			observability.OutboxPublish.WithLabelValues("dead").Inc()
+			slog.ErrorContext(ctx, "outbox message marked dead", "event", observability.EventOutboxMessageMarkedDead, "message_id", row.MessageID, "routing_key", row.RoutingKey, "unpublishable_attempts", row.UnpublishableAttempts+1, "error", err)
+			return
+		}
+		observability.OutboxPublish.WithLabelValues("permanent_failure").Inc()
+		slog.WarnContext(ctx, "outbox message was unroutable", "event", observability.EventOutboxPublishFailed, "failure", "permanent", "message_id", row.MessageID, "attempt", row.UnpublishableAttempts+1, "retry_in", delay)
+		return
+	}
 	updated, updateErr := r.store.Reschedule(
 		finishContext,
 		row.ID,
@@ -243,17 +279,12 @@ func (r *Relay) publishClaimed(ctx context.Context, row models.Outbox, claimedAt
 		slog.Warn("outbox lease lost after publish failure", "message_id", row.MessageID)
 		return
 	}
-	if r.config.AlertAttempts > 0 && row.Attempts >= r.config.AlertAttempts {
-		slog.Error(
-			"outbox message is not publishing: needs attention",
-			"message_id", row.MessageID,
-			"routing_key", row.RoutingKey,
-			"attempts", row.Attempts,
-			"error", err,
-		)
-	}
-	slog.Warn(
+	observability.OutboxPublish.WithLabelValues("transient_failure").Inc()
+	slog.WarnContext(
+		ctx,
 		"outbox publish failed",
+		"event", observability.EventOutboxPublishFailed,
+		"failure", "transient",
 		"message_id", row.MessageID,
 		"attempt", row.Attempts,
 		"retry_in", delay,

@@ -9,6 +9,10 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 )
 
 const (
@@ -168,6 +172,9 @@ func (c *Consumer) consume(ctx context.Context, stop <-chan struct{}) (bool, err
 		return false, fmt.Errorf("configure RabbitMQ consumer qos: %w", err)
 	}
 
+	observability.RabbitConsumerConnected.WithLabelValues(c.queue).Inc()
+	defer observability.RabbitConsumerConnected.WithLabelValues(c.queue).Dec()
+
 	deliveries, err := channel.Consume(
 		c.queue,
 		"",
@@ -201,7 +208,22 @@ func (c *Consumer) consume(ctx context.Context, stop <-chan struct{}) (bool, err
 // handleDelivery runs the handler and acks, retries or dead-letters the message based on the result.
 func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error {
 	delivery = withOriginalRoutingKey(delivery)
+	// Resume the publisher's trace and correlation ids carried in the headers.
+	ctx = observability.ExtractAMQP(ctx, delivery.Headers, delivery.MessageId)
+	ctx, span := observability.StartSpan(ctx, "rabbitmq.consume "+c.queue, trace.SpanKindConsumer,
+		attribute.String("messaging.system", "rabbitmq"), attribute.String("messaging.destination.name", c.queue),
+		attribute.String("messaging.rabbitmq.routing_key", delivery.RoutingKey))
+	started := time.Now()
+	result := "acked"
+	var handlerErr error
+	defer func() {
+		observability.RabbitConsume.WithLabelValues(c.queue, result).Inc()
+		observability.RabbitConsumeDuration.WithLabelValues(c.queue, result).Observe(time.Since(started).Seconds())
+		observability.EndSpan(span, handlerErr)
+	}()
+
 	err := c.handler(ctx, delivery)
+	handlerErr = err
 	if err == nil {
 		if ackErr := delivery.Ack(false); ackErr != nil {
 			return fmt.Errorf("ack RabbitMQ delivery: %w", ackErr)
@@ -211,7 +233,10 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error 
 
 	var permanentError *PermanentError
 	if errors.As(err, &permanentError) {
-		slog.Warn(
+		result = "permanent_failure"
+		observability.RabbitDeadLetters.WithLabelValues(c.queue, "permanent").Inc()
+		slog.WarnContext(
+			ctx,
 			"permanent RabbitMQ delivery failure",
 			"queue", c.queue,
 			"message_id", delivery.MessageId,
@@ -224,7 +249,8 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error 
 	}
 
 	attempt := deliveryAttempt(delivery) + 1
-	slog.Warn(
+	slog.WarnContext(
+		ctx,
 		"transient RabbitMQ delivery failure",
 		"queue", c.queue,
 		"message_id", delivery.MessageId,
@@ -233,7 +259,10 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error 
 		"error", err,
 	)
 	if attempt >= c.attemptLimit() {
-		slog.Error(
+		result = "dead_lettered"
+		observability.RabbitDeadLetters.WithLabelValues(c.queue, "attempts_exhausted").Inc()
+		slog.ErrorContext(
+			ctx,
 			"RabbitMQ delivery exhausted its attempts; dead-lettering",
 			"queue", c.queue,
 			"message_id", delivery.MessageId,
@@ -249,11 +278,15 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery Delivery) error 
 	// the republish fails the original is requeued (at-least-once) and the
 	// error ends this connection so the reconnect backoff paces the retries.
 	if retryErr := c.republish(ctx, delivery, attempt, err); retryErr != nil {
+		result = "requeued"
 		if nackErr := delivery.Nack(false, true); nackErr != nil {
 			return fmt.Errorf("requeue RabbitMQ delivery: %w", nackErr)
 		}
 		return retryErr
 	}
+	result = "retried"
+	observability.RabbitRetries.WithLabelValues(c.queue).Inc()
+	observability.Retries.WithLabelValues("rabbitmq_" + c.queue).Inc()
 	if ackErr := delivery.Ack(false); ackErr != nil {
 		return fmt.Errorf("ack retried RabbitMQ delivery: %w", ackErr)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/observability"
 	"time"
 	"uuid"
 
@@ -62,7 +63,7 @@ func (s *ReservationService) changeReservationStatus(
 	}
 
 	var result ChangeReservationResult
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := observability.Transaction(ctx, s.db, "change_reservation_"+targetStatus, func(tx *gorm.DB) error {
 		var err error
 		result, err = changeReservationStatusTx(tx, orderID, targetStatus, movement)
 		return err

@@ -12,6 +12,8 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/database/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 )
 
 type Message struct {
@@ -40,6 +42,13 @@ func Enqueue(tx *gorm.DB, message Message) error {
 		MessageID:  message.MessageID,
 		RoutingKey: message.RoutingKey,
 		Payload:    datatypes.JSON(message.Payload),
+	}
+	// The caller's transaction carries the request/message context; store its
+	// correlation ids and trace so the relay publishes them as headers.
+	if ctx := tx.Statement.Context; ctx != nil {
+		if encoded, err := json.Marshal(observability.CorrelationFromContext(ctx)); err == nil {
+			row.Correlation = datatypes.JSON(encoded)
+		}
 	}
 	if err := tx.Create(&row).Error; err != nil {
 		return fmt.Errorf("enqueue outbox message: %w", err)
@@ -78,6 +87,7 @@ WITH due AS (
 	SELECT id
 	FROM orchestrator.outbox
 	WHERE published_at IS NULL
+		AND dead_at IS NULL
 		AND next_attempt_at <= now()
 		AND (locked_until IS NULL OR locked_until < now())
 	ORDER BY created_at, id
@@ -100,6 +110,31 @@ RETURNING outbox.*`
 		return nil, fmt.Errorf("claim outbox messages: %w", result.Error)
 	}
 	return claimed, nil
+}
+
+// RecordUnpublishable records a permanent publishing failure and dead-letters the row at the limit.
+func (s *Store) RecordUnpublishable(ctx context.Context, rowID uuid.UUID, workerID string, maxAttempts int, delay time.Duration, lastError string) (bool, bool, error) {
+	if maxAttempts <= 0 || delay < 0 {
+		return false, false, errors.New("invalid outbox unpublishable failure policy")
+	}
+	var rows []struct{ Dead bool }
+	result := s.db.WithContext(ctx).Raw(`UPDATE orchestrator.outbox SET unpublishable_attempts = unpublishable_attempts + 1, dead_at = CASE WHEN unpublishable_attempts + 1 >= ? THEN now() ELSE NULL END, next_attempt_at = now() + (? * interval '1 microsecond'), locked_by = NULL, locked_until = NULL, last_error = ? WHERE id = ? AND locked_by = ? AND published_at IS NULL AND dead_at IS NULL RETURNING dead_at IS NOT NULL AS dead`, maxAttempts, delay.Microseconds(), lastError, rowID, workerID).Scan(&rows)
+	if result.Error != nil {
+		return false, false, fmt.Errorf("record unpublishable outbox message: %w", result.Error)
+	}
+	if len(rows) == 0 {
+		return false, false, nil
+	}
+	return true, rows[0].Dead, nil
+}
+
+// Requeue revives one dead row and resets only its permanent-failure counter.
+func (s *Store) Requeue(ctx context.Context, rowID uuid.UUID) (bool, error) {
+	result := s.db.WithContext(ctx).Table("orchestrator.outbox").Where("id = ? AND published_at IS NULL AND dead_at IS NOT NULL", rowID).Updates(map[string]any{"dead_at": nil, "unpublishable_attempts": 0, "next_attempt_at": time.Now(), "locked_by": nil, "locked_until": nil, "last_error": nil})
+	if result.Error != nil {
+		return false, fmt.Errorf("requeue dead outbox message: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // MarkPublished marks a row as sent, only if workerID still holds its lease.

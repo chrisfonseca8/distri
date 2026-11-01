@@ -2,8 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
+	"gorm.io/datatypes"
 	"strings"
 	"uuid"
 
@@ -82,8 +85,9 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input CreatePaymentI
 
 	input.Currency = currency
 	input.Gateway = s.gateway
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: input.OrderID.String(), SagaID: input.OrderID.String()})
 	var createResult CreatePaymentResult
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := observability.Transaction(ctx, s.db, "create_payment", func(tx *gorm.DB) error {
 		var err error
 		createResult, err = createPayment(tx, input)
 		return err
@@ -135,6 +139,11 @@ func gatewayOrDefault(name string) string {
 // enqueueJob adds a job for a payment to the queue, ignoring a duplicate.
 func enqueueJob(tx *gorm.DB, jobType string, paymentID uuid.UUID) error {
 	job := models.Job{Type: jobType, PaymentID: paymentID}
+	if ctx := tx.Statement.Context; ctx != nil {
+		if encoded, err := json.Marshal(observability.CorrelationFromContext(ctx)); err == nil {
+			job.Correlation = datatypes.JSON(encoded)
+		}
+	}
 	if err := tx.Table("payments.jobs").
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&job).Error; err != nil {

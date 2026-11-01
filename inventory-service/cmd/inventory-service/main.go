@@ -13,11 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/businessmetrics"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/config"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/health"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/inventory-service/pkg/routes"
@@ -27,7 +29,8 @@ import (
 
 // main starts the inventory service and exits non-zero if it stops with an error.
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	observability.SetProcess(observability.Config{Service: "inventory-service"})
+	slog.SetDefault(observability.NewLogger(os.Stdout))
 
 	if err := run(); err != nil {
 		slog.Error("inventory-service stopped", "error", err)
@@ -47,6 +50,15 @@ func run() error {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
+
+	stopObservability, err := observability.Setup(observability.Options{
+		Service: "inventory-service", MetricsAddr: "127.0.0.1:9093", DB: applicationConfig.DB, PoolName: "inventory",
+	})
+	if err != nil {
+		return fmt.Errorf("set up observability: %w", err)
+	}
+	defer stopObservability()
+	businessmetrics.Register(sqlDB)
 
 	shutdownSignal, stopSignals := signal.NotifyContext(
 		context.Background(),
@@ -147,6 +159,7 @@ func run() error {
 		telemetryRecorder.Register(mux)
 		handler = telemetryRecorder.Middleware(mux)
 	}
+	handler = observability.HTTPMiddleware(handler)
 
 	server, err := config.NewServer(handler)
 	if err != nil {

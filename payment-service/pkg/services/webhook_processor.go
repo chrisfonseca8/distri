@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/businessmetrics"
 	"log/slog"
 	"os"
 	"strings"
@@ -237,6 +238,8 @@ var errLeaseLost = errors.New("webhook event lease was lost")
 
 // handle applies one event in a transaction together with its PROCESSED mark, or parks or retries it.
 func (p *WebhookProcessor) handle(ctx context.Context, event models.WebhookEvent) {
+	started := time.Now()
+	defer func() { businessmetrics.WebhookDuration.Observe(time.Since(started).Seconds()) }()
 	var result webhookResult
 	err := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -257,13 +260,15 @@ func (p *WebhookProcessor) handle(ctx context.Context, event models.WebhookEvent
 	case err != nil:
 		// Transient (database) failure: nothing committed. Retry after a backoff.
 		slog.Error("apply webhook event", "event_id", event.EventID, "error", err)
+		businessmetrics.WebhookResults.WithLabelValues("retried").Inc()
 		p.reschedule(ctx, event, "apply failed: "+err.Error())
 		return
 	}
 
 	switch result.outcome {
 	case outcomeProcessed:
-		slog.Info("webhook event applied", "event_id", event.EventID, "event", event.EventType, "note", result.reason)
+		businessmetrics.WebhookResults.WithLabelValues("processed").Inc()
+		slog.InfoContext(ctx, "webhook event applied", "event_id", event.EventID, "webhook_event_type", event.EventType, "note", result.reason)
 	case outcomePark:
 		p.parkOrRetry(ctx, event, result, true)
 	case outcomeRetry:
@@ -470,7 +475,8 @@ func (p *WebhookProcessor) finish(tx *gorm.DB, event models.WebhookEvent, status
 // (NO_MAPPING) is replayed automatically when the mapping appears (ReplayParked).
 func (p *WebhookProcessor) parkOrRetry(ctx context.Context, event models.WebhookEvent, result webhookResult, forcePark bool) {
 	if forcePark || event.Attempts >= p.config.MaxAttempts {
-		slog.Error("webhook event parked", "event_id", event.EventID, "event", event.EventType,
+		businessmetrics.WebhookResults.WithLabelValues("parked").Inc()
+		slog.ErrorContext(ctx, "webhook event parked", "event_id", event.EventID, "webhook_event_type", event.EventType,
 			"attempts", event.Attempts, "park_reason", result.parkReason, "reason", result.reason)
 		extra := map[string]any{"park_reason": result.parkReason}
 		if result.gatewayOrderID != "" {

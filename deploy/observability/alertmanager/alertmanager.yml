@@ -1,0 +1,11 @@
+# Test environment: alerts are kept and shown (Alertmanager UI, Grafana Alerting,
+# Prometheus /alerts) and exported with each run. Nobody is paged. To notify, add a
+# receiver below (webhook, Slack, email) and point `route.receiver` at it.
+route:
+  receiver: logs
+  group_by: [alertname, service]
+  group_wait: 5s
+  group_interval: 30s
+  repeat_interval: 1h
+receivers:
+  - name: logs

@@ -1,0 +1,8 @@
+- targets: ["orchestrator:9091"]
+  labels: { service: "orchestrator-service", environment: "local", test_run_id: "acceptance-7" }
+- targets: ["payment-service:9092"]
+  labels: { service: "payment-service", environment: "local", test_run_id: "acceptance-7" }
+- targets: ["inventory-service:9093"]
+  labels: { service: "inventory-service", environment: "local", test_run_id: "acceptance-7" }
+- targets: ["order-service:9094"]
+  labels: { service: "order-service", environment: "local", test_run_id: "acceptance-7" }

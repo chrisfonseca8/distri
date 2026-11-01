@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"strings"
 	"uuid"
 
@@ -43,7 +44,8 @@ func (h *PaymentInitiateHandler) Handle(ctx context.Context, delivery messaging.
 		return messaging.Permanent(errors.New("payment.initiate AMQP MessageId is required"))
 	}
 
-	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: command.OrderID.String(), SagaID: command.OrderID.String()})
+	err := observability.Transaction(ctx, h.db, "payment_initiate", func(tx *gorm.DB) error {
 		insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(
 			&models.ProcessedMessage{MessageID: messageID},
 		)

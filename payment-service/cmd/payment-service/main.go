@@ -15,12 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chrisfonseca08/distri/payment-service/pkg/businessmetrics"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/config"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/controllers"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/health"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/jobs"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/messages"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/messaging"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/retention"
@@ -46,7 +48,8 @@ const (
 
 // main reads the -role flag, starts the service and exits non-zero if it stops with an error.
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	observability.SetProcess(observability.Config{Service: "payment-service"})
+	slog.SetDefault(observability.NewLogger(os.Stdout))
 	role := flag.String("role", string(roleAll), "process role: api, worker, or all")
 	flag.Parse()
 
@@ -73,6 +76,15 @@ func run(roleValue string) error {
 		return fmt.Errorf("get database connection: %w", err)
 	}
 	defer sqlDB.Close()
+
+	stopObservability, err := observability.Setup(observability.Options{
+		Service: "payment-service", MetricsAddr: "127.0.0.1:9092", DB: applicationConfig.DB, PoolName: "payment",
+	})
+	if err != nil {
+		return fmt.Errorf("set up observability: %w", err)
+	}
+	defer stopObservability()
+	businessmetrics.Register(sqlDB)
 
 	webhookConfig, err := config.LoadWebhookConfig()
 	if err != nil {
@@ -363,9 +375,9 @@ func newHandler(applicationConfig *config.Config, sqlDB *sql.DB, webhookHandler 
 	telemetryRecorder := telemetry.New(sqlDB)
 	if telemetry.Enabled() {
 		telemetryRecorder.Register(mux)
-		return telemetryRecorder.Middleware(mux)
+		return observability.HTTPMiddleware(telemetryRecorder.Middleware(mux))
 	}
-	return mux
+	return observability.HTTPMiddleware(mux)
 }
 
 // startServer serves HTTP in the background and returns a channel that receives the server's error.

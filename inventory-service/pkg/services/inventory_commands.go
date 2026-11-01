@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/businessmetrics"
+	"github.com/chrisfonseca08/distri/inventory-service/pkg/observability"
 	"log/slog"
 	"strings"
 	"uuid"
@@ -55,7 +57,11 @@ func (h *InventoryCommandHandler) handleChange(
 		return messaging.Permanent(errors.New("inventory command AMQP MessageId is required"))
 	}
 
-	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	ctx = observability.WithFields(ctx, observability.Fields{OrderID: orderID.String(), SagaID: orderID.String()})
+	command := string(step)
+	result := "succeeded"
+
+	err = observability.Transaction(ctx, h.db, "inventory_"+targetStatus, func(tx *gorm.DB) error {
 		insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(
 			&models.ProcessedMessage{MessageID: messageID},
 		)
@@ -63,6 +69,7 @@ func (h *InventoryCommandHandler) handleChange(
 			return fmt.Errorf("record processed inventory command: %w", insert.Error)
 		}
 		if insert.RowsAffected == 0 {
+			result = "replayed"
 			return nil
 		}
 
@@ -77,7 +84,8 @@ func (h *InventoryCommandHandler) handleChange(
 			// transaction is still healthy and the reply commits with the
 			// processed_messages row.
 			outcome = messages.Failed
-			slog.Error(
+			result = "failed"
+			slog.ErrorContext(ctx,
 				"inventory command cannot be applied",
 				"order_id", orderID,
 				"step", step,
@@ -102,9 +110,15 @@ func (h *InventoryCommandHandler) handleChange(
 		})
 	})
 	if err == nil {
+		businessmetrics.Commands.WithLabelValues(command, result).Inc()
 		return nil
 	}
+	businessmetrics.Commands.WithLabelValues(command, "error").Inc()
 	wrapped := fmt.Errorf("process inventory command: %w", err)
+	if errors.Is(err, errStockInvariant) {
+		businessmetrics.StockInvariantFailures.Inc()
+		observability.Event(ctx, slog.LevelError, observability.EventStockInvariantFailed, "stock movement refused by the invariant guard", "order_id", orderID, "error", err)
+	}
 	if errors.Is(err, errStockInvariant) || isPermanentDatabaseError(err) {
 		return messaging.Permanent(wrapped)
 	}

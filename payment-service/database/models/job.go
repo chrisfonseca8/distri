@@ -19,6 +19,8 @@ type Job struct {
 	LockedUntil *time.Time     `gorm:"type:timestamptz"`
 	LockedBy    *string        `gorm:"type:text"`
 	LastError   *string        `gorm:"type:text"`
+	// Correlation is the test run, saga/order ids and trace context of the request that queued the job.
+	Correlation datatypes.JSON `gorm:"type:jsonb"`
 	CreatedAt   time.Time      `gorm:"type:timestamptz;not null;autoCreateTime"`
 	UpdatedAt   time.Time      `gorm:"type:timestamptz;not null;autoUpdateTime"`
 }

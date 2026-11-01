@@ -132,12 +132,14 @@ func (p *phaseContext) getPayment(id string) (int, paymentResult, error) {
 	return status, result, err
 }
 
-// waitPayment polls a payment until it leaves CREATED and PENDING, or the timeout passes.
+// waitPayment polls a payment until it reaches a terminal outcome, or the
+// timeout passes. The external project simulator first returns AWAITING_PAYMENT
+// and later settles through a webhook, so AWAITING_PAYMENT is not terminal.
 func (p *phaseContext) waitPayment(id string, timeout time.Duration) paymentResult {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		_, payment, err := p.getPayment(id)
-		if err == nil && payment.Status != "CREATED" && payment.Status != "PENDING" {
+		if err == nil && payment.Status != "CREATED" && payment.Status != "PENDING" && payment.Status != "AWAITING_PAYMENT" {
 			return payment
 		}
 		time.Sleep(50 * time.Millisecond)

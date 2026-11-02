@@ -1,0 +1,3391 @@
+{
+ "description": "Test 2 cumulative result: all four cloud correctness runs, 1 Nov 2026, staging",
+ "runs": [
+  {
+   "mode": "success",
+   "folder": "cloud-test2-success-retry-20261101T150229Z",
+   "role": "counted",
+   "run_id": "20261101T150324.062853920Z",
+   "started_at": "2026-11-01T15:03:24.379068978Z",
+   "finished_at": "2026-11-01T15:04:49.923204792Z",
+   "environment": {
+    "order_url": "http://10.40.1.11:8080",
+    "orchestrator_url": "http://10.40.1.10:8083",
+    "inventory_url": "http://10.40.1.12:8081",
+    "payment_url": "http://10.40.1.13:8082",
+    "gateway_mode": "success",
+    "run_label": "cloud-test2-success-retry-20261101T150229Z"
+   },
+   "summary": {
+    "total": 20,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 2
+   },
+   "phases": [
+    {
+     "number": 1,
+     "name": "Environment and migrations",
+     "description": "Checks service reachability, database schemas, inventory seed count, and the required empty payment table.",
+     "status": "PASS",
+     "duration_ms": 49.571,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 0.856,
+      "mean_ms": 2.046,
+      "p50_ms": 0.941,
+      "p95_ms": 5.515,
+      "p99_ms": 5.515,
+      "max_ms": 5.515
+     },
+     "assertions": [
+      {
+       "name": "order service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "orchestrator service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "inventory service and seed",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "50 inventory products were seeded",
+       "passed": true,
+       "detail": "expected exactly 50"
+      },
+      {
+       "name": "payments start empty",
+       "passed": true,
+       "detail": "payment seeding must remain disabled"
+      }
+     ]
+    },
+    {
+     "number": 2,
+     "name": "Inventory validation and pricing",
+     "description": "Exercises valid reservation pricing plus empty, zero, negative, excessive, duplicate, and unknown-product requests.",
+     "status": "PASS",
+     "duration_ms": 71.845,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.155,
+      "mean_ms": 6.283,
+      "p50_ms": 0.989,
+      "p95_ms": 21.675,
+      "p99_ms": 21.675,
+      "max_ms": 21.675
+     },
+     "assertions": [
+      {
+       "name": "valid reservation is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "price and total come from inventory",
+       "passed": true,
+       "detail": "client cannot choose price"
+      },
+      {
+       "name": "empty cart is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "quantity over 100 is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      }
+     ]
+    },
+    {
+     "number": 3,
+     "name": "Atomic inventory rollback",
+     "description": "Attempts a two-product reservation whose second line lacks stock and verifies no stock or reservation row is partially committed.",
+     "status": "PASS",
+     "duration_ms": 194.885,
+     "http_metrics": {
+      "requests": 1,
+      "errors": 0,
+      "min_ms": 12.161,
+      "mean_ms": 12.161,
+      "p50_ms": 12.161,
+      "p95_ms": 12.161,
+      "p99_ms": 12.161,
+      "max_ms": 12.161
+     },
+     "assertions": [
+      {
+       "name": "insufficient stock returns conflict",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "first stock update rolled back",
+       "passed": true,
+       "detail": "first product inventory must be unchanged"
+      },
+      {
+       "name": "second stock is unchanged",
+       "passed": true,
+       "detail": "second product inventory must be unchanged"
+      },
+      {
+       "name": "reservation claim rolled back",
+       "passed": true,
+       "detail": "no partial reservation"
+      }
+     ]
+    },
+    {
+     "number": 4,
+     "name": "Inventory idempotency",
+     "description": "Repeats the same order/hash, then changes the hash, checking response reuse, conflict detection, and a single stock mutation.",
+     "status": "PASS",
+     "duration_ms": 111.572,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 11.153,
+      "mean_ms": 19.682,
+      "p50_ms": 18.099,
+      "p95_ms": 36.153,
+      "p99_ms": 36.153,
+      "max_ms": 36.153
+     },
+     "assertions": [
+      {
+       "name": "first request creates reservation",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "same request reuses reservation",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "different hash conflicts",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "stock reserved once",
+       "passed": true,
+       "detail": "reserved delta must equal 2"
+      }
+     ]
+    },
+    {
+     "number": 5,
+     "name": "Confirm and release transitions",
+     "description": "Confirms one reservation and releases another twice, verifying idempotency and preventing contradictory terminal transitions.",
+     "status": "PASS",
+     "duration_ms": 178.382,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 7.062,
+      "mean_ms": 13.51,
+      "p50_ms": 13.757,
+      "p95_ms": 18.85,
+      "p99_ms": 18.85,
+      "max_ms": 18.85
+     },
+     "assertions": [
+      {
+       "name": "confirm is idempotent",
+       "passed": true,
+       "detail": "both calls return CONFIRMED"
+      },
+      {
+       "name": "confirm moves stock once",
+       "passed": true,
+       "detail": "on_hand decreases and reserved returns"
+      },
+      {
+       "name": "confirmed reservation can be compensated",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "confirmed compensation is idempotent",
+       "passed": true,
+       "detail": "stock is restored exactly once"
+      },
+      {
+       "name": "release is idempotent",
+       "passed": true,
+       "detail": "both calls return RELEASED"
+      },
+      {
+       "name": "release restores availability",
+       "passed": true,
+       "detail": "all inventory counters return to starting values"
+      }
+     ]
+    },
+    {
+     "number": 6,
+     "name": "Checkout validation",
+     "description": "Validates a normal checkout and rejects missing idempotency keys, invalid quantities, duplicates, unknown products, and insufficient stock.",
+     "status": "PASS",
+     "duration_ms": 147.353,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.169,
+      "mean_ms": 12.542,
+      "p50_ms": 0.276,
+      "p95_ms": 49.032,
+      "p99_ms": 49.032,
+      "max_ms": 49.032
+     },
+     "assertions": [
+      {
+       "name": "valid checkout is accepted by the saga",
+       "passed": true,
+       "detail": "HTTP status=Accepted"
+      },
+      {
+       "name": "missing idempotency key is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "empty cart mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product mapping",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "insufficient stock mapping",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      }
+     ]
+    },
+    {
+     "number": 7,
+     "name": "Checkout idempotency and concurrency",
+     "description": "Checks sequential response replay, canonical item ordering, key/body conflicts, and concurrent retries of one logical checkout.",
+     "status": "PASS",
+     "duration_ms": 233.653,
+     "http_metrics": {
+      "requests": 17,
+      "errors": 0,
+      "min_ms": 2.838,
+      "mean_ms": 58.963,
+      "p50_ms": 72.858,
+      "p95_ms": 81.262,
+      "p99_ms": 91.562,
+      "max_ms": 91.562
+     },
+     "assertions": [
+      {
+       "name": "sequential retry replays the stored response",
+       "passed": true,
+       "detail": "one stable order ID"
+      },
+      {
+       "name": "key reuse with different body is rejected",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      },
+      {
+       "name": "item order is canonicalized",
+       "passed": true,
+       "detail": "reordered cart is same request"
+      },
+      {
+       "name": "concurrent retries share one saga",
+       "passed": true,
+       "detail": "every retry returns 202 with the same order ID"
+      },
+      {
+       "name": "concurrent retries reserve once",
+       "passed": true,
+       "detail": "reserved delta must equal 1"
+      }
+     ]
+    },
+    {
+     "number": 8,
+     "name": "Order command recovery",
+     "description": "Stops order-service, starts a checkout, waits for the saga sweeper to resend order.create, restarts order-service, and verifies one order is created and the saga completes.",
+     "status": "PASS",
+     "duration_ms": 34263.074,
+     "http_metrics": {
+      "requests": 18,
+      "errors": 1,
+      "min_ms": 0.452,
+      "mean_ms": 7.7,
+      "p50_ms": 4.762,
+      "p95_ms": 9.648,
+      "p99_ms": 50.314,
+      "max_ms": 50.314
+     },
+     "assertions": [
+      {
+       "name": "checkout is accepted while order-service is down",
+       "passed": true,
+       "detail": "HTTP status=Accepted"
+      },
+      {
+       "name": "sweeper resends order.create",
+       "passed": true,
+       "detail": "CREATE_ORDER attempts must reach 2"
+      },
+      {
+       "name": "no order exists while the participant is down",
+       "passed": true,
+       "detail": "order creation is pending"
+      },
+      {
+       "name": "saga completes after recovery",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "resends create exactly one order",
+       "passed": true,
+       "detail": "one order row"
+      },
+      {
+       "name": "saga is completed",
+       "passed": true,
+       "detail": "COMPLETED saga"
+      },
+      {
+       "name": "stock moves exactly once",
+       "passed": true,
+       "detail": "on_hand -1; reserved restored"
+      }
+     ]
+    },
+    {
+     "number": 9,
+     "name": "Payment gateway outcome",
+     "description": "Creates a payment, observes asynchronous processing, and checks the terminal status for the configured simulator mode.",
+     "status": "PASS",
+     "duration_ms": 1073.451,
+     "http_metrics": {
+      "requests": 22,
+      "errors": 0,
+      "min_ms": 2.057,
+      "mean_ms": 3.086,
+      "p50_ms": 2.745,
+      "p95_ms": 4.649,
+      "p99_ms": 9.034,
+      "max_ms": 9.034
+     },
+     "assertions": [
+      {
+       "name": "payment attempt is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "gateway result matches mode",
+       "passed": true,
+       "detail": "expected SUCCEEDED, got SUCCEEDED"
+      }
+     ]
+    },
+    {
+     "number": 10,
+     "name": "Payment idempotency and concurrency",
+     "description": "Sends concurrent create-payment requests for one order and verifies one database row, one payment ID, and one asynchronous result.",
+     "status": "PASS",
+     "duration_ms": 1416.496,
+     "http_metrics": {
+      "requests": 43,
+      "errors": 0,
+      "min_ms": 2.24,
+      "mean_ms": 7.227,
+      "p50_ms": 2.992,
+      "p95_ms": 18.483,
+      "p99_ms": 20.799,
+      "max_ms": 20.799
+     },
+     "assertions": [
+      {
+       "name": "one request creates and retries reuse",
+       "passed": true,
+       "detail": "expected one 201, remaining 200, one ID"
+      },
+      {
+       "name": "one payment row exists",
+       "passed": true,
+       "detail": "database uniqueness"
+      },
+      {
+       "name": "payment leaves CREATED/PENDING",
+       "passed": true,
+       "detail": "SUCCEEDED"
+      }
+     ]
+    },
+    {
+     "number": 13,
+     "name": "Successful checkout end to end",
+     "description": "Runs the checkout saga through payment and inventory confirmation, then cross-checks order, payment, reservation, and stock records.",
+     "status": "PASS",
+     "duration_ms": 1590.03,
+     "http_metrics": {
+      "requests": 12,
+      "errors": 0,
+      "min_ms": 1.816,
+      "mean_ms": 5.278,
+      "p50_ms": 2.587,
+      "p95_ms": 5.656,
+      "p99_ms": 33.429,
+      "max_ms": 33.429
+     },
+     "assertions": [
+      {
+       "name": "saga finishes its inventory step",
+       "passed": true,
+       "detail": "saga status COMPLETED"
+      },
+      {
+       "name": "order becomes paid",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "one successful payment exists",
+       "passed": true,
+       "detail": "payment must succeed"
+      },
+      {
+       "name": "reservation is confirmed",
+       "passed": true,
+       "detail": "reservation terminal state"
+      },
+      {
+       "name": "confirmed stock is accounted once",
+       "passed": true,
+       "detail": "on_hand -2, reserved restored"
+      }
+     ]
+    },
+    {
+     "number": 14,
+     "name": "Declined payment end to end",
+     "description": "Checks that a declined payment cancels the order and releases, rather than consumes, reserved inventory.",
+     "status": "SKIP",
+     "duration_ms": 0.004,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run a fresh disposable stack with GATEWAY_MODE=decline to execute this phase."
+     ]
+    },
+    {
+     "number": 15,
+     "name": "Ambiguous payment timeout",
+     "description": "Checks that an unknown gateway outcome keeps the order pending and its stock reserved for later reconciliation.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run a fresh disposable stack with GATEWAY_MODE=timeout to execute this phase."
+     ]
+    },
+    {
+     "number": 16,
+     "name": "Payment command recovery",
+     "description": "Stops payment-service, starts a checkout, waits for the saga sweeper to resend payment.initiate, restarts payment-service, and verifies one payment and a completed saga.",
+     "status": "PASS",
+     "duration_ms": 35958.129,
+     "http_metrics": {
+      "requests": 24,
+      "errors": 0,
+      "min_ms": 1.72,
+      "mean_ms": 5.926,
+      "p50_ms": 4.571,
+      "p95_ms": 9.483,
+      "p99_ms": 31.007,
+      "max_ms": 31.007
+     },
+     "assertions": [
+      {
+       "name": "checkout is accepted while payment-service is down",
+       "passed": true,
+       "detail": "HTTP status=Accepted"
+      },
+      {
+       "name": "sweeper resends payment.initiate",
+       "passed": true,
+       "detail": "TAKE_PAYMENT attempts must reach 2"
+      },
+      {
+       "name": "order stays pending while payment is unavailable",
+       "passed": true,
+       "detail": "never paid without a confirmed payment"
+      },
+      {
+       "name": "stock is held but not consumed",
+       "passed": true,
+       "detail": "reserved +2; on_hand unchanged"
+      },
+      {
+       "name": "saga completes after recovery",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "resends create one successful payment",
+       "passed": true,
+       "detail": "exactly one payment attempt"
+      },
+      {
+       "name": "reservation becomes confirmed",
+       "passed": true,
+       "detail": "settlement repaired"
+      },
+      {
+       "name": "stock moves exactly once",
+       "passed": true,
+       "detail": "on_hand -2; reserved restored"
+      }
+     ]
+    },
+    {
+     "number": 17,
+     "name": "Concurrent limited-stock checkout",
+     "description": "Runs 50 distinct checkouts against ten units and verifies exactly ten winners, no oversell, and no negative counters.",
+     "status": "PASS",
+     "duration_ms": 386.82,
+     "http_metrics": {
+      "requests": 50,
+      "errors": 0,
+      "min_ms": 91.571,
+      "mean_ms": 188.734,
+      "p50_ms": 201.305,
+      "p95_ms": 222.112,
+      "p99_ms": 225.513,
+      "max_ms": 225.513
+     },
+     "assertions": [
+      {
+       "name": "exactly available stock wins",
+       "passed": true,
+       "detail": "expected 10 created and 40 conflicts"
+      },
+      {
+       "name": "stock is not oversold",
+       "passed": true,
+       "detail": "on_hand=10 reserved=10 allocated=0"
+      },
+      {
+       "name": "ten orders were created",
+       "passed": true,
+       "detail": "one order per unit"
+      }
+     ]
+    },
+    {
+     "number": 18,
+     "name": "Multi-item deadlock resistance",
+     "description": "Submits concurrent two-item carts in opposite input order and verifies canonical locking prevents deadlocks and timeouts.",
+     "status": "PASS",
+     "duration_ms": 334.009,
+     "http_metrics": {
+      "requests": 20,
+      "errors": 0,
+      "min_ms": 42.865,
+      "mean_ms": 158.871,
+      "p50_ms": 172.527,
+      "p95_ms": 244.987,
+      "p99_ms": 257.094,
+      "max_ms": 257.094
+     },
+     "assertions": [
+      {
+       "name": "all opposite-order carts complete",
+       "passed": true,
+       "detail": "no deadlocks, transport timeouts, or conflicts"
+      },
+      {
+       "name": "both products reserved exactly",
+       "passed": true,
+       "detail": "each product reserved 20"
+      }
+     ]
+    },
+    {
+     "number": 19,
+     "name": "Terminal order state idempotency",
+     "description": "Replays the checkout of a PAID order and verifies the same order ID, stable state, one payment, and one inventory movement.",
+     "status": "PASS",
+     "duration_ms": 4744.069,
+     "http_metrics": {
+      "requests": 27,
+      "errors": 0,
+      "min_ms": 2.897,
+      "mean_ms": 5.854,
+      "p50_ms": 4.288,
+      "p95_ms": 8.484,
+      "p99_ms": 40.684,
+      "max_ms": 40.684
+     },
+     "assertions": [
+      {
+       "name": "order reaches paid",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "replay returns the same order",
+       "passed": true,
+       "detail": "stable order ID"
+      },
+      {
+       "name": "replay leaves the order paid",
+       "passed": true,
+       "detail": "stable terminal state"
+      },
+      {
+       "name": "replay creates no payment",
+       "passed": true,
+       "detail": "one payment attempt"
+      },
+      {
+       "name": "replay moves stock once",
+       "passed": true,
+       "detail": "single-unit movement"
+      }
+     ],
+     "notes": [
+      "EXPIRED is not externally triggerable in the current API; its release path needs an expiry worker or test clock before black-box coverage is possible."
+     ]
+    },
+    {
+     "number": 20,
+     "name": "HTTP error mapping",
+     "description": "Sends malformed IDs, missing resources, invalid payment data, and checkout conflicts to verify stable client-facing status codes.",
+     "status": "PASS",
+     "duration_ms": 58.494,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.148,
+      "mean_ms": 6.129,
+      "p50_ms": 1.757,
+      "p95_ms": 37.642,
+      "p99_ms": 37.642,
+      "max_ms": 37.642
+     },
+     "assertions": [
+      {
+       "name": "bad order ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing order",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "bad payment ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing payment",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "invalid payment amount",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "invalid currency length",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "idempotency body conflict",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      }
+     ]
+    },
+    {
+     "number": 21,
+     "name": "Transaction boundary",
+     "description": "Samples pg_stat_activity during the checkout saga and fails if an application connection waits on network I/O while idle inside a database transaction.",
+     "status": "PASS",
+     "duration_ms": 4159.783,
+     "http_metrics": {
+      "requests": 22,
+      "errors": 0,
+      "min_ms": 1.858,
+      "mean_ms": 5.965,
+      "p50_ms": 4.604,
+      "p95_ms": 4.885,
+      "p99_ms": 43.354,
+      "max_ms": 43.354
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before sampling",
+       "passed": true,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "no idle transaction crosses service calls",
+       "passed": true,
+       "detail": "observed idle-in-transaction samples=0"
+      }
+     ]
+    },
+    {
+     "number": 22,
+     "name": "Database invariants",
+     "description": "Scans all three schemas for negative/oversold stock, duplicate business keys, and cross-service terminal-state contradictions.",
+     "status": "PASS",
+     "duration_ms": 571.948,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before audit",
+       "passed": true,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "inventory counters stay within bounds",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one reservation per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one payment per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one product line per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid orders have successful payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled orders have failed payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid reservations are confirmed",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled reservations are released",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "unknown payments retain pending orders",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "payment amounts match order totals in paise",
+       "passed": true,
+       "detail": "violations=0"
+      }
+     ]
+    }
+   ],
+   "audit": {
+    "verdict": "PASS",
+    "alerts_fired": [
+     "DatabasePoolSaturated",
+     "DeadLetterQueueGrowing",
+     "DeadLettersPublished",
+     "ServiceDown"
+    ],
+    "event_counts_in_logs": {
+     "saga_stuck": 0,
+     "outbox_publish_failed": 0,
+     "outbox_message_marked_dead": 0,
+     "payment_unconfirmed": 0,
+     "late_capture_refund_required": 0,
+     "stock_invariant_failed": 0
+    },
+    "violations": []
+   }
+  },
+  {
+   "mode": "decline",
+   "folder": "cloud-test2-decline-20261101T151331Z",
+   "role": "failed first attempt",
+   "run_id": "20261101T151347.786100789Z",
+   "started_at": "2026-11-01T15:13:48.022615481Z",
+   "finished_at": "2026-11-01T15:16:13.887845265Z",
+   "environment": {
+    "order_url": "http://10.40.1.11:8080",
+    "orchestrator_url": "http://10.40.1.10:8083",
+    "inventory_url": "http://10.40.1.12:8081",
+    "payment_url": "http://10.40.1.13:8082",
+    "gateway_mode": "decline",
+    "run_label": "cloud-test2-decline-20261101T151331Z"
+   },
+   "summary": {
+    "total": 20,
+    "passed": 11,
+    "failed": 4,
+    "skipped": 5
+   },
+   "phases": [
+    {
+     "number": 1,
+     "name": "Environment and migrations",
+     "description": "Checks service reachability, database schemas, inventory seed count, and the required empty payment table.",
+     "status": "PASS",
+     "duration_ms": 31.466,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 0.774,
+      "mean_ms": 1.959,
+      "p50_ms": 0.925,
+      "p95_ms": 5.231,
+      "p99_ms": 5.231,
+      "max_ms": 5.231
+     },
+     "assertions": [
+      {
+       "name": "order service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "orchestrator service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "inventory service and seed",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "50 inventory products were seeded",
+       "passed": true,
+       "detail": "expected exactly 50"
+      },
+      {
+       "name": "payments start empty",
+       "passed": true,
+       "detail": "payment seeding must remain disabled"
+      }
+     ]
+    },
+    {
+     "number": 2,
+     "name": "Inventory validation and pricing",
+     "description": "Exercises valid reservation pricing plus empty, zero, negative, excessive, duplicate, and unknown-product requests.",
+     "status": "PASS",
+     "duration_ms": 63.317,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.171,
+      "mean_ms": 5.896,
+      "p50_ms": 0.723,
+      "p95_ms": 19.902,
+      "p99_ms": 19.902,
+      "max_ms": 19.902
+     },
+     "assertions": [
+      {
+       "name": "valid reservation is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "price and total come from inventory",
+       "passed": true,
+       "detail": "client cannot choose price"
+      },
+      {
+       "name": "empty cart is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "quantity over 100 is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      }
+     ]
+    },
+    {
+     "number": 3,
+     "name": "Atomic inventory rollback",
+     "description": "Attempts a two-product reservation whose second line lacks stock and verifies no stock or reservation row is partially committed.",
+     "status": "PASS",
+     "duration_ms": 110.855,
+     "http_metrics": {
+      "requests": 1,
+      "errors": 0,
+      "min_ms": 11.424,
+      "mean_ms": 11.424,
+      "p50_ms": 11.424,
+      "p95_ms": 11.424,
+      "p99_ms": 11.424,
+      "max_ms": 11.424
+     },
+     "assertions": [
+      {
+       "name": "insufficient stock returns conflict",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "first stock update rolled back",
+       "passed": true,
+       "detail": "first product inventory must be unchanged"
+      },
+      {
+       "name": "second stock is unchanged",
+       "passed": true,
+       "detail": "second product inventory must be unchanged"
+      },
+      {
+       "name": "reservation claim rolled back",
+       "passed": true,
+       "detail": "no partial reservation"
+      }
+     ]
+    },
+    {
+     "number": 4,
+     "name": "Inventory idempotency",
+     "description": "Repeats the same order/hash, then changes the hash, checking response reuse, conflict detection, and a single stock mutation.",
+     "status": "PASS",
+     "duration_ms": 62.477,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 7.15,
+      "mean_ms": 11.341,
+      "p50_ms": 11.395,
+      "p95_ms": 18.017,
+      "p99_ms": 18.017,
+      "max_ms": 18.017
+     },
+     "assertions": [
+      {
+       "name": "first request creates reservation",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "same request reuses reservation",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "different hash conflicts",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "stock reserved once",
+       "passed": true,
+       "detail": "reserved delta must equal 2"
+      }
+     ]
+    },
+    {
+     "number": 5,
+     "name": "Confirm and release transitions",
+     "description": "Confirms one reservation and releases another twice, verifying idempotency and preventing contradictory terminal transitions.",
+     "status": "PASS",
+     "duration_ms": 136.39,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 6.593,
+      "mean_ms": 11.673,
+      "p50_ms": 13.538,
+      "p95_ms": 15.567,
+      "p99_ms": 15.567,
+      "max_ms": 15.567
+     },
+     "assertions": [
+      {
+       "name": "confirm is idempotent",
+       "passed": true,
+       "detail": "both calls return CONFIRMED"
+      },
+      {
+       "name": "confirm moves stock once",
+       "passed": true,
+       "detail": "on_hand decreases and reserved returns"
+      },
+      {
+       "name": "confirmed reservation can be compensated",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "confirmed compensation is idempotent",
+       "passed": true,
+       "detail": "stock is restored exactly once"
+      },
+      {
+       "name": "release is idempotent",
+       "passed": true,
+       "detail": "both calls return RELEASED"
+      },
+      {
+       "name": "release restores availability",
+       "passed": true,
+       "detail": "all inventory counters return to starting values"
+      }
+     ]
+    },
+    {
+     "number": 6,
+     "name": "Checkout validation",
+     "description": "Validates a normal checkout and rejects missing idempotency keys, invalid quantities, duplicates, unknown products, and insufficient stock.",
+     "status": "PASS",
+     "duration_ms": 104.339,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.161,
+      "mean_ms": 10.298,
+      "p50_ms": 0.35,
+      "p95_ms": 40.137,
+      "p99_ms": 40.137,
+      "max_ms": 40.137
+     },
+     "assertions": [
+      {
+       "name": "valid checkout is accepted by the saga",
+       "passed": true,
+       "detail": "HTTP status=Accepted"
+      },
+      {
+       "name": "missing idempotency key is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "empty cart mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product mapping",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "insufficient stock mapping",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      }
+     ]
+    },
+    {
+     "number": 7,
+     "name": "Checkout idempotency and concurrency",
+     "description": "Checks sequential response replay, canonical item ordering, key/body conflicts, and concurrent retries of one logical checkout.",
+     "status": "PASS",
+     "duration_ms": 203.273,
+     "http_metrics": {
+      "requests": 17,
+      "errors": 0,
+      "min_ms": 2.66,
+      "mean_ms": 39.568,
+      "p50_ms": 43.838,
+      "p95_ms": 50.95,
+      "p99_ms": 99.064,
+      "max_ms": 99.064
+     },
+     "assertions": [
+      {
+       "name": "sequential retry replays the stored response",
+       "passed": true,
+       "detail": "one stable order ID"
+      },
+      {
+       "name": "key reuse with different body is rejected",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      },
+      {
+       "name": "item order is canonicalized",
+       "passed": true,
+       "detail": "reordered cart is same request"
+      },
+      {
+       "name": "concurrent retries share one saga",
+       "passed": true,
+       "detail": "every retry returns 202 with the same order ID"
+      },
+      {
+       "name": "concurrent retries reserve once",
+       "passed": true,
+       "detail": "reserved delta must equal 1"
+      }
+     ]
+    },
+    {
+     "number": 8,
+     "name": "Order command recovery",
+     "description": "Stops order-service, starts a checkout, waits for the saga sweeper to resend order.create, restarts order-service, and verifies one order is created and the saga completes.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success so the recovered saga reaches PAID."
+     ]
+    },
+    {
+     "number": 9,
+     "name": "Payment gateway outcome",
+     "description": "Creates a payment, observes asynchronous processing, and checks the terminal status for the configured simulator mode.",
+     "status": "FAIL",
+     "duration_ms": 7048.647,
+     "http_metrics": {
+      "requests": 136,
+      "errors": 0,
+      "min_ms": 1.222,
+      "mean_ms": 2.303,
+      "p50_ms": 2.321,
+      "p95_ms": 3.053,
+      "p99_ms": 4.537,
+      "max_ms": 7.914
+     },
+     "assertions": [
+      {
+       "name": "payment attempt is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "gateway result matches mode",
+       "passed": false,
+       "detail": "expected FAILED, got AWAITING_PAYMENT"
+      }
+     ]
+    },
+    {
+     "number": 10,
+     "name": "Payment idempotency and concurrency",
+     "description": "Sends concurrent create-payment requests for one order and verifies one database row, one payment ID, and one asynchronous result.",
+     "status": "PASS",
+     "duration_ms": 7069.373,
+     "http_metrics": {
+      "requests": 150,
+      "errors": 0,
+      "min_ms": 1.277,
+      "mean_ms": 3.867,
+      "p50_ms": 2.685,
+      "p95_ms": 14.426,
+      "p99_ms": 16.59,
+      "max_ms": 20.058
+     },
+     "assertions": [
+      {
+       "name": "one request creates and retries reuse",
+       "passed": true,
+       "detail": "expected one 201, remaining 200, one ID"
+      },
+      {
+       "name": "one payment row exists",
+       "passed": true,
+       "detail": "database uniqueness"
+      },
+      {
+       "name": "payment leaves CREATED/PENDING",
+       "passed": true,
+       "detail": "AWAITING_PAYMENT"
+      }
+     ]
+    },
+    {
+     "number": 13,
+     "name": "Successful checkout end to end",
+     "description": "Runs the checkout saga through payment and inventory confirmation, then cross-checks order, payment, reservation, and stock records.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success to exercise the deterministic success path."
+     ]
+    },
+    {
+     "number": 14,
+     "name": "Declined payment end to end",
+     "description": "Checks that a declined payment cancels the order and releases, rather than consumes, reserved inventory.",
+     "status": "FAIL",
+     "duration_ms": 60178.145,
+     "http_metrics": {
+      "requests": 289,
+      "errors": 0,
+      "min_ms": 1.762,
+      "mean_ms": 4.609,
+      "p50_ms": 4.429,
+      "p95_ms": 5.498,
+      "p99_ms": 8.849,
+      "max_ms": 55.458
+     },
+     "assertions": [
+      {
+       "name": "saga finishes its inventory step",
+       "passed": false,
+       "detail": "saga status COMPENSATED"
+      },
+      {
+       "name": "decline cancels order",
+       "passed": false,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment is failed",
+       "passed": false,
+       "detail": "terminal payment"
+      },
+      {
+       "name": "reservation is released",
+       "passed": false,
+       "detail": "terminal reservation"
+      },
+      {
+       "name": "decline consumes no stock",
+       "passed": false,
+       "detail": "inventory returns to start"
+      }
+     ]
+    },
+    {
+     "number": 15,
+     "name": "Ambiguous payment timeout",
+     "description": "Checks that an unknown gateway outcome keeps the order pending and its stock reserved for later reconciliation.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run a fresh disposable stack with GATEWAY_MODE=timeout to execute this phase."
+     ]
+    },
+    {
+     "number": 16,
+     "name": "Payment command recovery",
+     "description": "Stops payment-service, starts a checkout, waits for the saga sweeper to resend payment.initiate, restarts payment-service, and verifies one payment and a completed saga.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success so the recovered saga reaches PAID."
+     ]
+    },
+    {
+     "number": 17,
+     "name": "Concurrent limited-stock checkout",
+     "description": "Runs 50 distinct checkouts against ten units and verifies exactly ten winners, no oversell, and no negative counters.",
+     "status": "PASS",
+     "duration_ms": 328.079,
+     "http_metrics": {
+      "requests": 50,
+      "errors": 0,
+      "min_ms": 47.413,
+      "mean_ms": 153.295,
+      "p50_ms": 166.277,
+      "p95_ms": 186.981,
+      "p99_ms": 190.365,
+      "max_ms": 190.365
+     },
+     "assertions": [
+      {
+       "name": "exactly available stock wins",
+       "passed": true,
+       "detail": "expected 10 created and 40 conflicts"
+      },
+      {
+       "name": "stock is not oversold",
+       "passed": true,
+       "detail": "on_hand=10 reserved=10 allocated=0"
+      },
+      {
+       "name": "ten orders were created",
+       "passed": true,
+       "detail": "one order per unit"
+      }
+     ]
+    },
+    {
+     "number": 18,
+     "name": "Multi-item deadlock resistance",
+     "description": "Submits concurrent two-item carts in opposite input order and verifies canonical locking prevents deadlocks and timeouts.",
+     "status": "PASS",
+     "duration_ms": 279.465,
+     "http_metrics": {
+      "requests": 20,
+      "errors": 0,
+      "min_ms": 46.356,
+      "mean_ms": 141.435,
+      "p50_ms": 153.989,
+      "p95_ms": 215.73,
+      "p99_ms": 233.027,
+      "max_ms": 233.027
+     },
+     "assertions": [
+      {
+       "name": "all opposite-order carts complete",
+       "passed": true,
+       "detail": "no deadlocks, transport timeouts, or conflicts"
+      },
+      {
+       "name": "both products reserved exactly",
+       "passed": true,
+       "detail": "each product reserved 20"
+      }
+     ]
+    },
+    {
+     "number": 19,
+     "name": "Terminal order state idempotency",
+     "description": "Replays the checkout of a PAID order and verifies the same order ID, stable state, one payment, and one inventory movement.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "The default terminal-state assertion is deterministic under GATEWAY_MODE=success; decline is covered by phase 14."
+     ]
+    },
+    {
+     "number": 20,
+     "name": "HTTP error mapping",
+     "description": "Sends malformed IDs, missing resources, invalid payment data, and checkout conflicts to verify stable client-facing status codes.",
+     "status": "PASS",
+     "duration_ms": 52.852,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.199,
+      "mean_ms": 5.716,
+      "p50_ms": 1.539,
+      "p95_ms": 35.021,
+      "p99_ms": 35.021,
+      "max_ms": 35.021
+     },
+     "assertions": [
+      {
+       "name": "bad order ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing order",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "bad payment ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing payment",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "invalid payment amount",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "invalid currency length",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "idempotency body conflict",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      }
+     ]
+    },
+    {
+     "number": 21,
+     "name": "Transaction boundary",
+     "description": "Samples pg_stat_activity during the checkout saga and fails if an application connection waits on network I/O while idle inside a database transaction.",
+     "status": "FAIL",
+     "duration_ms": 60099.818,
+     "http_metrics": {
+      "requests": 145,
+      "errors": 0,
+      "min_ms": 2.256,
+      "mean_ms": 4.997,
+      "p50_ms": 4.524,
+      "p95_ms": 6.469,
+      "p99_ms": 15.184,
+      "max_ms": 44.494
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before sampling",
+       "passed": false,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "no idle transaction crosses service calls",
+       "passed": true,
+       "detail": "observed idle-in-transaction samples=0"
+      }
+     ]
+    },
+    {
+     "number": 22,
+     "name": "Database invariants",
+     "description": "Scans all three schemas for negative/oversold stock, duplicate business keys, and cross-service terminal-state contradictions.",
+     "status": "FAIL",
+     "duration_ms": 10096.041,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before audit",
+       "passed": false,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "inventory counters stay within bounds",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one reservation per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one payment per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one product line per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid orders have successful payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled orders have failed payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid reservations are confirmed",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled reservations are released",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "unknown payments retain pending orders",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "payment amounts match order totals in paise",
+       "passed": true,
+       "detail": "violations=0"
+      }
+     ]
+    }
+   ],
+   "audit": {
+    "verdict": "PASS",
+    "alerts_fired": [
+     "DatabasePoolSaturated",
+     "DeadLetterQueueGrowing",
+     "DeadLettersPublished"
+    ],
+    "event_counts_in_logs": {
+     "saga_stuck": 0,
+     "outbox_publish_failed": 0,
+     "outbox_message_marked_dead": 0,
+     "payment_unconfirmed": 0,
+     "late_capture_refund_required": 0,
+     "stock_invariant_failed": 0
+    },
+    "violations": []
+   }
+  },
+  {
+   "mode": "decline",
+   "folder": "cloud-test2-decline-retry-20261101T152116Z",
+   "role": "counted",
+   "run_id": "20261101T152132.151945199Z",
+   "started_at": "2026-11-01T15:21:32.471413656Z",
+   "finished_at": "2026-11-01T15:21:57.097107999Z",
+   "environment": {
+    "order_url": "http://10.40.1.11:8080",
+    "orchestrator_url": "http://10.40.1.10:8083",
+    "inventory_url": "http://10.40.1.12:8081",
+    "payment_url": "http://10.40.1.13:8082",
+    "gateway_mode": "decline",
+    "run_label": "cloud-test2-decline-retry-20261101T152116Z"
+   },
+   "summary": {
+    "total": 20,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 5
+   },
+   "phases": [
+    {
+     "number": 1,
+     "name": "Environment and migrations",
+     "description": "Checks service reachability, database schemas, inventory seed count, and the required empty payment table.",
+     "status": "PASS",
+     "duration_ms": 71.506,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 0.851,
+      "mean_ms": 2.281,
+      "p50_ms": 1.315,
+      "p95_ms": 5.646,
+      "p99_ms": 5.646,
+      "max_ms": 5.646
+     },
+     "assertions": [
+      {
+       "name": "order service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "orchestrator service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "inventory service and seed",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "50 inventory products were seeded",
+       "passed": true,
+       "detail": "expected exactly 50"
+      },
+      {
+       "name": "payments start empty",
+       "passed": true,
+       "detail": "payment seeding must remain disabled"
+      }
+     ]
+    },
+    {
+     "number": 2,
+     "name": "Inventory validation and pricing",
+     "description": "Exercises valid reservation pricing plus empty, zero, negative, excessive, duplicate, and unknown-product requests.",
+     "status": "PASS",
+     "duration_ms": 59.662,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.151,
+      "mean_ms": 4.86,
+      "p50_ms": 0.961,
+      "p95_ms": 17.08,
+      "p99_ms": 17.08,
+      "max_ms": 17.08
+     },
+     "assertions": [
+      {
+       "name": "valid reservation is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "price and total come from inventory",
+       "passed": true,
+       "detail": "client cannot choose price"
+      },
+      {
+       "name": "empty cart is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "quantity over 100 is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      }
+     ]
+    },
+    {
+     "number": 3,
+     "name": "Atomic inventory rollback",
+     "description": "Attempts a two-product reservation whose second line lacks stock and verifies no stock or reservation row is partially committed.",
+     "status": "PASS",
+     "duration_ms": 159.522,
+     "http_metrics": {
+      "requests": 1,
+      "errors": 0,
+      "min_ms": 10.622,
+      "mean_ms": 10.622,
+      "p50_ms": 10.622,
+      "p95_ms": 10.622,
+      "p99_ms": 10.622,
+      "max_ms": 10.622
+     },
+     "assertions": [
+      {
+       "name": "insufficient stock returns conflict",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "first stock update rolled back",
+       "passed": true,
+       "detail": "first product inventory must be unchanged"
+      },
+      {
+       "name": "second stock is unchanged",
+       "passed": true,
+       "detail": "second product inventory must be unchanged"
+      },
+      {
+       "name": "reservation claim rolled back",
+       "passed": true,
+       "detail": "no partial reservation"
+      }
+     ]
+    },
+    {
+     "number": 4,
+     "name": "Inventory idempotency",
+     "description": "Repeats the same order/hash, then changes the hash, checking response reuse, conflict detection, and a single stock mutation.",
+     "status": "PASS",
+     "duration_ms": 80.466,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 7.224,
+      "mean_ms": 13.112,
+      "p50_ms": 16.454,
+      "p95_ms": 17.012,
+      "p99_ms": 17.012,
+      "max_ms": 17.012
+     },
+     "assertions": [
+      {
+       "name": "first request creates reservation",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "same request reuses reservation",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "different hash conflicts",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "stock reserved once",
+       "passed": true,
+       "detail": "reserved delta must equal 2"
+      }
+     ]
+    },
+    {
+     "number": 5,
+     "name": "Confirm and release transitions",
+     "description": "Confirms one reservation and releases another twice, verifying idempotency and preventing contradictory terminal transitions.",
+     "status": "PASS",
+     "duration_ms": 163.388,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 6.378,
+      "mean_ms": 12.362,
+      "p50_ms": 12.344,
+      "p95_ms": 18.883,
+      "p99_ms": 18.883,
+      "max_ms": 18.883
+     },
+     "assertions": [
+      {
+       "name": "confirm is idempotent",
+       "passed": true,
+       "detail": "both calls return CONFIRMED"
+      },
+      {
+       "name": "confirm moves stock once",
+       "passed": true,
+       "detail": "on_hand decreases and reserved returns"
+      },
+      {
+       "name": "confirmed reservation can be compensated",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "confirmed compensation is idempotent",
+       "passed": true,
+       "detail": "stock is restored exactly once"
+      },
+      {
+       "name": "release is idempotent",
+       "passed": true,
+       "detail": "both calls return RELEASED"
+      },
+      {
+       "name": "release restores availability",
+       "passed": true,
+       "detail": "all inventory counters return to starting values"
+      }
+     ]
+    },
+    {
+     "number": 6,
+     "name": "Checkout validation",
+     "description": "Validates a normal checkout and rejects missing idempotency keys, invalid quantities, duplicates, unknown products, and insufficient stock.",
+     "status": "PASS",
+     "duration_ms": 121.618,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.14,
+      "mean_ms": 10.747,
+      "p50_ms": 0.389,
+      "p95_ms": 39.231,
+      "p99_ms": 39.231,
+      "max_ms": 39.231
+     },
+     "assertions": [
+      {
+       "name": "valid checkout is accepted by the saga",
+       "passed": true,
+       "detail": "HTTP status=Accepted"
+      },
+      {
+       "name": "missing idempotency key is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "empty cart mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product mapping",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "insufficient stock mapping",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      }
+     ]
+    },
+    {
+     "number": 7,
+     "name": "Checkout idempotency and concurrency",
+     "description": "Checks sequential response replay, canonical item ordering, key/body conflicts, and concurrent retries of one logical checkout.",
+     "status": "PASS",
+     "duration_ms": 207.879,
+     "http_metrics": {
+      "requests": 17,
+      "errors": 0,
+      "min_ms": 5.656,
+      "mean_ms": 39.074,
+      "p50_ms": 44.502,
+      "p95_ms": 50.893,
+      "p99_ms": 59.949,
+      "max_ms": 59.949
+     },
+     "assertions": [
+      {
+       "name": "sequential retry replays the stored response",
+       "passed": true,
+       "detail": "one stable order ID"
+      },
+      {
+       "name": "key reuse with different body is rejected",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      },
+      {
+       "name": "item order is canonicalized",
+       "passed": true,
+       "detail": "reordered cart is same request"
+      },
+      {
+       "name": "concurrent retries share one saga",
+       "passed": true,
+       "detail": "every retry returns 202 with the same order ID"
+      },
+      {
+       "name": "concurrent retries reserve once",
+       "passed": true,
+       "detail": "reserved delta must equal 1"
+      }
+     ]
+    },
+    {
+     "number": 8,
+     "name": "Order command recovery",
+     "description": "Stops order-service, starts a checkout, waits for the saga sweeper to resend order.create, restarts order-service, and verifies one order is created and the saga completes.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success so the recovered saga reaches PAID."
+     ]
+    },
+    {
+     "number": 9,
+     "name": "Payment gateway outcome",
+     "description": "Creates a payment, observes asynchronous processing, and checks the terminal status for the configured simulator mode.",
+     "status": "PASS",
+     "duration_ms": 3719.189,
+     "http_metrics": {
+      "requests": 72,
+      "errors": 0,
+      "min_ms": 1.029,
+      "mean_ms": 2.784,
+      "p50_ms": 2.673,
+      "p95_ms": 3.736,
+      "p99_ms": 7.159,
+      "max_ms": 9.204
+     },
+     "assertions": [
+      {
+       "name": "payment attempt is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "gateway result matches mode",
+       "passed": true,
+       "detail": "expected FAILED, got FAILED"
+      }
+     ]
+    },
+    {
+     "number": 10,
+     "name": "Payment idempotency and concurrency",
+     "description": "Sends concurrent create-payment requests for one order and verifies one database row, one payment ID, and one asynchronous result.",
+     "status": "PASS",
+     "duration_ms": 3967.209,
+     "http_metrics": {
+      "requests": 91,
+      "errors": 0,
+      "min_ms": 1.441,
+      "mean_ms": 4.582,
+      "p50_ms": 2.706,
+      "p95_ms": 14.586,
+      "p99_ms": 15.519,
+      "max_ms": 16.464
+     },
+     "assertions": [
+      {
+       "name": "one request creates and retries reuse",
+       "passed": true,
+       "detail": "expected one 201, remaining 200, one ID"
+      },
+      {
+       "name": "one payment row exists",
+       "passed": true,
+       "detail": "database uniqueness"
+      },
+      {
+       "name": "payment leaves CREATED/PENDING",
+       "passed": true,
+       "detail": "FAILED"
+      }
+     ]
+    },
+    {
+     "number": 13,
+     "name": "Successful checkout end to end",
+     "description": "Runs the checkout saga through payment and inventory confirmation, then cross-checks order, payment, reservation, and stock records.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success to exercise the deterministic success path."
+     ]
+    },
+    {
+     "number": 14,
+     "name": "Declined payment end to end",
+     "description": "Checks that a declined payment cancels the order and releases, rather than consumes, reserved inventory.",
+     "status": "PASS",
+     "duration_ms": 4640.59,
+     "http_metrics": {
+      "requests": 41,
+      "errors": 0,
+      "min_ms": 1.503,
+      "mean_ms": 5.249,
+      "p50_ms": 4.333,
+      "p95_ms": 4.883,
+      "p99_ms": 46.726,
+      "max_ms": 46.726
+     },
+     "assertions": [
+      {
+       "name": "saga finishes its inventory step",
+       "passed": true,
+       "detail": "saga status COMPENSATED"
+      },
+      {
+       "name": "decline cancels order",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment is failed",
+       "passed": true,
+       "detail": "terminal payment"
+      },
+      {
+       "name": "reservation is released",
+       "passed": true,
+       "detail": "terminal reservation"
+      },
+      {
+       "name": "decline consumes no stock",
+       "passed": true,
+       "detail": "inventory returns to start"
+      }
+     ]
+    },
+    {
+     "number": 15,
+     "name": "Ambiguous payment timeout",
+     "description": "Checks that an unknown gateway outcome keeps the order pending and its stock reserved for later reconciliation.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run a fresh disposable stack with GATEWAY_MODE=timeout to execute this phase."
+     ]
+    },
+    {
+     "number": 16,
+     "name": "Payment command recovery",
+     "description": "Stops payment-service, starts a checkout, waits for the saga sweeper to resend payment.initiate, restarts payment-service, and verifies one payment and a completed saga.",
+     "status": "SKIP",
+     "duration_ms": 0.001,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success so the recovered saga reaches PAID."
+     ]
+    },
+    {
+     "number": 17,
+     "name": "Concurrent limited-stock checkout",
+     "description": "Runs 50 distinct checkouts against ten units and verifies exactly ten winners, no oversell, and no negative counters.",
+     "status": "PASS",
+     "duration_ms": 312.469,
+     "http_metrics": {
+      "requests": 50,
+      "errors": 0,
+      "min_ms": 36.234,
+      "mean_ms": 122.007,
+      "p50_ms": 129.16,
+      "p95_ms": 149.268,
+      "p99_ms": 150.69,
+      "max_ms": 150.69
+     },
+     "assertions": [
+      {
+       "name": "exactly available stock wins",
+       "passed": true,
+       "detail": "expected 10 created and 40 conflicts"
+      },
+      {
+       "name": "stock is not oversold",
+       "passed": true,
+       "detail": "on_hand=10 reserved=10 allocated=0"
+      },
+      {
+       "name": "ten orders were created",
+       "passed": true,
+       "detail": "one order per unit"
+      }
+     ]
+    },
+    {
+     "number": 18,
+     "name": "Multi-item deadlock resistance",
+     "description": "Submits concurrent two-item carts in opposite input order and verifies canonical locking prevents deadlocks and timeouts.",
+     "status": "PASS",
+     "duration_ms": 283.025,
+     "http_metrics": {
+      "requests": 20,
+      "errors": 0,
+      "min_ms": 37.505,
+      "mean_ms": 126.046,
+      "p50_ms": 126.895,
+      "p95_ms": 202.104,
+      "p99_ms": 211.194,
+      "max_ms": 211.194
+     },
+     "assertions": [
+      {
+       "name": "all opposite-order carts complete",
+       "passed": true,
+       "detail": "no deadlocks, transport timeouts, or conflicts"
+      },
+      {
+       "name": "both products reserved exactly",
+       "passed": true,
+       "detail": "each product reserved 20"
+      }
+     ]
+    },
+    {
+     "number": 19,
+     "name": "Terminal order state idempotency",
+     "description": "Replays the checkout of a PAID order and verifies the same order ID, stable state, one payment, and one inventory movement.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "The default terminal-state assertion is deterministic under GATEWAY_MODE=success; decline is covered by phase 14."
+     ]
+    },
+    {
+     "number": 20,
+     "name": "HTTP error mapping",
+     "description": "Sends malformed IDs, missing resources, invalid payment data, and checkout conflicts to verify stable client-facing status codes.",
+     "status": "PASS",
+     "duration_ms": 56.285,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.204,
+      "mean_ms": 5.651,
+      "p50_ms": 1.046,
+      "p95_ms": 34.681,
+      "p99_ms": 34.681,
+      "max_ms": 34.681
+     },
+     "assertions": [
+      {
+       "name": "bad order ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing order",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "bad payment ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing payment",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "invalid payment amount",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "invalid currency length",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "idempotency body conflict",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      }
+     ]
+    },
+    {
+     "number": 21,
+     "name": "Transaction boundary",
+     "description": "Samples pg_stat_activity during the checkout saga and fails if an application connection waits on network I/O while idle inside a database transaction.",
+     "status": "PASS",
+     "duration_ms": 10067.067,
+     "http_metrics": {
+      "requests": 43,
+      "errors": 0,
+      "min_ms": 1.668,
+      "mean_ms": 4.961,
+      "p50_ms": 4.19,
+      "p95_ms": 5.237,
+      "p99_ms": 37.922,
+      "max_ms": 37.922
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before sampling",
+       "passed": true,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "no idle transaction crosses service calls",
+       "passed": true,
+       "detail": "observed idle-in-transaction samples=0"
+      }
+     ]
+    },
+    {
+     "number": 22,
+     "name": "Database invariants",
+     "description": "Scans all three schemas for negative/oversold stock, duplicate business keys, and cross-service terminal-state contradictions.",
+     "status": "PASS",
+     "duration_ms": 715.177,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before audit",
+       "passed": true,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "inventory counters stay within bounds",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one reservation per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one payment per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one product line per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid orders have successful payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled orders have failed payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid reservations are confirmed",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled reservations are released",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "unknown payments retain pending orders",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "payment amounts match order totals in paise",
+       "passed": true,
+       "detail": "violations=0"
+      }
+     ]
+    }
+   ],
+   "audit": {
+    "verdict": "PASS",
+    "alerts_fired": [
+     "DatabasePoolSaturated",
+     "DeadLetterQueueGrowing",
+     "DeadLettersPublished",
+     "ServiceDown"
+    ],
+    "event_counts_in_logs": {
+     "saga_stuck": 0,
+     "outbox_publish_failed": 0,
+     "outbox_message_marked_dead": 0,
+     "payment_unconfirmed": 0,
+     "late_capture_refund_required": 0,
+     "stock_invariant_failed": 0
+    },
+    "violations": []
+   }
+  },
+  {
+   "mode": "timeout",
+   "folder": "cloud-test2-timeout-20261101T153009Z",
+   "role": "counted",
+   "run_id": "20261101T153026.570546259Z",
+   "started_at": "2026-11-01T15:30:26.875777701Z",
+   "finished_at": "2026-11-01T15:31:22.241407165Z",
+   "environment": {
+    "order_url": "http://10.40.1.11:8080",
+    "orchestrator_url": "http://10.40.1.10:8083",
+    "inventory_url": "http://10.40.1.12:8081",
+    "payment_url": "http://10.40.1.13:8082",
+    "gateway_mode": "timeout",
+    "run_label": "cloud-test2-timeout-20261101T153009Z"
+   },
+   "summary": {
+    "total": 20,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 5
+   },
+   "phases": [
+    {
+     "number": 1,
+     "name": "Environment and migrations",
+     "description": "Checks service reachability, database schemas, inventory seed count, and the required empty payment table.",
+     "status": "PASS",
+     "duration_ms": 41.217,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 0.632,
+      "mean_ms": 1.54,
+      "p50_ms": 1.165,
+      "p95_ms": 3.669,
+      "p99_ms": 3.669,
+      "max_ms": 3.669
+     },
+     "assertions": [
+      {
+       "name": "order service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "orchestrator service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment service health",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "inventory service and seed",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "50 inventory products were seeded",
+       "passed": true,
+       "detail": "expected exactly 50"
+      },
+      {
+       "name": "payments start empty",
+       "passed": true,
+       "detail": "payment seeding must remain disabled"
+      }
+     ]
+    },
+    {
+     "number": 2,
+     "name": "Inventory validation and pricing",
+     "description": "Exercises valid reservation pricing plus empty, zero, negative, excessive, duplicate, and unknown-product requests.",
+     "status": "PASS",
+     "duration_ms": 62.368,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.165,
+      "mean_ms": 4.863,
+      "p50_ms": 0.859,
+      "p95_ms": 17.295,
+      "p99_ms": 17.295,
+      "max_ms": 17.295
+     },
+     "assertions": [
+      {
+       "name": "valid reservation is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "price and total come from inventory",
+       "passed": true,
+       "detail": "client cannot choose price"
+      },
+      {
+       "name": "empty cart is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "quantity over 100 is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product is rejected",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      }
+     ]
+    },
+    {
+     "number": 3,
+     "name": "Atomic inventory rollback",
+     "description": "Attempts a two-product reservation whose second line lacks stock and verifies no stock or reservation row is partially committed.",
+     "status": "PASS",
+     "duration_ms": 168.157,
+     "http_metrics": {
+      "requests": 1,
+      "errors": 0,
+      "min_ms": 11.525,
+      "mean_ms": 11.525,
+      "p50_ms": 11.525,
+      "p95_ms": 11.525,
+      "p99_ms": 11.525,
+      "max_ms": 11.525
+     },
+     "assertions": [
+      {
+       "name": "insufficient stock returns conflict",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "first stock update rolled back",
+       "passed": true,
+       "detail": "first product inventory must be unchanged"
+      },
+      {
+       "name": "second stock is unchanged",
+       "passed": true,
+       "detail": "second product inventory must be unchanged"
+      },
+      {
+       "name": "reservation claim rolled back",
+       "passed": true,
+       "detail": "no partial reservation"
+      }
+     ]
+    },
+    {
+     "number": 4,
+     "name": "Inventory idempotency",
+     "description": "Repeats the same order/hash, then changes the hash, checking response reuse, conflict detection, and a single stock mutation.",
+     "status": "PASS",
+     "duration_ms": 75.491,
+     "http_metrics": {
+      "requests": 4,
+      "errors": 0,
+      "min_ms": 8.505,
+      "mean_ms": 11.481,
+      "p50_ms": 12.174,
+      "p95_ms": 14.849,
+      "p99_ms": 14.849,
+      "max_ms": 14.849
+     },
+     "assertions": [
+      {
+       "name": "first request creates reservation",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "same request reuses reservation",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "different hash conflicts",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      },
+      {
+       "name": "stock reserved once",
+       "passed": true,
+       "detail": "reserved delta must equal 2"
+      }
+     ]
+    },
+    {
+     "number": 5,
+     "name": "Confirm and release transitions",
+     "description": "Confirms one reservation and releases another twice, verifying idempotency and preventing contradictory terminal transitions.",
+     "status": "PASS",
+     "duration_ms": 186.693,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 8.757,
+      "mean_ms": 12.715,
+      "p50_ms": 13.687,
+      "p95_ms": 16.661,
+      "p99_ms": 16.661,
+      "max_ms": 16.661
+     },
+     "assertions": [
+      {
+       "name": "confirm is idempotent",
+       "passed": true,
+       "detail": "both calls return CONFIRMED"
+      },
+      {
+       "name": "confirm moves stock once",
+       "passed": true,
+       "detail": "on_hand decreases and reserved returns"
+      },
+      {
+       "name": "confirmed reservation can be compensated",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "confirmed compensation is idempotent",
+       "passed": true,
+       "detail": "stock is restored exactly once"
+      },
+      {
+       "name": "release is idempotent",
+       "passed": true,
+       "detail": "both calls return RELEASED"
+      },
+      {
+       "name": "release restores availability",
+       "passed": true,
+       "detail": "all inventory counters return to starting values"
+      }
+     ]
+    },
+    {
+     "number": 6,
+     "name": "Checkout validation",
+     "description": "Validates a normal checkout and rejects missing idempotency keys, invalid quantities, duplicates, unknown products, and insufficient stock.",
+     "status": "PASS",
+     "duration_ms": 85.642,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.151,
+      "mean_ms": 5.781,
+      "p50_ms": 0.267,
+      "p95_ms": 22.561,
+      "p99_ms": 22.561,
+      "max_ms": 22.561
+     },
+     "assertions": [
+      {
+       "name": "valid checkout is accepted by the saga",
+       "passed": true,
+       "detail": "HTTP status=Accepted"
+      },
+      {
+       "name": "missing idempotency key is rejected",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "empty cart mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "zero quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "negative quantity mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "duplicate product mapping",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "unknown product mapping",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "insufficient stock mapping",
+       "passed": true,
+       "detail": "HTTP status=Conflict"
+      }
+     ]
+    },
+    {
+     "number": 7,
+     "name": "Checkout idempotency and concurrency",
+     "description": "Checks sequential response replay, canonical item ordering, key/body conflicts, and concurrent retries of one logical checkout.",
+     "status": "PASS",
+     "duration_ms": 169.029,
+     "http_metrics": {
+      "requests": 17,
+      "errors": 0,
+      "min_ms": 2.496,
+      "mean_ms": 38.201,
+      "p50_ms": 48.535,
+      "p95_ms": 51.465,
+      "p99_ms": 53.263,
+      "max_ms": 53.263
+     },
+     "assertions": [
+      {
+       "name": "sequential retry replays the stored response",
+       "passed": true,
+       "detail": "one stable order ID"
+      },
+      {
+       "name": "key reuse with different body is rejected",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      },
+      {
+       "name": "item order is canonicalized",
+       "passed": true,
+       "detail": "reordered cart is same request"
+      },
+      {
+       "name": "concurrent retries share one saga",
+       "passed": true,
+       "detail": "every retry returns 202 with the same order ID"
+      },
+      {
+       "name": "concurrent retries reserve once",
+       "passed": true,
+       "detail": "reserved delta must equal 1"
+      }
+     ]
+    },
+    {
+     "number": 8,
+     "name": "Order command recovery",
+     "description": "Stops order-service, starts a checkout, waits for the saga sweeper to resend order.create, restarts order-service, and verifies one order is created and the saga completes.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success so the recovered saga reaches PAID."
+     ]
+    },
+    {
+     "number": 9,
+     "name": "Payment gateway outcome",
+     "description": "Creates a payment, observes asynchronous processing, and checks the terminal status for the configured simulator mode.",
+     "status": "PASS",
+     "duration_ms": 3048,
+     "http_metrics": {
+      "requests": 59,
+      "errors": 0,
+      "min_ms": 2.049,
+      "mean_ms": 3.101,
+      "p50_ms": 2.754,
+      "p95_ms": 4.694,
+      "p99_ms": 5.309,
+      "max_ms": 13.106
+     },
+     "assertions": [
+      {
+       "name": "payment attempt is created",
+       "passed": true,
+       "detail": "HTTP status=Created"
+      },
+      {
+       "name": "gateway result matches mode",
+       "passed": true,
+       "detail": "expected UNKNOWN, got UNKNOWN"
+      }
+     ]
+    },
+    {
+     "number": 10,
+     "name": "Payment idempotency and concurrency",
+     "description": "Sends concurrent create-payment requests for one order and verifies one database row, one payment ID, and one asynchronous result.",
+     "status": "PASS",
+     "duration_ms": 3274.37,
+     "http_metrics": {
+      "requests": 78,
+      "errors": 0,
+      "min_ms": 2.031,
+      "mean_ms": 5.452,
+      "p50_ms": 2.77,
+      "p95_ms": 16.784,
+      "p99_ms": 21.812,
+      "max_ms": 21.987
+     },
+     "assertions": [
+      {
+       "name": "one request creates and retries reuse",
+       "passed": true,
+       "detail": "expected one 201, remaining 200, one ID"
+      },
+      {
+       "name": "one payment row exists",
+       "passed": true,
+       "detail": "database uniqueness"
+      },
+      {
+       "name": "payment leaves CREATED/PENDING",
+       "passed": true,
+       "detail": "UNKNOWN"
+      }
+     ]
+    },
+    {
+     "number": 13,
+     "name": "Successful checkout end to end",
+     "description": "Runs the checkout saga through payment and inventory confirmation, then cross-checks order, payment, reservation, and stock records.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success to exercise the deterministic success path."
+     ]
+    },
+    {
+     "number": 14,
+     "name": "Declined payment end to end",
+     "description": "Checks that a declined payment cancels the order and releases, rather than consumes, reserved inventory.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run a fresh disposable stack with GATEWAY_MODE=decline to execute this phase."
+     ]
+    },
+    {
+     "number": 15,
+     "name": "Ambiguous payment timeout",
+     "description": "Checks that an unknown gateway outcome keeps the order pending and its stock reserved for later reconciliation.",
+     "status": "PASS",
+     "duration_ms": 8206.481,
+     "http_metrics": {
+      "requests": 79,
+      "errors": 0,
+      "min_ms": 2.602,
+      "mean_ms": 5.407,
+      "p50_ms": 4.496,
+      "p95_ms": 5.505,
+      "p99_ms": 8.621,
+      "max_ms": 65.048
+     },
+     "assertions": [
+      {
+       "name": "timeout keeps order pending",
+       "passed": true,
+       "detail": "HTTP status=OK"
+      },
+      {
+       "name": "payment is unknown",
+       "passed": true,
+       "detail": "ambiguous terminal payment"
+      },
+      {
+       "name": "reservation remains reserved",
+       "passed": true,
+       "detail": "do not release uncertain stock"
+      },
+      {
+       "name": "stock remains held",
+       "passed": true,
+       "detail": "reserved +2"
+      }
+     ]
+    },
+    {
+     "number": 16,
+     "name": "Payment command recovery",
+     "description": "Stops payment-service, starts a checkout, waits for the saga sweeper to resend payment.initiate, restarts payment-service, and verifies one payment and a completed saga.",
+     "status": "SKIP",
+     "duration_ms": 0.002,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "Run with GATEWAY_MODE=success so the recovered saga reaches PAID."
+     ]
+    },
+    {
+     "number": 17,
+     "name": "Concurrent limited-stock checkout",
+     "description": "Runs 50 distinct checkouts against ten units and verifies exactly ten winners, no oversell, and no negative counters.",
+     "status": "PASS",
+     "duration_ms": 300.065,
+     "http_metrics": {
+      "requests": 50,
+      "errors": 0,
+      "min_ms": 41.617,
+      "mean_ms": 110.612,
+      "p50_ms": 123.228,
+      "p95_ms": 138.295,
+      "p99_ms": 138.989,
+      "max_ms": 138.989
+     },
+     "assertions": [
+      {
+       "name": "exactly available stock wins",
+       "passed": true,
+       "detail": "expected 10 created and 40 conflicts"
+      },
+      {
+       "name": "stock is not oversold",
+       "passed": true,
+       "detail": "on_hand=10 reserved=10 allocated=0"
+      },
+      {
+       "name": "ten orders were created",
+       "passed": true,
+       "detail": "one order per unit"
+      }
+     ]
+    },
+    {
+     "number": 18,
+     "name": "Multi-item deadlock resistance",
+     "description": "Submits concurrent two-item carts in opposite input order and verifies canonical locking prevents deadlocks and timeouts.",
+     "status": "PASS",
+     "duration_ms": 315.813,
+     "http_metrics": {
+      "requests": 20,
+      "errors": 0,
+      "min_ms": 41.951,
+      "mean_ms": 123.293,
+      "p50_ms": 125.817,
+      "p95_ms": 203.804,
+      "p99_ms": 208.572,
+      "max_ms": 208.572
+     },
+     "assertions": [
+      {
+       "name": "all opposite-order carts complete",
+       "passed": true,
+       "detail": "no deadlocks, transport timeouts, or conflicts"
+      },
+      {
+       "name": "both products reserved exactly",
+       "passed": true,
+       "detail": "each product reserved 20"
+      }
+     ]
+    },
+    {
+     "number": 19,
+     "name": "Terminal order state idempotency",
+     "description": "Replays the checkout of a PAID order and verifies the same order ID, stable state, one payment, and one inventory movement.",
+     "status": "SKIP",
+     "duration_ms": 0.003,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": null,
+     "notes": [
+      "The default terminal-state assertion is deterministic under GATEWAY_MODE=success; decline is covered by phase 14."
+     ]
+    },
+    {
+     "number": 20,
+     "name": "HTTP error mapping",
+     "description": "Sends malformed IDs, missing resources, invalid payment data, and checkout conflicts to verify stable client-facing status codes.",
+     "status": "PASS",
+     "duration_ms": 50.591,
+     "http_metrics": {
+      "requests": 8,
+      "errors": 0,
+      "min_ms": 0.187,
+      "mean_ms": 4.862,
+      "p50_ms": 2.053,
+      "p95_ms": 29.986,
+      "p99_ms": 29.986,
+      "max_ms": 29.986
+     },
+     "assertions": [
+      {
+       "name": "bad order ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing order",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "bad payment ID",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "missing payment",
+       "passed": true,
+       "detail": "HTTP status=Not Found"
+      },
+      {
+       "name": "invalid payment amount",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "invalid currency length",
+       "passed": true,
+       "detail": "HTTP status=Bad Request"
+      },
+      {
+       "name": "idempotency body conflict",
+       "passed": true,
+       "detail": "HTTP status=Unprocessable Entity"
+      }
+     ]
+    },
+    {
+     "number": 21,
+     "name": "Transaction boundary",
+     "description": "Samples pg_stat_activity during the checkout saga and fails if an application connection waits on network I/O while idle inside a database transaction.",
+     "status": "PASS",
+     "duration_ms": 39184.854,
+     "http_metrics": {
+      "requests": 144,
+      "errors": 0,
+      "min_ms": 2.331,
+      "mean_ms": 6.037,
+      "p50_ms": 4.545,
+      "p95_ms": 5.439,
+      "p99_ms": 40.974,
+      "max_ms": 179.78
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before sampling",
+       "passed": true,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "no idle transaction crosses service calls",
+       "passed": true,
+       "detail": "observed idle-in-transaction samples=0"
+      }
+     ]
+    },
+    {
+     "number": 22,
+     "name": "Database invariants",
+     "description": "Scans all three schemas for negative/oversold stock, duplicate business keys, and cross-service terminal-state contradictions.",
+     "status": "PASS",
+     "duration_ms": 196.179,
+     "http_metrics": {
+      "requests": 0,
+      "errors": 0,
+      "min_ms": 0,
+      "mean_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0
+     },
+     "assertions": [
+      {
+       "name": "actionable background jobs drain before audit",
+       "passed": true,
+       "detail": "timed out waiting for the worker backlog"
+      },
+      {
+       "name": "inventory counters stay within bounds",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one reservation per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one payment per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "one product line per order",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid orders have successful payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled orders have failed payment",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "paid reservations are confirmed",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "cancelled reservations are released",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "unknown payments retain pending orders",
+       "passed": true,
+       "detail": "violations=0"
+      },
+      {
+       "name": "payment amounts match order totals in paise",
+       "passed": true,
+       "detail": "violations=0"
+      }
+     ]
+    }
+   ],
+   "audit": {
+    "verdict": "PASS",
+    "alerts_fired": [
+     "DatabasePoolSaturated",
+     "DeadLetterQueueGrowing",
+     "DeadLettersPublished"
+    ],
+    "event_counts_in_logs": {
+     "saga_stuck": 0,
+     "outbox_publish_failed": 0,
+     "outbox_message_marked_dead": 0,
+     "payment_unconfirmed": 0,
+     "late_capture_refund_required": 0,
+     "stock_invariant_failed": 0
+    },
+    "violations": []
+   }
+  }
+ ],
+ "dead_queue_snapshots": {
+  "after-decline": [
+   {
+    "routing_key": "reply.payment",
+    "message_id": "1a6f2100-dae9-4a79-ad99-997d2971db1f",
+    "timestamp": 1793546497
+   },
+   {
+    "routing_key": "reply.payment",
+    "message_id": "c022a074-ef9f-45bd-9a41-ce98b598f3ef",
+    "timestamp": 1793546501
+   }
+  ],
+  "after-timeout": [
+   {
+    "routing_key": "reply.payment",
+    "message_id": "ef409113-5c29-4b7d-a318-90674d96af15",
+    "timestamp": 1793547030
+   },
+   {
+    "routing_key": "reply.payment",
+    "message_id": "0d49a182-4ffa-437e-b4d4-6d21be102bce",
+    "timestamp": 1793547033
+   }
+  ],
+  "before-decline": [
+   {
+    "routing_key": "reply.payment",
+    "message_id": "dd73eb97-83c9-4180-8999-ab905d05b4ba",
+    "timestamp": 1793545051
+   },
+   {
+    "routing_key": "reply.payment",
+    "message_id": "b5477e4a-554f-4095-ae4d-5fc1bbc797a1",
+    "timestamp": 1793545051
+   },
+   {
+    "routing_key": "reply.payment",
+    "message_id": "8d15f3b3-be27-4828-b5ce-c5c4e4953a02",
+    "timestamp": 1793545441
+   },
+   {
+    "routing_key": "reply.payment",
+    "message_id": "086edfef-7665-47eb-8e3d-57f618cc1b09",
+    "timestamp": 1793545442
+   }
+  ]
+ }
+}

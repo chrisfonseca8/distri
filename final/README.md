@@ -1,6 +1,6 @@
 # Final cloud tests — to complete before the project is called done
 
-Status: **code and local-test prerequisites complete; cloud setup/tests not started.** Nothing in this folder has been run in AWS.
+Status (2 Nov 2026): **tests 1–10 run, reports in `final/results/test2` … `test10`.** Test 2 correctness (all phases pass across 3 gateway modes), 3 faults (7 of 7 pass), 4 oversell (exactly 10 of 500 sold), 5 baseline (1.55 completed/s at 10 clients; 5 s of the 7 s is the simulator's pay delay), 6 limit (about 1000 clients, 50 completed/s with SSE completion; polling completion peaks at 300 clients), 7 bottleneck (no variable tried moved the number), 8 replicas (correct with 2 orchestrators; throughput not measured, SSE completion is single-replica), 9 soak (5 minutes only, steady), 10 final audit (clean; instances not yet stopped and Neon data not yet deleted). Steps: [`tests-6-10-steps.md`](tests-6-10-steps.md), [`test3-steps.md`](test3-steps.md).
 
 What exists today (so you know the starting point):
 

@@ -1,0 +1,71 @@
+{
+ "test_run_id": "cloud-test5-20261101T192617Z",
+ "alerts_fired": [
+  "DatabasePoolSaturated",
+  "ServiceDown"
+ ],
+ "event_counts_in_logs": {
+  "saga_stuck": 0,
+  "outbox_publish_failed": 0,
+  "outbox_message_marked_dead": 0,
+  "payment_unconfirmed": 0,
+  "late_capture_refund_required": 0,
+  "stock_invariant_failed": 0
+ },
+ "correctness": {
+  "stuck_sagas": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "dead_outbox_rows": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "dead_letter_queue_depth": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "unconfirmed_payments": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "unknown_payments": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "refunds_incomplete": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "stock_invariant_violations": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "dead_payment_jobs": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "webhooks_parked": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "sagas_started": {
+   "at_end": 4516.0,
+   "peak_during_run": 4516.0
+  },
+  "sagas_completed": {
+   "at_end": 4578.0,
+   "peak_during_run": 4578.0
+  },
+  "sagas_compensated": {
+   "at_end": 0.0,
+   "peak_during_run": 0.0
+  },
+  "http_5xx_total": {
+   "at_end": 1395.0,
+   "peak_during_run": 1395.0
+  }
+ },
+ "violations": [],
+ "verdict": "PASS"
+}

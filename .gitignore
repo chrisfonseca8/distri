@@ -35,6 +35,10 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+
 #bin
 /loadgen/loadgen
 /order-service/order-service
@@ -63,6 +67,7 @@ tasks.md
 
 # Local cloud host inventory
 /deploy/cloud/ip_details.txt
+/deploy/cloud/hosts.loadgen.env
 
 # Terraform local state and generated plans
 **/.terraform/*
@@ -86,3 +91,7 @@ crash.log
 
 # observability
 deploy/observability/hosts.env
+
+# Raw cloud test exports are large, transient captures. The small, reviewed
+# summaries under final/results/test2 ... test10 remain versioned.
+/final/results/cloud-test*/

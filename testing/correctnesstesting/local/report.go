@@ -84,15 +84,7 @@ func consolidateReports(source, destination string) (string, string, error) {
 	}
 	collection := correctnessReportCollection{Suite: "correctness-test"}
 	byLabel := make(map[string]correctnessReport)
-	for _, path := range paths {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return "", "", err
-		}
-		var report correctnessReport
-		if err := json.Unmarshal(raw, &report); err != nil {
-			return "", "", fmt.Errorf("decode %s: %w", path, err)
-		}
+	consider := func(report correctnessReport) {
 		label := report.Environment.RunLabel
 		if label == "" {
 			label = report.Environment.GatewayMode
@@ -101,6 +93,24 @@ func consolidateReports(source, destination string) (string, string, error) {
 		if previous, found := byLabel[label]; !found || previous.StartedAt.Before(report.StartedAt) {
 			byLabel[label] = report
 		}
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return "", "", err
+		}
+		var savedCollection correctnessReportCollection
+		if err := json.Unmarshal(raw, &savedCollection); err == nil && len(savedCollection.Runs) > 0 {
+			for _, report := range savedCollection.Runs {
+				consider(report)
+			}
+			continue
+		}
+		var report correctnessReport
+		if err := json.Unmarshal(raw, &report); err != nil {
+			return "", "", fmt.Errorf("decode %s: %w", path, err)
+		}
+		consider(report)
 	}
 	for _, report := range byLabel {
 		collection.Runs = append(collection.Runs, report)

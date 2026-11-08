@@ -1,8 +1,8 @@
 # Backlog: bugs, edge cases, features (found 2026-10-24)
 
 Scope: correctness and behaviour only. CI/deployment and load-test results are deliberately parked.
-Status key: **confirmed** = reproduced by a probe on the local stack; **code-read** = found by reading code, not reproduced; **design** = needs an owner decision before any code.
-Nothing here is fixed yet.
+Status key: **confirmed** = reproduced by a probe on the local stack; **code-read** = found by reading code, not reproduced; **design** = needs a design decision before any code.
+Most items below were fixed afterwards; see the status table.
 
 ## Status after the fix pass (2026-10-25)
 "Verified" means a test that ran (unit or Postgres-backed integration tests on `distri_test`, with `-race`) and, where marked **stack**, a check against the running local stack with the simulator (checks A, B and C: 39 of 39 passed). Nothing was run against real Razorpay.
@@ -12,7 +12,7 @@ Nothing here is fixed yet.
 | BUG-1 | **fixed** | key capped at 255 characters and limited to letters, digits and `. _ : -`. Verified (unit, stack) |
 | BUG-2 | **fixed** | the orchestrator checks 1 to 20 lines and quantity 1 to 100 itself, and inventory failures reach the client without inventory's own text. Verified (unit, stack) |
 | BUG-3 | **fixed** | with `GATEWAY_PROVIDER=razorpay` and no webhook secret the service refuses to start unless `WEBHOOKS_DISABLED=true` is set by name. `compose.local.yaml` sets that explicitly for local polling-only runs; production must not. Verified (unit) |
-| EDGE-1, EDGE-2 | **fixed (bounded wait, then refund)** | owner decision: no infinite waiting. A saga that stays STUCK on `MARK_ORDER_PAID` or `CONFIRM_STOCK` (the customer has paid) for `SAGA_STUCK_REFUND_AFTER` (default 10 min) is moved, in one guarded transaction, onto the undo path: `REFUND_PAYMENT` (the payment service records a refund for the funding payment; the compensation worker refunds it with all its usual safeguards), then `CANCEL_PAID_ORDER` (a paid order may be cancelled only by this refunded cancel), then `RELEASE_STOCK` (a confirmed reservation is released and its units restocked). Moving the saga off the stuck step first means a late reply for it is ignored, so the saga can never complete after the refund. Until then `admin stuck` and `admin revive` still allow a person to fix the cause. Cost: a checkout whose replies were only lost (everything actually succeeded) is refunded and cancelled. Verified (integration, stack: order service down, inventory down) |
+| EDGE-1, EDGE-2 | **fixed (bounded wait, then refund)** | design decision: nothing waits forever. A saga that stays STUCK on `MARK_ORDER_PAID` or `CONFIRM_STOCK` (the customer has paid) for `SAGA_STUCK_REFUND_AFTER` (default 10 min) is moved, in one guarded transaction, onto the undo path: `REFUND_PAYMENT` (the payment service records a refund for the funding payment; the compensation worker refunds it with all its usual safeguards), then `CANCEL_PAID_ORDER` (a paid order may be cancelled only by this refunded cancel), then `RELEASE_STOCK` (a confirmed reservation is released and its units restocked). Moving the saga off the stuck step first means a late reply for it is ignored, so the saga can never complete after the refund. Until then `admin stuck` and `admin revive` still allow a person to fix the cause. Cost: a checkout whose replies were only lost (everything actually succeeded) is refunded and cancelled. Verified (integration, stack: order service down, inventory down) |
 | EDGE-3, EDGE-4, EDGE-5 | **accepted trade-off, and the unbounded waits are closed** | a delayed or missed observation refunds a payment that was on time (the refund logic IS the outcome); clock skew is an operations matter (NTP). What could wait forever now cannot: unreachable gateway (IMP-6, decided at window + grace), stuck after payment (above), rejected refunds (below) |
 | EDGE-6 | **fixed for rejected refunds, a person for the rest** | a refund that went to REVIEW only because the gateway kept rejecting it (nothing was created) is retried automatically after `COMPENSATION_REVIEW_RETRY_AFTER` (30 min), at most `COMPENSATION_MAX_REVIEW_RETRIES` (3) times, each recorded in the history. A refund whose outcome is unknown, or that holds a provider refund id, is never retried automatically (that would be a blind retry of a possibly-successful call); those stay for a person (`admin review`, `review-retry`). Verified (integration) |
 | EDGE-7 | **partly** | parked events can be listed and replayed (`admin parked`, `parked-replay`); parked events older than 30 days are purged |
@@ -75,7 +75,7 @@ Suggested fix for EDGE-9 and EDGE-10 together (recommended option A): the orches
 | FEAT-4 | Cancel a checkout before payment completes | not available |
 | FEAT-5 | Non-INR currencies and amount edge cases beyond mismatch handling | untested beyond INR |
 
-## Also open (from the production review, parked by owner)
+## Also open (from the production review, deliberately parked)
 CI, deployment/edge (TLS, auth, rate limiting — auth is a recorded scope exclusion), load-test results, metrics/alerting/tracing, versioned migrations, readiness probes on every service, backups/HA, real Razorpay capture/refund/webhook verification.
 
 ## Suggested order when we return

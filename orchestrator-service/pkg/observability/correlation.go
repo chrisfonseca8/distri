@@ -1,6 +1,6 @@
 // Package observability is the shared correlation, logging, metrics and tracing
 // toolkit. The canonical copy lives in observability/lib and is copied into each
-// service's pkg/observability by scripts/sync-observability.sh (each service is
+// service's pkg/observability by observability/sync-observability.sh (each service is
 // its own Go module, so it cannot import a sibling directory).
 package observability
 

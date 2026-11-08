@@ -1,8 +1,7 @@
 // gateway-simulator is a stateful stand-in for the parts of the Razorpay API our
 // application uses. It exists to test OUR backend under repeatable payment
 // scenarios and load; it is not Razorpay and says nothing about Razorpay's
-// production behaviour. See docs/razorpay-contract.md for what is documented,
-// observed, assumed or injected.
+// production behaviour.
 package main
 
 import (

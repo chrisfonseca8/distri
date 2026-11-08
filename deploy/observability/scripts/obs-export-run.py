@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the evidence of one test run to final/results/<test_run_id>/.
+"""Export the evidence of one test run to test-results/<test_run_id>/.
 
   obs-export-run.py <test_run_id> [--prom URL] [--loki URL] [--grafana URL] [--render]
 
@@ -74,7 +74,7 @@ def main():
     ap.add_argument("--step", default="15")
     a = ap.parse_args()
 
-    out = os.path.join(ROOT, "final", "results", a.run)
+    out = os.path.join(ROOT, "test-results", a.run)
     os.makedirs(out, exist_ok=True)
     meta_path = os.path.join(out, "run.json")
     meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {"test_run_id": a.run}

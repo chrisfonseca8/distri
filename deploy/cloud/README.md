@@ -9,6 +9,24 @@ production HA.
 Nothing in this directory applies infrastructure automatically. Review the plan
 and current AWS pricing before running `terraform apply`.
 
+## Files
+
+```
+cloud/
+├── terraform/      AWS infrastructure: 6 EC2 hosts, security groups, budget alert
+├── scripts/        build-push.sh        build and push the service images
+│                   make-env.sh          generate .env.cloud, .env.broker, .env.loadgen (git-ignored)
+│                   prepare-host-envs.py generate per-host mode-600 env files
+│                   provision-neon.sh    create the four service databases and roles on Neon
+│                   provision-audit-fdw.sh test-only audit database that exposes the four schemas
+├── compose.broker.yaml      RabbitMQ host
+├── compose.loadgen.yaml     load generator and correctness runner (load-generator host)
+├── compose.simulator.yaml   gateway simulator (load-generator host)
+└── requirements.md the fixed staging topology (instance types, volumes, network)
+```
+
+The application services themselves run from the repository-root `compose.cloud.yaml`.
+
 ## 1. Prerequisites
 
 - AWS CLI credentials and Terraform 1.6+
@@ -64,8 +82,8 @@ Six tags are used: order, inventory, payment, orchestrator, gateway simulator,
 and load generator. The command is a dry run unless explicitly confirmed.
 
 ```sh
-deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
-CONFIRM_PUSH=yes deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
+deploy/cloud/scripts/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
+CONFIRM_PUSH=yes deploy/cloud/scripts/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
 ```
 
 Never configure real Razorpay credentials for a load test. The payment service
@@ -76,7 +94,7 @@ uses the dedicated simulator host through its Razorpay-compatible API.
 Use the private addresses shown by `terraform output`:
 
 ```sh
-deploy/cloud/make-env.sh your-account/distri <image-tag> \
+deploy/cloud/scripts/make-env.sh your-account/distri <image-tag> \
   <orchestrator-ip> <order-ip> <inventory-ip> <payment-ip> <broker-ip> <loadgen-ip>
 ```
 
@@ -94,7 +112,7 @@ private container repository on each host, then copy:
 each service host: compose.cloud.yaml, deploy/cloud/.env.cloud
 broker:  deploy/cloud/compose.broker.yaml, deploy/cloud/.env.broker
 loadgen: deploy/cloud/compose.loadgen.yaml, deploy/cloud/compose.simulator.yaml,
-         deploy/cloud/.env.loadgen, testing/loadtesting/run-cases.sh, test-results/
+         deploy/cloud/.env.loadgen, tools/load-test/run-cases.sh, test-results/
 ```
 
 Keep the same repository-relative paths under `~/distri`; the load result mount
@@ -159,7 +177,7 @@ ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-
 ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-user/sockets/payment.sock:/var/run/docker.sock ec2-user@<payment-ip>
 ```
 
-Run it under a supervised systemd unit for long tests. Do not expose the Docker
+For long tests, run the tunnels under a process supervisor (for example a systemd unit). Do not expose the Docker
 TCP API: access to this socket is effectively root access to the app host.
 
 ## 8. Preflight and first test

@@ -1,8 +1,0 @@
-
-PHASE 22 — Database invariants
-Scans all three schemas for negative/oversold stock, duplicate business keys, and cross-service terminal-state contradictions.
-PASS | requests=0 errors=0 p50=0.00ms p95=0.00ms p99=0.00ms duration=224.96ms
-
-Reports:
-  /results/cloud-c2-retry-20261101T140652Z/audit/correctness-test.md
-  /results/cloud-c2-retry-20261101T140652Z/audit/correctness-test.json

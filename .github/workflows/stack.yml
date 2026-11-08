@@ -1,0 +1,118 @@
+name: Stack verification
+
+# Stage 2: start the whole system in Docker (Postgres, RabbitMQ, four services) and
+# prove the pieces work together. Slower than ci.yml; it runs on every push to any
+# branch, on pull requests, and on demand.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    # One independent stack per gateway mode, all started in parallel. The
+    # correctness suite activates a different outcome phase for each mode
+    # (14 = decline, 15 = ambiguous timeout); phases that do not apply are SKIP.
+    name: Stack (gateway ${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [success, decline, timeout]
+    env:
+      GATEWAY_MODE: ${{ matrix.mode }}
+      COMPOSE: docker compose -f compose.local.yaml
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare results directory
+        run: mkdir -p test-results
+
+      # Compose v2 builds the independent images concurrently by default.
+      - name: Build all images (concurrent)
+        run: $COMPOSE build
+
+      # Brings up Postgres and RabbitMQ, runs the four migrations and the inventory
+      # seed, then starts the four services. Independent containers start at the same
+      # time; --wait returns only when every health check passes.
+      - name: Start the stack
+        run: $COMPOSE up -d --wait --wait-timeout 300
+
+      - name: Health probes from the host
+        run: |
+          probe() {
+            local name=$1 url=$2
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 3 "$url" >/dev/null; then echo "ok   $name"; return 0; fi
+              sleep 2
+            done
+            echo "FAIL $name ($url)"; return 1
+          }
+          status=0
+          probe order-service   http://127.0.0.1:8080/health  || status=1
+          probe payment-service http://127.0.0.1:8082/health  || status=1
+          probe orchestrator    http://127.0.0.1:8083/readyz  || status=1
+          probe rabbitmq        http://127.0.0.1:15672/       || status=1
+          # inventory-service has no HTTP health path in the compose file: TCP only
+          if (exec 3<>/dev/tcp/127.0.0.1/8081) 2>/dev/null; then echo "ok   inventory-service (tcp 8081)"; else echo "FAIL inventory-service (tcp 8081)"; status=1; fi
+          if (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null; then echo "ok   postgres (tcp 5432)"; else echo "FAIL postgres (tcp 5432)"; status=1; fi
+          exit $status
+
+      # The 22-phase suite (phase 13 is a full successful checkout). It resets the
+      # database and exits non-zero when any phase fails; SKIPs do not fail the run.
+      - name: Correctness suite
+        run: |
+          LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) \
+            $COMPOSE --profile correctness run --rm --no-deps local-correctness
+
+      # Small load smoke test (success leg only). It runs after the suite, which
+      # expects a freshly seeded database, and the audit below covers its data too.
+      - name: Load smoke test (c1)
+        if: matrix.mode == 'success'
+        run: tools/load-test/run-cases.sh c1
+
+      # Cross-schema invariants over everything that ran: stock bounds, duplicate
+      # payments, contradictory terminal states.
+      - name: Final database audit (phase 22)
+        run: |
+          LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) PHASES=22 RUN_LABEL=audit-${{ matrix.mode }} \
+            $COMPOSE --profile correctness run --rm --no-deps local-correctness
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Stack verification — gateway ${{ matrix.mode }}"
+            echo
+            if [ -f test-results/local/correctness/correctness-test.md ]; then
+              echo "Correctness report: see the \`stack-results-${{ matrix.mode }}\` artifact."
+              echo
+              echo "Skipped phases (listed, not failures):"
+              grep -iE '\bSKIP\b' test-results/local/correctness/correctness-test.md | head -20 || true
+            else
+              echo "No correctness report was produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: |
+          $COMPOSE ps -a > test-results/compose-ps.txt 2>&1 || true
+          $COMPOSE logs --no-color --timestamps > test-results/compose-logs.txt 2>&1 || true
+
+      - name: Upload results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-results-${{ matrix.mode }}
+          path: test-results/
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE --profile correctness --profile local-loadtest down --volumes --remove-orphans

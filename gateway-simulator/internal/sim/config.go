@@ -10,7 +10,7 @@ import (
 )
 
 // Config is the simulator's behaviour. Every timing here is an ASSUMPTION, not a
-// measurement of Razorpay (see docs/razorpay-contract.md).
+// measurement of Razorpay.
 type Config struct {
 	Addr      string
 	KeyID     string

@@ -2,8 +2,7 @@
 
 A stateful stand-in for the parts of the Razorpay API this project uses, for testing **our**
 backend under repeatable payment scenarios. It is not Razorpay and says nothing about
-Razorpay's production latency, capacity or account settings. What is documented, observed,
-assumed or injected is listed in [`docs/razorpay-contract.md`](../docs/razorpay-contract.md).
+Razorpay's production latency, capacity or account settings. Every timing is an assumption, not a measurement of Razorpay.
 
 State is in memory: a restart resets orders, payments, refunds and **pending webhook
 deliveries**.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Test 3 (fault tests on the AWS staging stack), one observability run per scenario.
 #
-#   scripts/run-test3.sh                      # all seven scenarios, in order
-#   scripts/run-test3.sh payment-kill9-mid-flight db-connection-drop
+#   tools/cloud/run-test3.sh                      # all seven scenarios, in order
+#   tools/cloud/run-test3.sh payment-kill9-mid-flight db-connection-drop
 #
 # For each scenario it: starts a labelled observability run, runs the fault test with the run id in
 # X-Test-Run-ID, stops the run, and exports metrics, logs and the audit to test-results/<run id>/
@@ -12,7 +12,7 @@
 # running (deploy/observability/scripts/obs-tunnels.sh start, in its own terminal), tc installed on
 # the payment host, and an empty dead queue.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 # The published Prometheus port changes between stack restarts, so ask Docker.
 detected="$(docker port distri-obs-prometheus-1 9090/tcp 2>/dev/null | head -n1 | sed 's/.*://')"
 export CHAOS_TARGET=cloud PROMETHEUS_PORT="${PROMETHEUS_PORT:-${detected:-9090}}"

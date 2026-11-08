@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Change one tuning setting on a service host and restart only that service (test 7). Run on the load generator.
 #
-#   scripts/cloud-set-env.sh show  <service>
-#   scripts/cloud-set-env.sh set   <service> KEY=VALUE [KEY=VALUE ...]
-#   scripts/cloud-set-env.sh reset <service>          # back to the settings from before the first `set`
+#   tools/cloud/cloud-set-env.sh show  <service>
+#   tools/cloud/cloud-set-env.sh set   <service> KEY=VALUE [KEY=VALUE ...]
+#   tools/cloud/cloud-set-env.sh reset <service>          # back to the settings from before the first `set`
 #
 # service: orchestrator | order-service | inventory-service | payment-service
 # The settings live in ~/distri/deploy/cloud/.env.<orchestrator|order|inventory|payment> on the service host and are read by

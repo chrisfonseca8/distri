@@ -7,9 +7,17 @@ on:
 permissions:
   contents: read
 
+env:
+  # Every Go module in the repo (each has its own go.mod).
+  GO_MODULES: gateway-simulator inventory-service orchestrator-service order-service payment-service tools
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Unit tests. No database, so DB-gated tests skip; the skip count is
+  #    printed in the job summary so skips are never mistaken for passes.
+  # ---------------------------------------------------------------------------
   go-test:
-    name: Go test — ${{ matrix.module }}
+    name: Unit tests — ${{ matrix.module }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -32,11 +40,48 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.module }}/go.mod
+          # gateway-simulator has no go.sum (no external dependencies)
+          cache: ${{ matrix.module != 'gateway-simulator' }}
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
-      - name: Test
-        run: go test -race ./...
+      - name: Test (race detector, coverage profile, JSON log)
+        # explicit shell: bash enables pipefail, so a failing go test is not hidden by tee
+        shell: bash
+        run: go test -race -covermode=atomic -coverprofile=coverage.out -json ./... | tee test.json
 
+      - name: Summarise pass / fail / skip counts
+        if: always()
+        run: |
+          pass=$(grep -c '"Action":"pass","Package":"[^"]*","Test"' test.json || true)
+          fail=$(grep -c '"Action":"fail","Package":"[^"]*","Test"' test.json || true)
+          skip=$(grep -c '"Action":"skip","Package":"[^"]*","Test"' test.json || true)
+          {
+            echo "### ${{ matrix.module }}"
+            echo "| pass | fail | skip |"
+            echo "|---:|---:|---:|"
+            echo "| $pass | $fail | $skip |"
+            echo
+            echo "Skipped tests need Postgres; they run in the integration job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Total coverage (informational, no gate yet)
+        if: always()
+        run: |
+          if [ -s coverage.out ]; then
+            echo "Coverage: $(go tool cover -func=coverage.out | tail -1)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.module }}
+          path: ${{ matrix.module }}/coverage.out
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # 2. Integration tests against a throwaway Postgres.
+  # ---------------------------------------------------------------------------
   integration:
     # Runs every database-gated integration test (the RUN_*_INTEGRATION flags) against
     # a throwaway *_test database. The helper refuses any database not named *_test.
@@ -89,3 +134,213 @@ jobs:
         with:
           name: integration-logs
           path: test-results/local/integration
+
+  # ---------------------------------------------------------------------------
+  # 3. Static checks on the Go code: format, vet, build, module tidiness.
+  # ---------------------------------------------------------------------------
+  go-static:
+    name: Go format, vet, build, tidy — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - gateway-simulator
+          - inventory-service
+          - orchestrator-service
+          - order-service
+          - payment-service
+          - tools
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: ${{ matrix.module != 'gateway-simulator' }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: gofmt (fails if any file is unformatted)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need 'gofmt -w':"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build (every package and every cmd/)
+        run: go build ./...
+
+      - name: go mod tidy leaves go.mod / go.sum unchanged
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod $(test -f go.sum && echo go.sum)
+
+  # ---------------------------------------------------------------------------
+  # 4. Lint. Deliberately small ruleset; widen it later.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: golangci-lint — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - gateway-simulator
+          - inventory-service
+          - orchestrator-service
+          - order-service
+          - payment-service
+          - tools
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: ${{ matrix.module != 'gateway-simulator' }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      # Built with the same Go toolchain as the code, so it can read these modules.
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+
+      - name: Lint
+        working-directory: ${{ matrix.module }}
+        run: golangci-lint run --config "$GITHUB_WORKSPACE/.golangci.yml" ./...
+
+  # ---------------------------------------------------------------------------
+  # 5. Known vulnerabilities in dependencies and in the code paths we call.
+  # ---------------------------------------------------------------------------
+  vulncheck:
+    name: govulncheck — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - gateway-simulator
+          - inventory-service
+          - orchestrator-service
+          - order-service
+          - payment-service
+          - tools
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: ${{ matrix.module != 'gateway-simulator' }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Scan
+        working-directory: ${{ matrix.module }}
+        run: govulncheck ./...
+
+  # ---------------------------------------------------------------------------
+  # 6. Secrets: scan the full history for keys, tokens and database URLs.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+
+      - name: Scan history (findings are redacted in the log)
+        run: gitleaks git --redact --verbose --no-banner .
+
+  # ---------------------------------------------------------------------------
+  # 7. Scripts: shell lint, Python syntax and the baseline's unit tests.
+  # ---------------------------------------------------------------------------
+  scripts:
+    name: Shell and Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: shellcheck (errors and warnings)
+        run: git ls-files '*.sh' | xargs shellcheck --severity=warning
+
+      - name: Python syntax (py_compile)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          git ls-files '*.py' | while read -r f; do
+            python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])" "$f"
+          done
+
+      - name: Baseline helper unit tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        working-directory: tools/baseline
+        run: python3 -m unittest test_baseline
+
+  # ---------------------------------------------------------------------------
+  # 8. Deployment files: compose and Terraform must at least be valid.
+  # ---------------------------------------------------------------------------
+  config-validate:
+    name: Compose and Terraform validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # --no-interpolate: the cloud files require real env values (URLs, secrets)
+      # that CI must not have; this still checks structure and service wiring.
+      - name: docker compose config
+        run: |
+          for f in \
+            compose.local.yaml \
+            compose.cloud.yaml \
+            compose.simulator.yaml \
+            deploy/cloud/compose.broker.yaml \
+            deploy/cloud/compose.loadgen.yaml \
+            deploy/cloud/compose.simulator.yaml \
+            deploy/observability/compose.observability.yaml; do
+            echo "== $f"
+            docker compose -f "$f" config --quiet --no-interpolate
+          done
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # versions.tf needs >= 1.6.0; "latest" matches the version validated locally (1.17.1)
+          terraform_version: latest
+
+      - name: terraform fmt
+        working-directory: deploy/cloud/terraform
+        run: terraform fmt -check -recursive
+
+      # No backend and no credentials: validate never contacts AWS.
+      - name: terraform validate
+        working-directory: deploy/cloud/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate

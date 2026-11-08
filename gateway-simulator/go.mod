@@ -1,3 +1,3 @@
 module github.com/chrisfonseca08/distri/gateway-simulator
 
-go 1.27.2
+go 1.27.3

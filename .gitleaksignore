@@ -1,0 +1,4 @@
+# False positives: test idempotency-key prefixes ("phase07-sequential-" + uuid), not credentials.
+# Commit 05d415fc, old loadgen/ path.
+05d415fc73a48c910899394ae10b4c4c05f33027:loadgen/correctnesstesting/local/phase07_checkout_idempotency.go:generic-api-key:9
+05d415fc73a48c910899394ae10b4c4c05f33027:loadgen/correctnesstesting/local/phase07_checkout_idempotency.go:generic-api-key:17

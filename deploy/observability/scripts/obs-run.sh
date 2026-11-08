@@ -5,13 +5,13 @@
 #   obs-run.sh stop  <test_run_id>
 #
 # start : points Prometheus at the services with test_run_id as a label, records
-#         final/results/<id>/run.json and adds a Grafana annotation.
+#         test-results/<id>/run.json and adds a Grafana annotation.
 # stop  : stamps the end time. Use the same id in the X-Test-Run-ID header of every
 #         request (loadgen, smoke scripts) so logs and traces carry it too.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"; root="$(cd "$here/../.." && pwd)"
 cmd="${1:?usage: obs-run.sh start|stop <test_run_id> ...}"; run="${2:?test_run_id required}"
-out="$root/final/results/$run"; GRAFANA="${GRAFANA_URL:-http://127.0.0.1:3000}"
+out="$root/test-results/$run"; GRAFANA="${GRAFANA_URL:-http://127.0.0.1:3000}"
 auth="admin:${GRAFANA_ADMIN_PASSWORD:-admin}"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 annotate() { curl -fs -m 5 -u "$auth" -H 'Content-Type: application/json' -X POST "$GRAFANA/api/annotations" \

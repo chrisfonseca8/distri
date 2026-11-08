@@ -54,7 +54,6 @@ __pycache__/
 #claud 
 CLAUDE.md
 /test-results/*
-!/test-results/.gitkeep
 memory.md
 plan.md
 plan.txt
@@ -92,6 +91,5 @@ crash.log
 # observability
 deploy/observability/hosts.env
 
-# Raw cloud test exports are large, transient captures. The small, reviewed
-# summaries under final/results/test2 ... test10 remain versioned.
-/final/results/cloud-test*/
+# Local-only raw run evidence (archived outside the repo; curated results live in tests/data/)
+/final/

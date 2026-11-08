@@ -189,12 +189,12 @@ payment service was started with. `run-cases.sh` therefore restarts the services
 with the right settings before every case:
 
 ```sh
-testing/loadtesting/run-cases.sh c10
-testing/loadtesting/run-cases.sh c11
-testing/loadtesting/run-cases.sh c12
-testing/loadtesting/run-cases.sh c13            # all four latencies, or e.g.: c13 0ms
-testing/loadtesting/run-cases.sh c14 200ms      # pool sweep at 200 ms; add sizes, e.g.: c14 0ms 10
-testing/loadtesting/run-cases.sh restore        # back to success, 200 ms, pool 10 open / 5 idle
+tools/loadtesting/run-cases.sh c10
+tools/loadtesting/run-cases.sh c11
+tools/loadtesting/run-cases.sh c12
+tools/loadtesting/run-cases.sh c13            # all four latencies, or e.g.: c13 0ms
+tools/loadtesting/run-cases.sh c14 200ms      # pool sweep at 200 ms; add sizes, e.g.: c14 0ms 10
+tools/loadtesting/run-cases.sh restore        # back to success, 200 ms, pool 10 open / 5 idle
 ```
 
 Run `restore` afterwards. The results land in `test-results/local/load/load-test.md`

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the evidence of one test run to final/results/<test_run_id>/.
+"""Export the evidence of one test run to test-results/<test_run_id>/.
 
   obs-export-run.py <test_run_id> [--prom URL] [--loki URL] [--grafana URL] [--render]
 

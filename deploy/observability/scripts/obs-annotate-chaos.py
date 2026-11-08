@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Add Grafana annotations for the faults recorded in a chaos-test.json (run it on the laptop after Test 3).
 
-  obs-annotate-chaos.py final/results/<run id>/chaos-test.json <run id>
+  obs-annotate-chaos.py test-results/<run id>/chaos-test.json <run id>
 """
 import base64, datetime as dt, json, os, sys, urllib.request
 

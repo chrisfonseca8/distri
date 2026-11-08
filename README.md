@@ -27,7 +27,7 @@ docker compose -f compose.local.yaml up --build --wait
 Run the smoke load case from another terminal:
 
 ```bash
-testing/loadtesting/run-cases.sh c1
+tools/loadtesting/run-cases.sh c1
 ```
 
 Stop the stack without removing its local volumes:
@@ -36,7 +36,7 @@ Stop the stack without removing its local volumes:
 docker compose -f compose.local.yaml down
 ```
 
-See [`DOCKER.md`](DOCKER.md), [`testing/README.md`](testing/README.md), and
+See [`DOCKER.md`](DOCKER.md), [`tools/README.md`](tools/README.md), and
 [`deploy/cloud/README.md`](deploy/cloud/README.md) for the full local, test, and
 staging workflows. Cloud tests must use a disposable test database because the
 load runner resets its fixture tables.
@@ -53,7 +53,7 @@ done
 
 PostgreSQL-backed integration tests that require explicit opt-in may be skipped
 by the normal unit-test command. The running-stack correctness suite is separate
-and destructive; follow `testing/README.md` before invoking it.
+and destructive; follow `tools/README.md` before invoking it.
 
 ## Configuration
 

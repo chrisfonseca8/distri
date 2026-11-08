@@ -20,7 +20,7 @@ jobs:
           - orchestrator-service
           - order-service
           - payment-service
-          - testing
+          - tools
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -81,7 +81,7 @@ jobs:
           done
 
       - name: Integration tests (race detector on)
-        run: testing/run-integration.sh
+        run: tools/run-integration.sh
 
       - name: Upload test logs
         if: always()

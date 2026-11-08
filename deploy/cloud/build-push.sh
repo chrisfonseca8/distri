@@ -16,7 +16,7 @@ fi
 
 for image in "${images[@]}"; do
   context="$image"
-  [ "$image" = "loadgen" ] && context="testing"
+  [ "$image" = "loadgen" ] && context="tools"
   target="$repo:$image-$tag"
   echo "== building $target"
   docker build --platform linux/amd64 -t "$target" "./$context"

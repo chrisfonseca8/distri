@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Test 3 on the load-generator host (inside the VPC). Run it with nohup; see final/test3-steps.md.
+# Test 3 on the load-generator host (inside the VPC). Run it with nohup.
 #
 #   scripts/loadgen-test3.sh <obs-run-id> [scenario ...]     (no scenarios = all seven, in order)
 #
 # Faults reach the four service hosts and the broker over SSH on their private addresses, the
 # orchestrator is called directly, and the database is read through the audit database in
-# deploy/cloud/.env.loadgen. Results: ~/distri/final/results/<obs-run-id>/chaos-test.{md,json}
+# deploy/cloud/.env.loadgen. Results: ~/distri/test-results/<obs-run-id>/chaos-test.{md,json}
 set -euo pipefail
 cd "$(dirname "$0")/.."
 run="${1:?usage: loadgen-test3.sh <obs-run-id> [scenario ...]}"; shift
@@ -28,9 +28,9 @@ HOSTS
 export CHAOS_TARGET=cloud CHAOS_DIRECT=1 HOSTS_ENV="$PWD/$hosts" CHAOS_RUN_ID="$run" ORCH_URL=http://10.40.1.10:8083
 docker pull -q postgres:17-alpine >/dev/null          # psql runs in a container: no client is installed here
 
-echo "== preflight"; python3 testing/chaos/chaos.py preflight
+echo "== preflight"; python3 tools/chaos/chaos.py preflight
 echo "== test 3, run id $run, scenarios: ${scenarios[*]}"
-python3 testing/chaos/chaos.py "${scenarios[@]}" && status=0 || status=$?
-python3 testing/chaos/chaos.py heal || true            # never leave an iptables/tc fault behind
-echo "== done (exit $status) -> final/results/$run"
+python3 tools/chaos/chaos.py "${scenarios[@]}" && status=0 || status=$?
+python3 tools/chaos/chaos.py heal || true            # never leave an iptables/tc fault behind
+echo "== done (exit $status) -> test-results/$run"
 exit $status

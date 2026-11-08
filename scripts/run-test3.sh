@@ -5,10 +5,10 @@
 #   scripts/run-test3.sh payment-kill9-mid-flight db-connection-drop
 #
 # For each scenario it: starts a labelled observability run, runs the fault test with the run id in
-# X-Test-Run-ID, stops the run, and exports metrics, logs and the audit to final/results/<run id>/
+# X-Test-Run-ID, stops the run, and exports metrics, logs and the audit to test-results/<run id>/
 # next to the fault test's own chaos-test.json / chaos-test.md.
 #
-# Needs (see the steps in final/test3-steps.md): the local observability stack up, the SSH tunnels
+# Needs (see deploy/cloud/README.md): the local observability stack up, the SSH tunnels
 # running (deploy/observability/scripts/obs-tunnels.sh start, in its own terminal), tc installed on
 # the payment host, and an empty dead queue.
 set -euo pipefail
@@ -25,19 +25,19 @@ scenarios=("$@")
   { echo "metrics tunnels are down: run  $obs/obs-tunnels.sh start  in another terminal" >&2; exit 1; }
 curl -fs -m 5 "http://127.0.0.1:$PROMETHEUS_PORT/-/ready" >/dev/null ||
   { echo "Prometheus not ready on port $PROMETHEUS_PORT (set PROMETHEUS_PORT)" >&2; exit 1; }
-python3 testing/chaos/chaos.py preflight
+python3 tools/chaos/chaos.py preflight
 
 failed=0
 for scenario in "${scenarios[@]}"; do
   run="cloud-test3-${scenario}-$(date -u +%Y%m%dT%H%M%SZ)"
   echo; echo "######## $scenario  ($run)"
   "$obs/obs-run.sh" start "$run" tunnel staging
-  set +e; CHAOS_RUN_ID="$run" python3 testing/chaos/chaos.py "$scenario"; rc=$?; set -e
+  set +e; CHAOS_RUN_ID="$run" python3 tools/chaos/chaos.py "$scenario"; rc=$?; set -e
   [ $rc -eq 0 ] || failed=$((failed + 1))
   sleep 45                       # let Prometheus and Loki catch the recovery
   "$obs/obs-run.sh" stop "$run"
   python3 "$obs/obs-export-run.py" "$run" || echo "(export failed: rerun  python3 $obs/obs-export-run.py $run)"
-  echo "$scenario: exit $rc -> final/results/$run"
+  echo "$scenario: exit $rc -> test-results/$run"
 done
 echo; echo "$failed of ${#scenarios[@]} scenario(s) failed"
 exit $((failed > 0))

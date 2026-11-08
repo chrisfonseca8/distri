@@ -55,7 +55,7 @@ database:
 
 ```bash
 docker compose -f compose.local.yaml up --build --wait
-testing/loadtesting/run-cases.sh c1
+tools/loadtesting/run-cases.sh c1
 ```
 
 After collecting the result, remove the test database:
@@ -65,13 +65,13 @@ docker compose -f compose.local.yaml down --volumes
 ```
 
 The runner writes Markdown and JSON reports under `test-results/`. See
-`testing/loadtesting/README.md` for the case catalogue and metric definitions.
+`tools/loadtesting/README.md` for the case catalogue and metric definitions.
 
 ## Local correctness suite
 
 The phase-based black-box correctness suite lives in
-`testing/correctnesstesting/local`. Its full test list and report format are
-documented in `testing/README.md`. Run it against a freshly created local
+`tools/correctnesstesting/local`. Its full test list and report format are
+documented in `tools/README.md`. Run it against a freshly created local
 database:
 
 ```bash
@@ -93,9 +93,7 @@ Outcome-specific phases can be selected by rebuilding the fresh stack with
 
 ## Deployment Compose files
 
-`compose.prod.yaml` predates the orchestrator cutover and is retained only as a
-historical reference; do not deploy it as the current system. The maintained
-multi-host staging definition is `compose.cloud.yaml` together with the files
+The multi-host staging definition is `compose.cloud.yaml` together with the files
 under `deploy/cloud/`. Follow `deploy/cloud/README.md`, supply immutable images,
 and use only externally managed test databases for load testing.
 

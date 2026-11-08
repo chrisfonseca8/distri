@@ -8,8 +8,8 @@ export COMPOSE_ENV_FILES=/dev/null
 for w in 4 8 16; do
   since=$(date -u +%Y-%m-%dT%H:%M:%S)
   echo "== WORKER_CONCURRENCY=$w"
-  WORKER_CONCURRENCY=$w LOAD_CLIENTS=30 LOAD_RUNS=1 LOAD_DURATION=60s LOAD_WARMUP=10s testing/loadtesting/run-cases.sh c2 | grep -E 'offered='
-  python3 testing/chaos/summarize_load.py "$since" "test-results/local/load-followups/worker-concurrency-$w.json"
+  WORKER_CONCURRENCY=$w LOAD_CLIENTS=30 LOAD_RUNS=1 LOAD_DURATION=60s LOAD_WARMUP=10s tools/loadtesting/run-cases.sh c2 | grep -E 'offered='
+  python3 tools/chaos/summarize_load.py "$since" "test-results/local/load-followups/worker-concurrency-$w.json"
 done
 unset WORKER_CONCURRENCY
-testing/loadtesting/run-cases.sh restore
+tools/loadtesting/run-cases.sh restore

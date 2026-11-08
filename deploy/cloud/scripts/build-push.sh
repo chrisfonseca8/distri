@@ -4,7 +4,7 @@ set -euo pipefail
 
 repo="${1:?usage: CONFIRM_PUSH=yes build-push.sh <dockerhub-repo> <image-tag>}"
 tag="${2:?usage: CONFIRM_PUSH=yes build-push.sh <dockerhub-repo> <image-tag>}"
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../../.."
 
 images=(order-service inventory-service payment-service orchestrator-service gateway-simulator loadgen)
 if [ "${CONFIRM_PUSH:-}" != "yes" ]; then

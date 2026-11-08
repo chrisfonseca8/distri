@@ -1,6 +1,6 @@
 # Local observability stack (Prometheus, Loki, Tempo, Alertmanager, Grafana, Alloy).
 # Everything listens on 127.0.0.1 only. Data lives in named volumes so a restart
-# or a stopped laptop keeps history. See README.md.
+# or a stopped laptop keeps history. See README.md in this folder.
 #
 #   docker compose -f deploy/observability/compose.observability.yaml up -d
 #

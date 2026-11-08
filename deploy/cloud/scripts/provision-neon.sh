@@ -4,7 +4,7 @@
 # audit URLs to deploy/cloud/.env.databases. Secrets are never printed.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../../.."
 
 read_url() {
   python3 - "$1" <<'PY'

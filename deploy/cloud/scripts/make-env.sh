@@ -12,7 +12,7 @@ inventory_ip="${5:?set the inventory private IP from terraform output}"
 payment_ip="${6:?set the payment private IP from terraform output}"
 broker_ip="${7:?set the broker private IP from terraform output}"
 loadgen_ip="${8:?set the load-generator private IP from terraform output}"
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../../.."
 
 python3 - "$repo" "$tag" "$orchestrator_ip" "$order_ip" "$inventory_ip" "$payment_ip" "$broker_ip" "$loadgen_ip" <<'PY'
 import ipaddress

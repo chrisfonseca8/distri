@@ -9,6 +9,25 @@ production HA.
 Nothing in this directory applies infrastructure automatically. Review the plan
 and current AWS pricing before running `terraform apply`.
 
+## Files
+
+```
+cloud/
+├── terraform/      AWS infrastructure: 6 EC2 hosts, security groups, budget alert
+├── scripts/        build-push.sh        build and push the service images
+│                   make-env.sh          generate .env.cloud, .env.broker, .env.loadgen (git-ignored)
+│                   prepare-host-envs.py generate per-host mode-600 env files
+│                   provision-neon.sh    create the four service databases and roles on Neon
+│                   provision-audit-fdw.sh test-only audit database that exposes the four schemas
+├── compose.broker.yaml      RabbitMQ host
+├── compose.loadgen.yaml     load generator and correctness runner (load-generator host)
+├── compose.simulator.yaml   gateway simulator (load-generator host)
+├── systemd/        distri-docker-tunnel@.service  SSH tunnel to a host's Docker socket
+└── requirements.md the fixed staging topology (instance types, volumes, network)
+```
+
+The application services themselves run from the repository-root `compose.cloud.yaml`.
+
 ## 1. Prerequisites
 
 - AWS CLI credentials and Terraform 1.6+
@@ -64,8 +83,8 @@ Six tags are used: order, inventory, payment, orchestrator, gateway simulator,
 and load generator. The command is a dry run unless explicitly confirmed.
 
 ```sh
-deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
-CONFIRM_PUSH=yes deploy/cloud/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
+deploy/cloud/scripts/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
+CONFIRM_PUSH=yes deploy/cloud/scripts/build-push.sh your-account/distri "$(git rev-parse --short HEAD)"
 ```
 
 Never configure real Razorpay credentials for a load test. The payment service
@@ -76,7 +95,7 @@ uses the dedicated simulator host through its Razorpay-compatible API.
 Use the private addresses shown by `terraform output`:
 
 ```sh
-deploy/cloud/make-env.sh your-account/distri <image-tag> \
+deploy/cloud/scripts/make-env.sh your-account/distri <image-tag> \
   <orchestrator-ip> <order-ip> <inventory-ip> <payment-ip> <broker-ip> <loadgen-ip>
 ```
 

@@ -17,6 +17,7 @@ cloud/
 ├── scripts/        build-push.sh        build and push the service images
 │                   make-env.sh          generate .env.cloud, .env.broker, .env.loadgen (git-ignored)
 │                   prepare-host-envs.py generate per-host mode-600 env files
+│                   deploy-staging.sh    deploy a published image tag to the hosts over SSH (from your laptop)
 │                   provision-neon.sh    create the four service databases and roles on Neon
 │                   provision-audit-fdw.sh test-only audit database that exposes the four schemas
 ├── compose.broker.yaml      RabbitMQ host
@@ -236,3 +237,33 @@ it does not stop resources automatically.
 
 Before `terraform destroy`, decide whether to snapshot/retain RabbitMQ data. The
 50 GiB data volume is protected by `prevent_destroy` on purpose.
+
+## 10. Deploying a published image tag
+
+GitHub Actions builds and publishes the images to GHCR (the `Publish images` workflow);
+staging is deployed from your laptop with one script and your existing SSH access. There
+is no cloud deploy workflow: it would need an AWS identity for GitHub, and this setup
+deliberately avoids that (no OIDC provider, no stored AWS keys, no self-hosted runner).
+
+```sh
+deploy/cloud/scripts/deploy-staging.sh <tag> --check     # find the hosts, test SSH, change nothing
+deploy/cloud/scripts/deploy-staging.sh <tag> --dry-run   # print what would run (needs the five *_HOST variables)
+deploy/cloud/scripts/deploy-staging.sh <tag>             # deploy, asking for confirmation first
+deploy/cloud/scripts/deploy-staging.sh <tag> --smoke     # also run c1 and the phase 22 audit (writes to the database)
+```
+
+`<tag>` is the 7-character commit SHA of a published `Publish images` run. The script
+looks the hosts up by their `Name` tag with your local `aws` CLI (read-only), or uses
+`ORCHESTRATOR_HOST`, `ORDER_HOST`, `INVENTORY_HOST`, `PAYMENT_HOST` and `LOADGEN_HOST` when
+all five are set. It deploys the simulator, then inventory (migrate and seed), payment,
+order and the orchestrator, checks health from the load-generator host, and prints the
+previous tag so you can roll back by running it again with that tag.
+
+Before the first run: the instances are started, section 4-5 env files are on each host,
+and `docker login ghcr.io` has been run as `ec2-user` on each host (unless the packages are
+public). The script rewrites only `DISTRI_REPO` and `IMAGE_TAG` in those env files.
+
+If SSH times out, your current public IP is probably not allowed on port 22 in the staging
+security groups. A laptop with more than one internet uplink can leave through several
+addresses; add every one, or the script's connection retries will paper over it. Stop the
+instances when you are done.

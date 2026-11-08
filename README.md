@@ -1,5 +1,9 @@
 # distri
 
+[![CI](https://github.com/chrisfonseca8/distri/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisfonseca8/distri/actions/workflows/ci.yml)
+[![Stack verification](https://github.com/chrisfonseca8/distri/actions/workflows/stack.yml/badge.svg)](https://github.com/chrisfonseca8/distri/actions/workflows/stack.yml)
+[![Publish images](https://github.com/chrisfonseca8/distri/actions/workflows/publish-images.yml/badge.svg)](https://github.com/chrisfonseca8/distri/actions/workflows/publish-images.yml)
+
 A distributed checkout and payment backend in Go: an orchestrated saga across four services, a transactional outbox, RabbitMQ commands, PostgreSQL as the source of truth, and a test campaign that measures correctness under faults and throughput under load.
 
 ## Why this project exists
@@ -71,7 +75,18 @@ The five most important changes. The full table, including evidence and measurem
 
 ## Tech stack
 
-Go (stdlib `net/http`, `log/slog`), GORM and PostgreSQL (Neon in the cloud tests), RabbitMQ, Server-Sent Events, Docker Compose, Terraform on AWS EC2, Prometheus, Grafana, Loki and Tempo for observability, GitHub Actions for CI.
+Go (stdlib `net/http`, `log/slog`), GORM and PostgreSQL (Neon in the cloud tests), RabbitMQ, Server-Sent Events, Docker Compose, Terraform on AWS EC2, Prometheus, Grafana, Loki and Tempo for observability, GitHub Actions for CI and image publishing (GitHub Container Registry).
+
+## CI/CD
+
+| Stage | Where | What it does |
+|---|---|---|
+| CI | [`ci.yml`](.github/workflows/ci.yml), every push and pull request | Unit tests with the race detector (six Go modules), integration tests against Postgres, `go vet` and `go build`, `govulncheck` dependency scan, `gitleaks` secret scan, compose and Terraform validation, Python script checks |
+| Stack verification | [`stack.yml`](.github/workflows/stack.yml), every push and pull request | Starts the whole system in Docker for each gateway mode (success, decline, timeout) in parallel, probes health, runs the 22-phase correctness suite, a load smoke test and the final database audit |
+| Publish images | [`publish-images.yml`](.github/workflows/publish-images.yml), after both of the above pass on `master` | Builds the six service images and pushes them to GitHub Container Registry, tagged with the commit SHA |
+| Deploy to staging | [`deploy-staging.sh`](deploy/cloud/scripts/deploy-staging.sh), run from a laptop | Rolls a published tag out to the AWS hosts over SSH in dependency order, runs migrations, checks health, prints the previous tag for rollback |
+
+Deployment is deliberately a manual script, not a pipeline stage: the staging hosts cost money and are normally stopped, and an automated deploy would need an AWS identity for GitHub that this project does not set up.
 
 ## Run locally
 
@@ -106,5 +121,6 @@ More: [`tools/README.md`](tools/README.md) (load generator and correctness suite
 
 ## Roadmap
 
-1. **CI/CD pipeline:** build and publish images, run the integration job on every push, and deploy to staging from the pipeline.
+1. **Automated staging deploy:** run the deploy from the pipeline once the project has a way for GitHub to reach AWS without long-lived keys. Until then, deployment is the manual script above.
 2. **Auto-scaling:** scale services horizontally. This first needs a cross-replica completion notification (for example a database- or broker-backed path instead of the in-process SSE hub), because with two orchestrator replicas completions handled by one replica never reach clients waiting on the other.
+3. **Lint clean-up:** the Go code has roughly one hundred `golangci-lint` findings (mostly unchecked `Close()` and `Encode()` errors); the lint check was removed from CI until they are fixed.

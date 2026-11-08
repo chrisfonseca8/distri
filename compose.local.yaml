@@ -74,7 +74,9 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      # check_port_connectivity waits for the AMQP listener; plain `ping` turns healthy
+      # earlier, and services that connect at startup then fail with "connection refused".
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 3s
       timeout: 5s
       retries: 20

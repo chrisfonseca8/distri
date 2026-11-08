@@ -14,6 +14,7 @@ run="${1:?usage: obs-targets.sh <test_run_id> [local|tunnel] [environment]}"
 mode="${2:-local}"
 env="${3:-$([ "$mode" = tunnel ] && echo staging || echo local)}"
 dir="$(cd "$(dirname "$0")/.." && pwd)/prometheus/targets"
+mkdir -p "$dir"
 
 target() { # service host:port
   printf -- '- targets: ["%s"]\n  labels: { service: "%s", environment: "%s", test_run_id: "%s" }\n' "$2" "$1" "$env" "$run"

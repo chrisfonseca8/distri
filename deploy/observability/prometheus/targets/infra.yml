@@ -1,2 +1,0 @@
-- targets: ["node-exporter:9100"]
-  labels: { service: "local-host", environment: "local", test_run_id: "acceptance-7" }

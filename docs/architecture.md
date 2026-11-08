@@ -1,13 +1,12 @@
 # Architecture design
 
-This is a text file showing how the entire data flow takes place.
-We are starting from the user.
+How a checkout flows through the system, starting from the client request. See also [`diagrams/`](diagrams/) (sequence and state diagrams).
 
 ## USER ENTRY FROM HERE
 
-The User will enter from the point of `POST /v1/checkouts` in the `orchestrator service`.
+A checkout enters at `POST /v1/checkouts` in the `orchestrator service`.
 
-The User will have a request body {(product ids and quantities) plus an Idempotency-Key header}.
+The request carries a body {(product ids and quantities) plus an Idempotency-Key header}.
 
 ### The steps that will be followed
 

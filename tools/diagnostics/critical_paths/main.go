@@ -113,7 +113,9 @@ func checkout(product string) string {
 	if response.StatusCode != http.StatusAccepted {
 		fail("checkout returned HTTP %d", response.StatusCode)
 	}
-	var result struct{ OrderID string `json:"order_id"` }
+	var result struct {
+		OrderID string `json:"order_id"`
+	}
 	must(json.NewDecoder(response.Body).Decode(&result))
 	return result.OrderID
 }

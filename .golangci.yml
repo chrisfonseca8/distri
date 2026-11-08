@@ -1,0 +1,10 @@
+version: "2"
+
+# Deliberately small. Widen it one linter at a time once these pass.
+linters:
+  default: none
+  enable:
+    - errcheck       # ignored errors, e.g. a dropped commit or publish error
+    - staticcheck    # bugs and deprecated API use
+    - ineffassign    # assignments whose value is never used
+    - govet

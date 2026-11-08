@@ -5,9 +5,9 @@
 #   scripts/cloud-test.sh new <label>        # start an observability run: prints and remembers the run id
 #   scripts/cloud-test.sh push               # copy the load-generator scripts and chaos.py to the load generator
 #   scripts/cloud-test.sh ssh                # open a shell on the load generator
-#   scripts/cloud-test.sh fetch [run-id]     # close the run, copy results to final/results/<run-id>/, export evidence
+#   scripts/cloud-test.sh fetch [run-id]     # close the run, copy results to test-results/<run-id>/, export evidence
 #
-# If ssh/scp time out, your laptop's public IP changed: add it to the security groups (final/tests-6-10-steps.md).
+# If ssh/scp time out, your laptop's public IP changed: add it to the security groups.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 key="${KEY:-$HOME/.ssh/distri-staging-sydney}"; instance=i-028a4af9b5a71491b; region=ap-southeast-2
@@ -29,8 +29,8 @@ case "${1:?usage: cloud-test.sh ip|new|push|ssh|fetch}" in
     echo "$run" > "$state"; echo; echo "RUN=$run"; echo "(remembered; use this id on the load generator)" ;;
   push)
     ip="$(lg)"
-    ssh "${ssh_opts[@]}" "ec2-user@$ip" 'mkdir -p ~/distri/testing/chaos ~/distri/scripts'
-    scp "${ssh_opts[@]}" testing/chaos/chaos.py "ec2-user@$ip:distri/testing/chaos/"
+    ssh "${ssh_opts[@]}" "ec2-user@$ip" 'mkdir -p ~/distri/tools/chaos ~/distri/scripts'
+    scp "${ssh_opts[@]}" tools/chaos/chaos.py "ec2-user@$ip:distri/tools/chaos/"
     scp "${ssh_opts[@]}" scripts/loadgen-test3.sh scripts/loadgen-load.sh scripts/cloud-set-env.sh scripts/cloud-replica.sh "ec2-user@$ip:distri/scripts/"
     ssh "${ssh_opts[@]}" "ec2-user@$ip" 'chmod +x ~/distri/scripts/*.sh' && echo "pushed to $ip" ;;
   ssh) exec ssh -i "$key" "ec2-user@$(lg)" ;;
@@ -38,12 +38,12 @@ case "${1:?usage: cloud-test.sh ip|new|push|ssh|fetch}" in
     run="${2:-$(cat "$state" 2>/dev/null || true)}"; [ -n "$run" ] || { echo "no run id: pass one" >&2; exit 1; }
     ip="$(lg)"
     deploy/observability/scripts/obs-run.sh stop "$run"
-    mkdir -p "final/results/$run"
-    # chaos results live in final/results/<run>, load results in test-results/cloud/<run>
-    scp -r "${ssh_opts[@]}" "ec2-user@$ip:distri/final/results/$run/." "final/results/$run/" 2>/dev/null || echo "(no chaos results for $run)"
-    scp -r "${ssh_opts[@]}" "ec2-user@$ip:distri/test-results/cloud/$run/." "final/results/$run/" 2>/dev/null || echo "(no load results for $run)"
-    scp "${ssh_opts[@]}" "ec2-user@$ip:distri/*.log" "final/results/$run/" 2>/dev/null || true
+    mkdir -p "test-results/$run"
+    # chaos results live in test-results/<run>, load results in test-results/cloud/<run>
+    scp -r "${ssh_opts[@]}" "ec2-user@$ip:distri/test-results/$run/." "test-results/$run/" 2>/dev/null || echo "(no chaos results for $run)"
+    scp -r "${ssh_opts[@]}" "ec2-user@$ip:distri/test-results/cloud/$run/." "test-results/$run/" 2>/dev/null || echo "(no load results for $run)"
+    scp "${ssh_opts[@]}" "ec2-user@$ip:distri/*.log" "test-results/$run/" 2>/dev/null || true
     python3 deploy/observability/scripts/obs-export-run.py "$run"
-    echo; echo "results in final/results/$run"; ls "final/results/$run" ;;
+    echo; echo "results in test-results/$run"; ls "test-results/$run" ;;
   *) echo "usage: cloud-test.sh ip|new <label>|push|ssh|fetch [run-id]" >&2; exit 2 ;;
 esac

@@ -94,7 +94,7 @@ private container repository on each host, then copy:
 each service host: compose.cloud.yaml, deploy/cloud/.env.cloud
 broker:  deploy/cloud/compose.broker.yaml, deploy/cloud/.env.broker
 loadgen: deploy/cloud/compose.loadgen.yaml, deploy/cloud/compose.simulator.yaml,
-         deploy/cloud/.env.loadgen, testing/loadtesting/run-cases.sh, test-results/
+         deploy/cloud/.env.loadgen, tools/loadtesting/run-cases.sh, test-results/
 ```
 
 Keep the same repository-relative paths under `~/distri`; the load result mount

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Load follow-ups on the LOCAL stack through the existing runner (testing/loadtesting/run-cases.sh):
+# Load follow-ups on the LOCAL stack through the existing runner (tools/loadtesting/run-cases.sh):
 # hot product (C5), 80/20 skew (C6), multi-item opposite order (C7) and a soak (C2 for 5 minutes).
 # The runner TRUNCATES the local tables by design: dump the database first.
 # COMPOSE_ENV_FILES=/dev/null keeps docker compose from parsing a stray root .env.
@@ -16,11 +16,11 @@ keep() { # name
 
 for name in c5 c6 c7; do
   echo "== $name  db_bytes_before=$(size)"
-  testing/loadtesting/run-cases.sh "$name" && keep "$name" || echo "   $name FAILED"
+  tools/loadtesting/run-cases.sh "$name" && keep "$name" || echo "   $name FAILED"
   echo "   db_bytes_after=$(size)"
 done
 
 echo "== soak (C2, 30 clients, 300 s)  db_bytes_before=$(size)"
-LOAD_CLIENTS=30 LOAD_RUNS=1 LOAD_DURATION=300s LOAD_WARMUP=10s testing/loadtesting/run-cases.sh c2 && keep soak || echo "   soak FAILED"
+LOAD_CLIENTS=30 LOAD_RUNS=1 LOAD_DURATION=300s LOAD_WARMUP=10s tools/loadtesting/run-cases.sh c2 && keep soak || echo "   soak FAILED"
 echo "   db_bytes_after=$(size)"
-testing/loadtesting/run-cases.sh restore
+tools/loadtesting/run-cases.sh restore

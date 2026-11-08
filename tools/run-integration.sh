@@ -6,7 +6,7 @@
 # upward ".env" search used by the service config loaders cannot pick up a
 # stray file. Verbose output per package goes to $OUT/<module>/<package>.log.
 #
-# Usage: testing/run-integration.sh [module ...]     (default: all modules)
+# Usage: tools/run-integration.sh [module ...]     (default: all modules)
 # Env:   TEST_DB_URL   base URL of the *_test database (no search_path)
 #        OUT           log directory (default test-results/local/integration)
 #        RACE=0        disable the race detector

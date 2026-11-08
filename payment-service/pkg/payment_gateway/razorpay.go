@@ -199,7 +199,7 @@ func (r *Razorpay) CreateCharge(
 // no such order. An authorized-but-uncaptured payment counts as not paid.
 //
 // Two behaviours of the real Test Mode API shape this (observed 2026-10-23, see
-// memory.md): the receipt filter is eventually consistent, so an order created
+// docs/razorpay-contract.md): the receipt filter is eventually consistent, so an order created
 // moments ago may not be listed yet (ErrOrderNotFound then means "not yet", and
 // callers must wait out the payment window before concluding there is none); and
 // receipt uniqueness is not enforced, so several orders can share a receipt. In

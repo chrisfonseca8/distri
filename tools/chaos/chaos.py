@@ -14,13 +14,13 @@ CLOUD (CHAOS_TARGET=cloud), run from your laptop:
     (SSH_USER, SSH_KEY, ORCHESTRATOR_HOST, ORDER_HOST, INVENTORY_HOST, PAYMENT_HOST, BROKER_HOST);
   - the orchestrator is reached through an SSH port forward the script opens itself;
   - the database is queried with psql using DATABASE_TEST_URL from the repository .env;
-  - results go to final/results/test3/ (chaos-test.json and chaos-test.md).
+  - results go to test-results/test3/ (chaos-test.json and chaos-test.md).
   The DB-drop and network-delay faults use sudo iptables / tc on the target host and
   are always undone in a finally block; `chaos.py heal` removes them by hand.
 
-Usage: testing/chaos/chaos.py [scenario ...]    (default: all local scenarios, or "test3" in cloud)
-       testing/chaos/chaos.py preflight          (cloud: checks every dependency, injects nothing)
-       testing/chaos/chaos.py heal               (cloud: removes any leftover iptables/tc fault)
+Usage: tools/chaos/chaos.py [scenario ...]    (default: all local scenarios, or "test3" in cloud)
+       tools/chaos/chaos.py preflight          (cloud: checks every dependency, injects nothing)
+       tools/chaos/chaos.py heal               (cloud: removes any leftover iptables/tc fault)
 Standard library only.
 """
 import base64
@@ -531,7 +531,7 @@ SCENARIOS = {
 }
 CLOUD_ONLY = {"db-connection-drop", "network-delay"}
 LOCAL_ONLY = {"retry-chain-payment", "retry-chain-inventory", "retry-chain-orchestrator-replies"}
-# Test 3 order from final/README.md: 3a, 3b (three services), 3c, 3d, 3e.
+# Test 3 order (see tests/REPORT.md): 3a, 3b (three services), 3c, 3d, 3e.
 TEST3 = ["payment-kill9-mid-flight", "orchestrator-kill9-mid-burst", "order-service-kill9-mid-message",
          "inventory-kill9-mid-message", "broker-restart-mid-burst", "db-connection-drop", "network-delay"]
 

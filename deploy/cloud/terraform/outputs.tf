@@ -26,7 +26,7 @@ output "loadgen" {
 }
 
 output "make_env_command" {
-  value = "deploy/cloud/make-env.sh <docker-repo> <image-tag> ${aws_instance.service["orchestrator"].private_ip} ${aws_instance.service["order"].private_ip} ${aws_instance.service["inventory"].private_ip} ${aws_instance.service["payment"].private_ip} ${aws_instance.broker.private_ip} ${aws_instance.loadgen.private_ip}"
+  value = "deploy/cloud/scripts/make-env.sh <docker-repo> <image-tag> ${aws_instance.service["orchestrator"].private_ip} ${aws_instance.service["order"].private_ip} ${aws_instance.service["inventory"].private_ip} ${aws_instance.service["payment"].private_ip} ${aws_instance.broker.private_ip} ${aws_instance.loadgen.private_ip}"
 }
 
 output "ssm_commands" {

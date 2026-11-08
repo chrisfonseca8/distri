@@ -3,7 +3,7 @@
 # postgres_fdw. Application services never connect to this database.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../../.."
 
 mapfile -t fields < <(python3 <<'PY'
 from pathlib import Path

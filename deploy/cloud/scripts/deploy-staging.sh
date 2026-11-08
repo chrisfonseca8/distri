@@ -90,7 +90,9 @@ remote() {
   local role=$1 label=$2 script=$3
   echo "== $label (${host[$role]})"
   if [ "$mode" = "dry-run" ]; then printf '%s\n' "$script" | sed 's/^/   | /'; return 0; fi
-  ssh "${ssh_opts[@]}" "ec2-user@${host[$role]}" bash -s <<< "set -euo pipefail; $script"
+  # The script travels as an argument and ssh gets no stdin (-n): `docker compose run` reads
+  # stdin and would otherwise swallow the rest of the script.
+  ssh -n "${ssh_opts[@]}" "ec2-user@${host[$role]}" "bash -c $(printf '%q' "set -euo pipefail; $script")"
 }
 
 if [ "$mode" != "dry-run" ]; then
@@ -174,9 +176,11 @@ deploy_service orchestrator orchestrator      orchestrator-migrate
 remote loadgen "health checks (from the load-generator host)" "
   cd ~/distri
   set -a; . deploy/cloud/.env.loadgen; set +a
-  curl -fsS --max-time 10 \"\$ORDER_URL/health\" >/dev/null && echo order ok
-  curl -fsS --max-time 10 \"\$ORCHESTRATOR_URL/readyz\" >/dev/null && echo orchestrator ok
-  curl -fsS --max-time 10 http://127.0.0.1:9090/healthz >/dev/null && echo simulator ok"
+  check() { curl -fsS --max-time 10 \"\$2\" >/dev/null && echo \"\$1 ok\" || { echo \"\$1 FAILED (\$2)\"; return 1; }; }
+  check order \"\$ORDER_URL/health\"
+  check orchestrator \"\$ORCHESTRATOR_URL/readyz\"
+  check payment \"\$PAYMENT_URL/health\"
+  check simulator http://127.0.0.1:9090/healthz"
 
 if [ "$smoke" = "yes" ]; then
   remote loadgen "smoke test c1 + audit (phase 22)" "

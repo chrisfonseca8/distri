@@ -6,25 +6,32 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
+# The admin URL comes from the environment when it is set there (nothing is written to disk);
+# otherwise from the repository .env.
 read_url() {
   python3 - "$1" <<'PY'
+import os
 import sys
 from pathlib import Path
 key = sys.argv[1]
+if os.environ.get(key):
+    print(os.environ[key].replace('-pooler.', '.'))
+    raise SystemExit
 for raw in Path('.env').read_text(encoding='utf-8').splitlines():
     if raw.startswith(key + '='):
         value = raw.split('=', 1)[1].strip().strip('"').strip("'")
         print(value.replace('-pooler.', '.'))
         break
 else:
-    raise SystemExit(f'{key} is not set in .env')
+    raise SystemExit(f'{key} is not set in the environment or .env')
 PY
 }
 
-participant_admin_url="$(read_url PARTICIPANT_NEON_ADMIN_URL)"
 orchestrator_admin_url="$(read_url ORCHESTRATOR_NEON_ADMIN_URL)"
 if [ "${USE_SINGLE_NEON_ADMIN_URL:-}" = "yes" ]; then
   participant_admin_url="$orchestrator_admin_url"
+else
+  participant_admin_url="$(read_url PARTICIPANT_NEON_ADMIN_URL)"
 fi
 order_password="$(openssl rand -hex 24)"
 inventory_password="$(openssl rand -hex 24)"

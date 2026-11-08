@@ -1,0 +1,8 @@
+{
+  "note": "Prometheus series for run cloud-test9-20261101T214709Z, averaged per minute (window 21:47:09-21:54:30 UTC). Minute 0 is ramp-up (10 s warm-up, clients starting), minutes 6-7 are the end of the measured period and the drain.",
+  "minute":                    [0, 1, 2, 3, 4, 5, 6, 7],
+  "completed_per_second":      [10.81, 37.88, 39.61, 40.39, 40.73, 41.99, 14.51, 0.0],
+  "accepted_per_second":       [11.11, 41.57, 39.55, 40.42, 40.62, 41.68, 4.1, 0.0],
+  "saga_duration_p95_seconds": [28.41, 28.8, 29.0, 29.0, 29.03, 29.01, 29.01, null],
+  "outbox_pending_rows_max":   [689, 32, 45, 30, 19, 31, 14, 0]
+}

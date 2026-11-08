@@ -3,7 +3,7 @@
 # (30 closed-loop clients, 60 s, 200 ms simulated gateway). Tests the hypothesis that
 # completed/s is capped by WORKER_CONCURRENCY / gateway latency (4 / 0.2 s = 20 per second).
 set -uo pipefail
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../../.." || exit
 export COMPOSE_ENV_FILES=/dev/null
 for w in 4 8 16; do
   since=$(date -u +%Y-%m-%dT%H:%M:%S)

@@ -4,7 +4,7 @@
 # The runner TRUNCATES the local tables by design: dump the database first.
 # COMPOSE_ENV_FILES=/dev/null keeps docker compose from parsing a stray root .env.
 set -uo pipefail
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../../.." || exit
 export COMPOSE_ENV_FILES=/dev/null
 OUT=test-results/local/load-followups
 mkdir -p "$OUT"

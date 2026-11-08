@@ -259,9 +259,13 @@ all five are set. It deploys the simulator, then inventory (migrate and seed), p
 order and the orchestrator, checks health from the load-generator host, and prints the
 previous tag so you can roll back by running it again with that tag.
 
-Before the first run: the instances are started, section 4-5 env files are on each host,
-and `docker login ghcr.io` has been run as `ec2-user` on each host (unless the packages are
-public). The script rewrites only `DISTRI_REPO` and `IMAGE_TAG` in those env files.
+Before the first run: the instances are started, the per-host env files are on each host
+(`deploy/cloud/.env.orchestrator`, `.env.order`, `.env.inventory`, `.env.payment` on the
+service hosts; `.env.simulator` and `.env.loadgen` on the load-generator host), and the
+GHCR package is public or `docker login ghcr.io` has been run as `ec2-user` on each host.
+`--check` verifies that the files exist. The script rewrites only `DISTRI_REPO` and
+`IMAGE_TAG` in those env files; the database must accept connections, because each service
+migrates its schema before it restarts.
 
 If SSH times out, your current public IP is probably not allowed on port 22 in the staging
 security groups. A laptop with more than one internet uplink can leave through several

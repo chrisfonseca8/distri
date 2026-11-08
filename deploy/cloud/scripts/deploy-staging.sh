@@ -21,8 +21,9 @@
 # A connection that times out is retried up to 5 times (a laptop with several internet uplinks
 # can leave through an address that is not allowed on port 22); commands are never repeated.
 #
-# Prerequisites (one time, see deploy/cloud/README.md): the instances are running, the env files
-# from sections 4-5 are on each host, and `docker login ghcr.io` has been run as ec2-user on each
+# Prerequisites (one time, see deploy/cloud/README.md): the instances are running, the per-host env files
+# (deploy/cloud/.env.<orchestrator|order|inventory|payment>, and .env.simulator + .env.loadgen on the
+# load-generator host) are on each host, and `docker login ghcr.io` has been run as ec2-user on each
 # host unless the packages are public. This script changes only DISTRI_REPO and IMAGE_TAG in
 # those env files; no secrets pass through it. The hosts are found with your own local
 # `aws` CLI configuration (read-only calls); no AWS keys are stored or created here.
@@ -30,7 +31,7 @@
 # Order, callee first (compose.cloud.yaml): gateway simulator, inventory (migrate + seed),
 # payment, order, orchestrator. Roll back by running the script again with the previous tag
 # (printed at the end).
-set -euo pipefail
+set -Eeuo pipefail
 
 usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
@@ -98,8 +99,14 @@ if [ "$mode" != "dry-run" ]; then
   [ "$perms" = "600" ] || [ "$perms" = "400" ] || { echo "SSH key permissions are $perms; run: chmod 600 $SSH_KEY" >&2; exit 1; }
   fail=0
   for r in "${roles[@]}"; do
-    if out="$(ssh "${ssh_opts[@]}" "ec2-user@${host[$r]}" 'echo connected' 2>&1)"; then
-      echo "ssh ok   $r"
+    case "$r" in
+      loadgen) need="deploy/cloud/.env.simulator deploy/cloud/.env.loadgen deploy/cloud/compose.simulator.yaml deploy/cloud/compose.loadgen.yaml" ;;
+      *)       need="deploy/cloud/.env.$r compose.cloud.yaml" ;;
+    esac
+    # connect AND confirm the files the deploy rewrites or reads exist (names only, no contents)
+    if out="$(ssh "${ssh_opts[@]}" "ec2-user@${host[$r]}" \
+        "cd ~/distri && for f in $need; do test -f \$f || { echo \"missing \$f\"; exit 3; }; done; echo connected" 2>&1)"; then
+      echo "ssh ok   $r (files present)"
     else
       echo "ssh FAIL $r: $out"; fail=1
     fi
@@ -127,7 +134,7 @@ fi
 prev=""
 if [ "$mode" = "deploy" ]; then
   prev="$(ssh "${ssh_opts[@]}" "ec2-user@${host[orchestrator]}" \
-    "grep -m1 '^IMAGE_TAG=' ~/distri/deploy/cloud/.env.cloud | cut -d= -f2" 2>/dev/null || true)"
+    "grep -m1 '^IMAGE_TAG=' ~/distri/deploy/cloud/.env.orchestrator | cut -d= -f2" 2>/dev/null || true)"
   echo "tag currently deployed on the orchestrator host: ${prev:-unknown}"
 fi
 on_failure() {
@@ -138,12 +145,12 @@ on_failure() {
 trap on_failure ERR
 
 # ---------------------------------------------------------------- deploy
-set_tag="sed -i \"s|^DISTRI_REPO=.*|DISTRI_REPO=$DISTRI_REPO|; s|^IMAGE_TAG=.*|IMAGE_TAG=$tag|\""
+set_tag="sed -i \"s|^DISTRI_REPO=.*|DISTRI_REPO=$DISTRI_REPO|; s|^IMAGE_TAG=.*|IMAGE_TAG=$tag|\""   # followed by the env file(s)
 
 remote loadgen "gateway simulator" "
   cd ~/distri
-  $set_tag deploy/cloud/.env.loadgen
-  C=\"docker compose --env-file deploy/cloud/.env.loadgen -f deploy/cloud/compose.simulator.yaml\"
+  $set_tag deploy/cloud/.env.simulator deploy/cloud/.env.loadgen
+  C=\"docker compose --env-file deploy/cloud/.env.simulator -f deploy/cloud/compose.simulator.yaml\"
   \$C pull
   \$C up -d --wait"
 
@@ -152,8 +159,8 @@ deploy_service() {   # <role> <compose-service> <migrate-service> [extra migrate
   [ -z "$extra" ] || extra_cmd="\$S --profile migrate run --rm $extra"
   remote "$role" "$svc" "
     cd ~/distri
-    $set_tag deploy/cloud/.env.cloud
-    S=\"docker compose --env-file deploy/cloud/.env.cloud -f compose.cloud.yaml\"
+    $set_tag deploy/cloud/.env.$role
+    S=\"docker compose --env-file deploy/cloud/.env.$role -f compose.cloud.yaml\"
     \$S pull
     \$S --profile migrate run --rm $migrate
     $extra_cmd

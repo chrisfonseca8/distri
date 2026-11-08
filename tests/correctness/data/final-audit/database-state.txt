@@ -1,0 +1,10 @@
+Database state read from the staging audit database after the final audit (2026-11-01, ~22:00 UTC)
+sagas by status:          COMPLETED 12736
+unfinished sagas:         0
+orders by status:         PAID 12736
+payments by status:       SUCCEEDED 12736
+reservations by status:   CONFIRMED 12736
+minimum free stock:       999745   (no product with negative on_hand, reserved or allocated)
+dead queue distri.commands.dead: 0 messages
+invariant queries (8):    all 0 violations
+Note: the runner resets transactional data and inventory before each run, so this is the data of the last load run (the Test 9 soak).

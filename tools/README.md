@@ -15,6 +15,7 @@ tools/
 ├── fault-injection/    kill services, restart the broker, drop the database, delay the network
 │   └── chaos.py
 ├── baseline/           low-rate sanity run of the whole path
+├── cloud/              AWS staging runners: drive cloud tests, change settings, add a replica, stop the instances
 ├── integration/        run every Go test, including those that need Postgres
 │   └── run-integration.sh
 ├── diagnostics/        one-off analysis programs (queue-wait report, idempotency storm, ...)
@@ -32,7 +33,7 @@ tools/
 | Run the correctness suite | see [`correctness/README.md`](correctness/README.md) (`docker compose ... --profile correctness run --rm local-correctness`) |
 | Inject faults under load | `python3 tools/fault-injection/chaos.py` (local scenarios) or `chaos.py preflight` / `chaos.py heal` in the cloud; scenarios are listed in the script header |
 | Sweep payment worker concurrency | `tools/load-test/sweeps/worker_sweep.sh` |
-| Run the cloud versions of these | the runners in [`../scripts/`](../scripts) and [`../deploy/cloud/README.md`](../deploy/cloud/README.md) |
+| Run the cloud versions of these | the runners in [`cloud/`](cloud) and [`../deploy/cloud/README.md`](../deploy/cloud/README.md) |
 
 ## Notes
 

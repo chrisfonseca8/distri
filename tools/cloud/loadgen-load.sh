@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cloud load presets for tests 6, 7 and 9. Run on the load-generator host.
 #
-#   scripts/loadgen-load.sh <preset> <obs-run-id>
+#   tools/cloud/loadgen-load.sh <preset> <obs-run-id>
 #
 # presets
 #   test6-clients  C3 client sweep (closed loop): STEPS=1,2,5,10,20,50,100,200
@@ -14,7 +14,7 @@
 # After the load it waits 30 s and runs the phase-22 database audit. The exit status is the load run's.
 # Results: ~/distri/test-results/cloud/<obs-run-id>/ (load-test.md, load-test.json, audit/).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 preset="${1:?usage: loadgen-load.sh <test6-clients|test6-rate|test7|test9> <obs-run-id>}"
 run="${2:?usage: loadgen-load.sh <preset> <obs-run-id>}"
 compose=(docker compose --env-file deploy/cloud/.env.loadgen -f deploy/cloud/compose.loadgen.yaml)

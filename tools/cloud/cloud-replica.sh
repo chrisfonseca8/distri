@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start or stop a second orchestrator replica (test 8). Run on the load generator.
 #
-#   scripts/cloud-replica.sh start | stop | status
+#   tools/cloud/cloud-replica.sh start | stop | status
 #
 # The replica is a second container of the same compose service on the orchestrator host: same image,
 # same environment, same database and broker, no published port. It shares the RabbitMQ queues

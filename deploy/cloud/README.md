@@ -22,7 +22,6 @@ cloud/
 ├── compose.broker.yaml      RabbitMQ host
 ├── compose.loadgen.yaml     load generator and correctness runner (load-generator host)
 ├── compose.simulator.yaml   gateway simulator (load-generator host)
-├── systemd/        distri-docker-tunnel@.service  SSH tunnel to a host's Docker socket
 └── requirements.md the fixed staging topology (instance types, volumes, network)
 ```
 
@@ -178,7 +177,7 @@ ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-
 ssh -f -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -N -L /home/ec2-user/sockets/payment.sock:/var/run/docker.sock ec2-user@<payment-ip>
 ```
 
-Run it under a supervised systemd unit for long tests. Do not expose the Docker
+For long tests, run the tunnels under a process supervisor (for example a systemd unit). Do not expose the Docker
 TCP API: access to this socket is effectively root access to the app host.
 
 ## 8. Preflight and first test

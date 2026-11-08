@@ -93,3 +93,6 @@ deploy/observability/hosts.env
 
 # Local-only raw run evidence (archived outside the repo; results are summarised in tests/)
 /final/
+
+# Prometheus scrape targets, written per run by obs-targets.sh
+deploy/observability/prometheus/targets/

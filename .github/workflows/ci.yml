@@ -81,7 +81,7 @@ jobs:
           done
 
       - name: Integration tests (race detector on)
-        run: tools/run-integration.sh
+        run: tools/integration/run-integration.sh
 
       - name: Upload test logs
         if: always()

@@ -28,9 +28,9 @@ HOSTS
 export CHAOS_TARGET=cloud CHAOS_DIRECT=1 HOSTS_ENV="$PWD/$hosts" CHAOS_RUN_ID="$run" ORCH_URL=http://10.40.1.10:8083
 docker pull -q postgres:17-alpine >/dev/null          # psql runs in a container: no client is installed here
 
-echo "== preflight"; python3 tools/chaos/chaos.py preflight
+echo "== preflight"; python3 tools/fault-injection/chaos.py preflight
 echo "== test 3, run id $run, scenarios: ${scenarios[*]}"
-python3 tools/chaos/chaos.py "${scenarios[@]}" && status=0 || status=$?
-python3 tools/chaos/chaos.py heal || true            # never leave an iptables/tc fault behind
+python3 tools/fault-injection/chaos.py "${scenarios[@]}" && status=0 || status=$?
+python3 tools/fault-injection/chaos.py heal || true            # never leave an iptables/tc fault behind
 echo "== done (exit $status) -> test-results/$run"
 exit $status

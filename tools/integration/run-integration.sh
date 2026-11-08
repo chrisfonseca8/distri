@@ -6,13 +6,13 @@
 # upward ".env" search used by the service config loaders cannot pick up a
 # stray file. Verbose output per package goes to $OUT/<module>/<package>.log.
 #
-# Usage: tools/run-integration.sh [module ...]     (default: all modules)
+# Usage: tools/integration/run-integration.sh [module ...]     (default: all modules)
 # Env:   TEST_DB_URL   base URL of the *_test database (no search_path)
 #        OUT           log directory (default test-results/local/integration)
 #        RACE=0        disable the race detector
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DB_URL="${TEST_DB_URL:-postgres://distri:distri@127.0.0.1:5432/distri_test?sslmode=disable}"
 OUT="${OUT:-$ROOT/test-results/local/integration}"
 RACE_FLAG="-race"; [ "${RACE:-1}" = "0" ] && RACE_FLAG=""

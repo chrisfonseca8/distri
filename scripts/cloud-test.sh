@@ -29,8 +29,8 @@ case "${1:?usage: cloud-test.sh ip|new|push|ssh|fetch}" in
     echo "$run" > "$state"; echo; echo "RUN=$run"; echo "(remembered; use this id on the load generator)" ;;
   push)
     ip="$(lg)"
-    ssh "${ssh_opts[@]}" "ec2-user@$ip" 'mkdir -p ~/distri/tools/chaos ~/distri/scripts'
-    scp "${ssh_opts[@]}" tools/chaos/chaos.py "ec2-user@$ip:distri/tools/chaos/"
+    ssh "${ssh_opts[@]}" "ec2-user@$ip" 'mkdir -p ~/distri/tools/fault-injection ~/distri/scripts'
+    scp "${ssh_opts[@]}" tools/fault-injection/chaos.py "ec2-user@$ip:distri/tools/fault-injection/"
     scp "${ssh_opts[@]}" scripts/loadgen-test3.sh scripts/loadgen-load.sh scripts/cloud-set-env.sh scripts/cloud-replica.sh "ec2-user@$ip:distri/scripts/"
     ssh "${ssh_opts[@]}" "ec2-user@$ip" 'chmod +x ~/distri/scripts/*.sh' && echo "pushed to $ip" ;;
   ssh) exec ssh -i "$key" "ec2-user@$(lg)" ;;

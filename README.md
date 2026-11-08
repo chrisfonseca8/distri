@@ -79,7 +79,7 @@ Requires Docker. Credentials in `compose.local.yaml` are disposable development 
 
 ```bash
 docker compose -f compose.local.yaml up --build --wait   # Postgres, RabbitMQ, migrations, seed data, four services
-tools/loadtesting/run-cases.sh c1                        # smoke load case against the local stack
+tools/load-test/run-cases.sh c1                        # smoke load case against the local stack
 docker compose -f compose.local.yaml down                # stop (keeps volumes)
 ```
 
@@ -87,10 +87,10 @@ More: [`docs/docker.md`](docs/docker.md) (local stack and simulator), [`tools/RE
 
 ## Testing approach
 
-- **Unit and integration tests** live next to the code in each service. Database-gated integration tests run against a throwaway `*_test` database (`tools/run-integration.sh`, and the `integration` job in CI).
-- **Correctness suite** (22 phases in [`tools/correctnesstesting`](tools/correctnesstesting)) runs against a live stack: idempotency, concurrency, rollback, recovery, error mapping and a final database-invariant audit.
-- **Fault injection** ([`tools/chaos`](tools/chaos)) kills services, restarts the broker, drops database connections and delays the network under load, then audits.
-- **Load testing** ([`tools/loadtesting`](tools/loadtesting)) reports accepted and completed rates separately, plus p95 and p99.
+- **Unit and integration tests** live next to the code in each service. Database-gated integration tests run against a throwaway `*_test` database (`tools/integration/run-integration.sh`, and the `integration` job in CI).
+- **Correctness suite** (22 phases in [`tools/correctness`](tools/correctness)) runs against a live stack: idempotency, concurrency, rollback, recovery, error mapping and a final database-invariant audit.
+- **Fault injection** ([`tools/fault-injection`](tools/fault-injection)) kills services, restarts the broker, drops database connections and delays the network under load, then audits.
+- **Load testing** ([`tools/load-test`](tools/load-test)) reports accepted and completed rates separately, plus p95 and p99.
 - **Penetration testing has not been done** (authentication is out of scope); see [Part 5 of the test report](tests/REPORT.md#part-5-penetration-tests).
 - All tests, results and limits: [`tests/REPORT.md`](tests/REPORT.md) (single file).
 

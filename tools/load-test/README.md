@@ -3,7 +3,7 @@
 Load testing is separate from correctness testing. Correctness asks whether an
 invariant holds; load testing asks where throughput stops scaling and why.
 
-Local load-test code and its report contract live in [`local`](local). Results
+Local load-test code and its report contract live in [`runner`](runner). Results
 will be written as one Markdown file and one JSON file:
 
 ```text
@@ -189,12 +189,12 @@ payment service was started with. `run-cases.sh` therefore restarts the services
 with the right settings before every case:
 
 ```sh
-tools/loadtesting/run-cases.sh c10
-tools/loadtesting/run-cases.sh c11
-tools/loadtesting/run-cases.sh c12
-tools/loadtesting/run-cases.sh c13            # all four latencies, or e.g.: c13 0ms
-tools/loadtesting/run-cases.sh c14 200ms      # pool sweep at 200 ms; add sizes, e.g.: c14 0ms 10
-tools/loadtesting/run-cases.sh restore        # back to success, 200 ms, pool 10 open / 5 idle
+tools/load-test/run-cases.sh c10
+tools/load-test/run-cases.sh c11
+tools/load-test/run-cases.sh c12
+tools/load-test/run-cases.sh c13            # all four latencies, or e.g.: c13 0ms
+tools/load-test/run-cases.sh c14 200ms      # pool sweep at 200 ms; add sizes, e.g.: c14 0ms 10
+tools/load-test/run-cases.sh restore        # back to success, 200 ms, pool 10 open / 5 idle
 ```
 
 Run `restore` afterwards. The results land in `test-results/local/load/load-test.md`

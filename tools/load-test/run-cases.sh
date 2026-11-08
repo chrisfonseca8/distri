@@ -5,19 +5,19 @@
 # and writes the result into the runner's results directory (load-test.json/.md).
 #
 # Usage (from the repository root):
-#   tools/loadtesting/run-cases.sh c1|c2|c3|c4|c5|c6|c7|c9|c10|c11|c12|c13 [latency...]|c14 [latency] [size...]|restore|fetch
+#   tools/load-test/run-cases.sh c1|c2|c3|c4|c5|c6|c7|c9|c10|c11|c12|c13 [latency...]|c14 [latency] [size...]|restore|fetch
 #
 # ---- Local (the stack must be up: docker compose -f compose.local.yaml up --build --wait)
-#   tools/loadtesting/run-cases.sh c10
+#   tools/load-test/run-cases.sh c10
 #
 # ---- Cloud compose file on the same host (services and runner together)
 #   DISTRI_COMPOSE_FILE=compose.cloud.yaml DISTRI_ENV_FILE=deploy/cloud/.env.cloud \
-#   LOADTEST_SERVICE=loadtest LOADTEST_PROFILE=loadtest tools/loadtesting/run-cases.sh c13 0ms
+#   LOADTEST_SERVICE=loadtest LOADTEST_PROFILE=loadtest tools/load-test/run-cases.sh c13 0ms
 #
 # ---- Two AWS hosts, driven from your machine over SSH (services on the SERVER, runner
 #      on the LOAD_TEST host; results are copied back with "fetch")
 #   DISTRI_REMOTE=1 SERVER_HOST=<ip> SERVER_KEY=./SERVER_MACHINE.pem \
-#   LOADGEN_HOST=<ip> LOADGEN_KEY=./LOAD_TEST.pem tools/loadtesting/run-cases.sh c2
+#   LOADGEN_HOST=<ip> LOADGEN_KEY=./LOAD_TEST.pem tools/load-test/run-cases.sh c2
 set -euo pipefail
 
 # Variables forwarded to the remote commands when they are set.
@@ -130,7 +130,7 @@ case "${1:-}" in
     # Optional second argument sets the gateway latency (default 200ms). At 200ms the
     # pool is not the limit; run it again with 0ms to probe the pool itself.
     # MaxIdleConns equals MaxOpenConns unless IDLE_SIZE is set, e.g.:
-    #   IDLE_SIZE=5 tools/loadtesting/run-cases.sh c14 0ms 10
+    #   IDLE_SIZE=5 tools/load-test/run-cases.sh c14 0ms 10
     # so connection churn is not a second variable by default.
     export GATEWAY_MODE=success GATEWAY_LATENCY="${2:-200ms}"
     sizes=("${@:3}")

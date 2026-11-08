@@ -18,9 +18,9 @@ CLOUD (CHAOS_TARGET=cloud), run from your laptop:
   The DB-drop and network-delay faults use sudo iptables / tc on the target host and
   are always undone in a finally block; `chaos.py heal` removes them by hand.
 
-Usage: tools/chaos/chaos.py [scenario ...]    (default: all local scenarios, or "test3" in cloud)
-       tools/chaos/chaos.py preflight          (cloud: checks every dependency, injects nothing)
-       tools/chaos/chaos.py heal               (cloud: removes any leftover iptables/tc fault)
+Usage: tools/fault-injection/chaos.py [scenario ...]    (default: all local scenarios, or "test3" in cloud)
+       tools/fault-injection/chaos.py preflight          (cloud: checks every dependency, injects nothing)
+       tools/fault-injection/chaos.py heal               (cloud: removes any leftover iptables/tc fault)
 Standard library only.
 """
 import base64
@@ -44,7 +44,7 @@ CLOUD = os.environ.get("CHAOS_TARGET", "local") == "cloud"
 COMPOSE_FILE = os.path.join(ROOT, "compose.local.yaml")
 DIRECT = os.environ.get("CHAOS_DIRECT", "") == "1"  # run on the load generator: orchestrator reachable directly (set ORCH_URL)
 RUN_ID = os.environ.get("CHAOS_RUN_ID", "")  # observability run id: sent as X-Test-Run-ID so logs, traces and outbox rows carry it
-OUT_DIR = os.environ.get("OUT", os.path.join(ROOT, "final", "results", RUN_ID or "test3") if CLOUD else os.path.join(ROOT, "test-results", "local", "chaos"))
+OUT_DIR = os.environ.get("OUT", os.path.join(ROOT, "test-results", RUN_ID or "test3") if CLOUD else os.path.join(ROOT, "test-results", "local", "chaos"))
 LOCAL_PORT = int(os.environ.get("CHAOS_LOCAL_PORT", "18083"))  # cloud: forwarded orchestrator port
 ORCH = os.environ.get("ORCH_URL", f"http://127.0.0.1:{LOCAL_PORT}" if CLOUD else "http://127.0.0.1:8083")
 PG = ["docker", "exec", "-i", "distri-local-postgres-1", "psql", "-U", "distri", "-d", "distri", "-At", "-F", "|"]

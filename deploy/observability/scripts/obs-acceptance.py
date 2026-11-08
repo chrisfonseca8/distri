@@ -204,7 +204,7 @@ def main():
     check("alert rules loaded", sum(len(g["rules"]) for g in rules) >= 15)
     sh(os.path.join(ROOT, "deploy/observability/scripts/obs-run.sh"), "stop", run)
 
-    out = os.path.join(ROOT, "final", "results", run)
+    out = os.path.join(ROOT, "test-results", run)
     os.makedirs(out, exist_ok=True)
     passed = sum(1 for _, ok, _ in results if ok)
     with open(os.path.join(out, "acceptance.md"), "w") as f:

@@ -74,7 +74,7 @@ def main():
     ap.add_argument("--step", default="15")
     a = ap.parse_args()
 
-    out = os.path.join(ROOT, "final", "results", a.run)
+    out = os.path.join(ROOT, "test-results", a.run)
     os.makedirs(out, exist_ok=True)
     meta_path = os.path.join(out, "run.json")
     meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {"test_run_id": a.run}

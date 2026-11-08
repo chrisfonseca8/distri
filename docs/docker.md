@@ -55,7 +55,7 @@ database:
 
 ```bash
 docker compose -f compose.local.yaml up --build --wait
-tools/loadtesting/run-cases.sh c1
+tools/load-test/run-cases.sh c1
 ```
 
 After collecting the result, remove the test database:
@@ -65,12 +65,12 @@ docker compose -f compose.local.yaml down --volumes
 ```
 
 The runner writes Markdown and JSON reports under `test-results/`. See
-`tools/loadtesting/README.md` for the case catalogue and metric definitions.
+`tools/load-test/README.md` for the case catalogue and metric definitions.
 
 ## Local correctness suite
 
 The phase-based black-box correctness suite lives in
-`tools/correctnesstesting/local`. Its full test list and report format are
+`tools/correctness`. Its full test list and report format are
 documented in `tools/README.md`. Run it against a freshly created local
 database:
 

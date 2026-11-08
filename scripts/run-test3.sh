@@ -25,14 +25,14 @@ scenarios=("$@")
   { echo "metrics tunnels are down: run  $obs/obs-tunnels.sh start  in another terminal" >&2; exit 1; }
 curl -fs -m 5 "http://127.0.0.1:$PROMETHEUS_PORT/-/ready" >/dev/null ||
   { echo "Prometheus not ready on port $PROMETHEUS_PORT (set PROMETHEUS_PORT)" >&2; exit 1; }
-python3 tools/chaos/chaos.py preflight
+python3 tools/fault-injection/chaos.py preflight
 
 failed=0
 for scenario in "${scenarios[@]}"; do
   run="cloud-test3-${scenario}-$(date -u +%Y%m%dT%H%M%SZ)"
   echo; echo "######## $scenario  ($run)"
   "$obs/obs-run.sh" start "$run" tunnel staging
-  set +e; CHAOS_RUN_ID="$run" python3 tools/chaos/chaos.py "$scenario"; rc=$?; set -e
+  set +e; CHAOS_RUN_ID="$run" python3 tools/fault-injection/chaos.py "$scenario"; rc=$?; set -e
   [ $rc -eq 0 ] || failed=$((failed + 1))
   sleep 45                       # let Prometheus and Loki catch the recovery
   "$obs/obs-run.sh" stop "$run"

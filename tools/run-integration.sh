@@ -23,10 +23,10 @@ declare -A SCHEMA=(
   [payment-service]=payments
   [orchestrator-service]=orchestrator
   [gateway-simulator]=public
-  [testing]=public
+  [tools]=public
 )
 MODULES=("$@")
-[ ${#MODULES[@]} -eq 0 ] && MODULES=(gateway-simulator inventory-service order-service orchestrator-service payment-service testing)
+[ ${#MODULES[@]} -eq 0 ] && MODULES=(gateway-simulator inventory-service order-service orchestrator-service payment-service tools)
 
 GATES=(RUN_ADMIN_INTEGRATION RUN_CHECKOUT_INTEGRATION RUN_INVENTORY_INTEGRATION
   RUN_ORDER_CREATE_INTEGRATION RUN_OUTBOX_INTEGRATION RUN_PAYMENT_JOBS_INTEGRATION

@@ -91,5 +91,5 @@ crash.log
 # observability
 deploy/observability/hosts.env
 
-# Local-only raw run evidence (archived outside the repo; curated results live in tests/data/)
+# Local-only raw run evidence (archived outside the repo; curated results live in the data/ folders under tests/)
 /final/

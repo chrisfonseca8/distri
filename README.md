@@ -43,7 +43,7 @@ Each service owns its schema; services communicate only through APIs and message
 
 ## Key results
 
-Measured on AWS (one host per service, single replicas, Neon PostgreSQL) on 1 November 2026. **The payment gateway is simulated**, and it is configured with a 5 s pay delay, so about 5 s of every checkout (about 7 s end to end when idle) is the simulator, not the application. Full tables, caveats and raw data: [`tests/REPORT.md`](tests/REPORT.md).
+Measured on AWS (one host per service, single replicas, Neon PostgreSQL) on 1 November 2026. **The payment gateway is simulated**, and it is configured with a 5 s pay delay, so about 5 s of every checkout (about 7 s end to end when idle) is the simulator, not the application. Full tables, caveats and raw data: [`tests/REPORT.md`](tests/REPORT.md); every test has its own file under [`tests/`](tests/README.md).
 
 | Area | Result | Read with |
 |---|---|---|
@@ -55,7 +55,7 @@ Measured on AWS (one host per service, single replicas, Neon PostgreSQL) on 1 No
 | Open-loop capacity | About 30/s sustainable; backlog builds from 40/s; at 60/s offered, 19.0/s completed with 1,230 checkouts pending at the drain | Closed loop (fixed clients, ~43/s) and open loop (fixed arrival rate, ~30/s) measure different things |
 | Correctness suite | All 20 active phases pass across success, decline and timeout gateway modes | No single run covers every phase; decline result holds for a 3 s payment window |
 | Ruled out | Orchestrator DB pool, outbox poll interval, payment workers and inventory consumers (one change at a time, 3 repetitions each) did not move throughput | The real limit was not identified |
-| Go tests | 334 pass, 0 fail; 130 database-gated integration tests are skipped in a plain `go test` | Counted 8 Nov 2026, subtests included |
+| Go tests | 292 test functions, all pass against a PostgreSQL container (470 passes with subtests, 0 fail, 0 skipped, `-race`); without a database 334 pass and 130 database-gated tests skip | Counted 8 Nov 2026; per-file detail in [`tests/unit`](tests/unit/README.md) |
 
 ## What changed and what it improved
 
@@ -91,7 +91,8 @@ More: [`docs/docker.md`](docs/docker.md) (local stack and simulator), [`tools/RE
 - **Correctness suite** (22 phases in [`tools/correctnesstesting`](tools/correctnesstesting)) runs against a live stack: idempotency, concurrency, rollback, recovery, error mapping and a final database-invariant audit.
 - **Fault injection** ([`tools/chaos`](tools/chaos)) kills services, restarts the broker, drops database connections and delays the network under load, then audits.
 - **Load testing** ([`tools/loadtesting`](tools/loadtesting)) reports accepted and completed rates separately, plus p95 and p99.
-- Results and limits: [`tests/REPORT.md`](tests/REPORT.md).
+- **Penetration testing has not been done** (authentication is out of scope); see [`tests/penetration`](tests/penetration/README.md).
+- Results and limits: [`tests/REPORT.md`](tests/REPORT.md); one folder per kind of test in [`tests/`](tests/README.md).
 
 ## Known limitations
 

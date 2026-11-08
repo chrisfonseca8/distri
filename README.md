@@ -39,7 +39,7 @@ flowchart LR
 | [`gateway-simulator`](gateway-simulator) | Controllable fake payment gateway (success, decline, timeout, delays) |
 | [`tools`](tools) | Load generator, correctness suite (22 phases), chaos harness, baseline runner |
 
-Each service owns its schema; services communicate only through APIs and messages. Details: [`docs/architecture.md`](docs/architecture.md) and [`docs/diagrams/`](docs/diagrams).
+Each service owns its schema; services communicate only through APIs and messages.
 
 ## Key results
 
@@ -83,7 +83,7 @@ tools/load-test/run-cases.sh c1                        # smoke load case against
 docker compose -f compose.local.yaml down                # stop (keeps volumes)
 ```
 
-More: [`docs/docker.md`](docs/docker.md) (local stack and simulator), [`tools/README.md`](tools/README.md) (load generator and correctness suite), [`deploy/cloud/README.md`](deploy/cloud/README.md) (AWS staging).
+More: [`tools/README.md`](tools/README.md) (load generator and correctness suite), [`deploy/cloud/README.md`](deploy/cloud/README.md) (AWS staging).
 
 ## Testing approach
 

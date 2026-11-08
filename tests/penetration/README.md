@@ -27,7 +27,7 @@ These are ordinary functional tests. They show that specific defences were built
 
 ## Known gaps (not tested, not built)
 
-- No authentication, authorization, TLS termination or rate limiting (recorded as parked in [`docs/backlog.md`](../../docs/backlog.md)).
+- No authentication, authorization, TLS termination or rate limiting (recorded as parked in `docs/backlog.md` (git history)).
 - No dependency vulnerability scan, container image scan or static security analysis has been run.
 - No fuzzing of request bodies, headers or webhook payloads beyond the functional tests above.
 - No test of webhook replay with a valid old signature, or of timing attacks on signature comparison.

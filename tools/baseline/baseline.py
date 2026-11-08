@@ -7,7 +7,7 @@ uniformly (a seeded shuffle of all seeded products, repeated if there are fewer 
 arrivals), then a drain period until every saga is terminal or the drain limit passes.
 
 It only reads and writes through the public checkout API; it never edits service tables.
-Stdlib only. See docs/baseline.md for the stack configuration and what is recorded.
+Stdlib only.
 
   python3 tools/baseline/baseline.py --label B0
 """

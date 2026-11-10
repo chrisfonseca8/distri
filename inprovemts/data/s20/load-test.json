@@ -1,0 +1,393 @@
+{
+  "suite": "local-load-testing",
+  "updated_at": "2026-11-09T15:04:25.29878539Z",
+  "runs": [
+    {
+      "suite": "local-load-testing",
+      "run_id": "c4-rate-020-20261109T150111.429520405Z",
+      "label": "c4-rate-020",
+      "started_at": "2026-11-09T15:01:11.429520405Z",
+      "finished_at": "2026-11-09T15:04:24.152955962Z",
+      "config": {
+        "case": "C4",
+        "clients": 0,
+        "product_count": 50,
+        "workload": "uniform",
+        "offered_rate_per_second": 20,
+        "warmup": 60000000000,
+        "measurement": 180000000000,
+        "drain_timeout": 15000000000,
+        "status_poll_interval": 2000000000,
+        "completion_mode": "poll",
+        "sample_interval": 500000000,
+        "max_in_flight": 0,
+        "gateway_mode": "success",
+        "gateway_latency": 200000000,
+        "environment": "inprovemts-s20",
+        "max_connections": 1000,
+        "hardware": {
+          "logical_cpu_count": 2,
+          "memory_bytes": 3999809536,
+          "source": "runtime.NumCPU and /proc/meminfo as visible to the load-generator container"
+        }
+      },
+      "client": {
+        "offered": 3600,
+        "offered_rate_per_second": 20,
+        "accepted": 3600,
+        "accepted_per_second": 20,
+        "completed": 3600,
+        "completed_orders_per_second": 20,
+        "paid": 3600,
+        "cancelled": 0,
+        "pending_at_drain": 0,
+        "checkout_latency": {
+          "samples": 3600,
+          "min_ms": 21.766,
+          "mean_ms": 201.099,
+          "p50_ms": 34.075,
+          "p95_ms": 1008.897,
+          "p99_ms": 4339.051,
+          "max_ms": 8592.231
+        },
+        "pay_latency": {
+          "samples": 0,
+          "min_ms": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "p99_ms": 0,
+          "max_ms": 0
+        },
+        "end_to_end_latency": {
+          "samples": 3600,
+          "min_ms": 4029.828,
+          "mean_ms": 8639.753,
+          "p50_ms": 8047.412,
+          "p95_ms": 17594.47,
+          "p99_ms": 21409.008,
+          "max_ms": 28066.288
+        },
+        "server_completion_latency": {
+          "samples": 3600,
+          "min_ms": 2053.19,
+          "mean_ms": 7466.924,
+          "p50_ms": 6515.057,
+          "p95_ms": 15767.796,
+          "p99_ms": 19878.122,
+          "max_ms": 25055.176
+        },
+        "completion_observation": {
+          "sse_attempts": 0,
+          "sse_terminal_events": 0,
+          "polling_fallbacks": 0
+        },
+        "checkout_status_mix": {
+          "by_http_status": {
+            "202": 3600
+          },
+          "accepted_2xx": 3600,
+          "business_conflict_409": 0,
+          "server_5xx": 0,
+          "transport_errors": 0,
+          "decode_errors": 0
+        },
+        "pay_status_mix": {
+          "by_http_status": {},
+          "accepted_2xx": 0,
+          "business_conflict_409": 0,
+          "server_5xx": 0,
+          "transport_errors": 0,
+          "decode_errors": 0
+        },
+        "in_flight": {
+          "mean_requests": 11.357981353944487,
+          "max_requests": 336,
+          "mean_workflows": 172.79512413278366,
+          "max_workflows": 412
+        },
+        "little_law": {
+          "observed_mean_in_flight": 172.79512413278366,
+          "expected_mean_in_flight": 172.79506,
+          "difference_percent": 0.0000371149404670649
+        },
+        "duplicate": {
+          "injected_workflows": 0,
+          "extra_requests": 0,
+          "replay_200": 0,
+          "mismatches": 0
+        },
+        "runner_cpu_percent": 3.5551317255205195,
+        "runner_memory_bytes": 10153984
+      },
+      "services": {
+        "inventory": {
+          "available": true,
+          "inbound": {
+            "requests": 3604,
+            "errors": 0,
+            "in_flight": 0,
+            "max_in_flight": 15,
+            "latency": {
+              "samples": 3604,
+              "min_ms": 1.93,
+              "mean_ms": 21.44,
+              "p50_ms": 15.214,
+              "p95_ms": 23.992,
+              "p99_ms": 81.046,
+              "max_ms": 2977.125
+            }
+          },
+          "runtime": {
+            "goroutines": 27,
+            "heap_alloc_bytes": 5088352,
+            "heap_in_use_bytes": 8060928,
+            "gc_cycles": 328,
+            "gc_pause_total_ns": 25355415
+          },
+          "db_pool": {
+            "open_connections": 10,
+            "in_use": 0,
+            "idle": 10,
+            "wait_count": 23,
+            "wait_duration": 158704640
+          },
+          "container": {
+            "available": true,
+            "samples": 386,
+            "cpu_mean_percent": 6.8778297970366795,
+            "cpu_max_percent": 14.1732,
+            "memory_mean_bytes": 13741422,
+            "memory_max_bytes": 17915904
+          }
+        },
+        "orchestrator": {
+          "available": true,
+          "inbound": {
+            "requests": 18125,
+            "errors": 0,
+            "in_flight": 0,
+            "max_in_flight": 336,
+            "latency": {
+              "samples": 18125,
+              "min_ms": 1.87,
+              "mean_ms": 112.406,
+              "p50_ms": 3.539,
+              "p95_ms": 75.211,
+              "p99_ms": 3823.082,
+              "max_ms": 8591.738
+            }
+          },
+          "runtime": {
+            "goroutines": 50,
+            "heap_alloc_bytes": 10842008,
+            "heap_in_use_bytes": 14286848,
+            "gc_cycles": 617,
+            "gc_pause_total_ns": 60405558
+          },
+          "db_pool": {
+            "open_connections": 10,
+            "in_use": 0,
+            "idle": 10,
+            "wait_count": 2616,
+            "wait_duration": 1805408434498
+          },
+          "container": {
+            "available": true,
+            "samples": 386,
+            "cpu_mean_percent": 19.18156936336012,
+            "cpu_max_percent": 45.246086956521744,
+            "memory_mean_bytes": 21173741,
+            "memory_max_bytes": 34684928
+          }
+        },
+        "order": {
+          "available": true,
+          "inbound": {
+            "requests": 0,
+            "errors": 0,
+            "in_flight": 0,
+            "max_in_flight": 0,
+            "latency": {
+              "samples": 0,
+              "min_ms": 0,
+              "mean_ms": 0,
+              "p50_ms": 0,
+              "p95_ms": 0,
+              "p99_ms": 0,
+              "max_ms": 0
+            }
+          },
+          "runtime": {
+            "goroutines": 34,
+            "heap_alloc_bytes": 5168536,
+            "heap_in_use_bytes": 7716864,
+            "gc_cycles": 357,
+            "gc_pause_total_ns": 25407189
+          },
+          "db_pool": {
+            "open_connections": 8,
+            "in_use": 0,
+            "idle": 8,
+            "wait_count": 0,
+            "wait_duration": 0
+          },
+          "container": {
+            "available": true,
+            "samples": 386,
+            "cpu_mean_percent": 5.99155926731018,
+            "cpu_max_percent": 23.67536842105263,
+            "memory_mean_bytes": 13077148,
+            "memory_max_bytes": 15642624
+          }
+        },
+        "payment": {
+          "available": true,
+          "inbound": {
+            "requests": 10800,
+            "errors": 0,
+            "in_flight": 0,
+            "max_in_flight": 4,
+            "latency": {
+              "samples": 10800,
+              "min_ms": 3.409,
+              "mean_ms": 9.626,
+              "p50_ms": 4.444,
+              "p95_ms": 8.032,
+              "p99_ms": 42.712,
+              "max_ms": 2865.262
+            }
+          },
+          "runtime": {
+            "goroutines": 42,
+            "heap_alloc_bytes": 6417440,
+            "heap_in_use_bytes": 9306112,
+            "gc_cycles": 479,
+            "gc_pause_total_ns": 35322134
+          },
+          "db_pool": {
+            "open_connections": 10,
+            "in_use": 0,
+            "idle": 10,
+            "wait_count": 44,
+            "wait_duration": 12233425687
+          },
+          "container": {
+            "available": true,
+            "samples": 386,
+            "cpu_mean_percent": 10.798668921948753,
+            "cpu_max_percent": 30.653399999999998,
+            "memory_mean_bytes": 14984600,
+            "memory_max_bytes": 17371136
+          }
+        }
+      },
+      "database": {
+        "available": true,
+        "samples": 379,
+        "connections": {
+          "mean": 1,
+          "max": 1
+        },
+        "active_connections": {
+          "mean": 0,
+          "max": 0
+        },
+        "idle_in_transaction": {
+          "mean": 0,
+          "max": 0
+        },
+        "lock_waiting_sessions": {
+          "mean": 0,
+          "max": 0
+        },
+        "ungranted_locks": {
+          "mean": 0,
+          "max": 0
+        },
+        "deadlocks_before": 0,
+        "deadlocks_after": 0,
+        "database_bytes_before": 8003584,
+        "database_bytes_after": 8003584,
+        "sessions_opened": 0,
+        "postgres_container": {
+          "available": false,
+          "unavailable_reason": "Get \"http://docker/containers/json?filters=%7B%22label%22%3A%5B%22com.docker.compose.service%3Dpostgres%22%2C%22com.docker.compose.oneoff%3DFalse%22%5D%7D\": dial unix /var/run/docker.sock: connect: no such file or directory"
+        },
+        "pg_stat_statements": {
+          "available": false,
+          "unavailable_reason": "pg_stat_statements is not enabled in the local PostgreSQL image"
+        }
+      },
+      "diagnostics": [
+        "Every run resets orders, attempts, reservations, payments, and inventory counters before measurement.",
+        "Cart selection uses the uniform workload distribution across the 50 seeded products.",
+        "Warm-up traffic is excluded and its rows are removed before measurement."
+      ],
+      "invariants": [
+        {
+          "name": "inventory counters stay within bounds",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "one reservation per order",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "one payment per order",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "no duplicate product line per order",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "paid orders have successful payment",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "cancelled orders have failed payment",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "paid reservations are confirmed",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "cancelled reservations are released",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "unknown payments retain pending orders",
+          "passed": true,
+          "violations": 0
+        },
+        {
+          "name": "payment amounts match order totals in paise",
+          "passed": true,
+          "violations": 0
+        }
+      ]
+    }
+  ],
+  "c4_rate_sweep": [
+    {
+      "label": "c4-rate-020",
+      "offered_per_second": 20,
+      "accepted_per_second": 20,
+      "completed_per_second": 20,
+      "end_to_end_p99_ms": 21409.008,
+      "max_in_flight": 412,
+      "server_5xx": 0,
+      "transport_errors": 0
+    }
+  ]
+}

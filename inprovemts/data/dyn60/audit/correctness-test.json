@@ -1,0 +1,102 @@
+{
+  "suite": "correctness-test",
+  "updated_at": "2026-11-09T16:53:17.678954351Z",
+  "runs": [
+    {
+      "suite": "correctness-test",
+      "run_id": "20261109T165312.827039957Z",
+      "started_at": "2026-11-09T16:53:12.827045887Z",
+      "finished_at": "2026-11-09T16:53:17.678725325Z",
+      "environment": {
+        "order_url": "http://10.40.1.11:8080",
+        "orchestrator_url": "http://10.40.1.10:8083",
+        "inventory_url": "http://10.40.1.12:8081",
+        "payment_url": "http://10.40.1.13:8082",
+        "gateway_mode": "success",
+        "run_label": "inprovemts-dyn60"
+      },
+      "summary": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "phases": [
+        {
+          "number": 22,
+          "name": "Database invariants",
+          "description": "Scans all three schemas for negative/oversold stock, duplicate business keys, and cross-service terminal-state contradictions.",
+          "status": "PASS",
+          "duration_ms": 4851.651,
+          "http_metrics": {
+            "requests": 0,
+            "errors": 0,
+            "min_ms": 0,
+            "mean_ms": 0,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "p99_ms": 0,
+            "max_ms": 0
+          },
+          "assertions": [
+            {
+              "name": "actionable background jobs drain before audit",
+              "passed": true,
+              "detail": "timed out waiting for the worker backlog"
+            },
+            {
+              "name": "inventory counters stay within bounds",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "one reservation per order",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "one payment per order",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "one product line per order",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "paid orders have successful payment",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "cancelled orders have failed payment",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "paid reservations are confirmed",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "cancelled reservations are released",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "unknown payments retain pending orders",
+              "passed": true,
+              "detail": "violations=0"
+            },
+            {
+              "name": "payment amounts match order totals in paise",
+              "passed": true,
+              "detail": "violations=0"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

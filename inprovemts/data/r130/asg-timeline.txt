@@ -1,0 +1,38 @@
+2026-11-10T19:52:49Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:53:07Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:53:25Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:53:43Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:54:00Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:54:18Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:54:36Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:54:53Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:55:11Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:55:29Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:55:47Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:56:04Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:56:22Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:56:40Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:56:57Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:57:15Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:57:33Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:57:51Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:58:09Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:58:26Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:58:44Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:59:02Z desired+instances: 1 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:59:20Z desired+instances: 2 i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy 
+2026-11-10T19:59:37Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 initial 
+2026-11-10T19:59:55Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 initial 
+2026-11-10T20:00:13Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:00:31Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:00:48Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:01:06Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:01:24Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:01:42Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:02:00Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:02:17Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:02:35Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:02:53Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 unhealthy 
+2026-11-10T20:03:11Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 healthy 
+2026-11-10T20:03:28Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 healthy 
+2026-11-10T20:03:47Z desired+instances: 2 i-030c8d0c0d286f2b7 InService i-0ae82f6d32c295f4f InService  | tg: i-0ae82f6d32c295f4f healthy i-030c8d0c0d286f2b7 healthy 

@@ -1,0 +1,18 @@
+18:25:11 == dyn130 rate=130 dur=600s: ASG instances at start=1 (first=i-0ae82f6d32c295f4f 54.66.25.9)
+18:25:11 fresh containers
+loadgen-idle
+18:30:43 second instance appeared: i-0dee2a287b565b3d2 (detailed monitoring requested)
+18:47:29 runner finished
+18:47:51 drain check 1: saga_step lines last 60s (all instances)=112
+18:48:14 drain check 2: saga_step lines last 60s (all instances)=47
+18:48:37 drain check 3: saga_step lines last 60s (all instances)=18
+18:49:01 drain check 4: saga_step lines last 60s (all instances)=15
+18:49:24 drain check 5: saga_step lines last 60s (all instances)=14
+18:50:09 drain check 6: saga_step lines last 60s (all instances)=16
+18:50:43 drain check 7: saga_step lines last 60s (all instances)=17
+18:51:40 drain check 8: saga_step lines last 60s (all instances)=16
+18:52:03 drain check 9: saga_step lines last 60s (all instances)=16
+18:52:26 drain check 10: saga_step lines last 60s (all instances)=17
+18:52:50 drain check 11: saga_step lines last 60s (all instances)=16
+18:53:13 drain check 12: saga_step lines last 60s (all instances)=14
+18:53:36 drain check 13: saga_step lines last 60s (all instances)=17

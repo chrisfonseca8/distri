@@ -1,0 +1,10 @@
+17:44:03 == asg130 rate=130: fresh containers
+loadgen-idle
+ALB readyz=200
+17:50:02 runner finished
+17:50:21 drain check 1: saga_step lines last 60s=23583
+17:50:41 drain check 2: saga_step lines last 60s=3160
+17:51:01 drain check 3: saga_step lines last 60s=1
+17:51:21 drain check 4: saga_step lines last 60s=0
+restarts=0 started=2026-11-10T17:44:18.467621393Z
+17:52:07 == asg130 DONE

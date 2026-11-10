@@ -1,0 +1,6 @@
+== dyn80 rate=80  2026-11-09T16:58:39Z
+ssh: connect to host 3.27.207.44 port 22: Connection timed out
+c4-rate-080: offered=14400 accepted=14400 completed=14400 accepted/s=80.00 completed/s=80.00 e2e-p95=15056.58ms server-p95=11552.46ms
+exit=0
+end 2026-11-09T17:03:44Z
+ALLDONE

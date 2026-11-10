@@ -1,0 +1,22 @@
+19:51:15 == PRE-FLIGHT r130 rate=130 warm=60s dur=180s
+10.40.1.11:8080 /health=200
+10.40.1.12:8081 /health=404
+10.40.1.13:8082 /health=200
+ALB readyz=200
+loadgen-idle
+19:51:37 dead-letter baseline=28178
+19:51:43 db size before=411.4MB (abort at 900MB)
+19:51:43 fresh containers (payment + orchestrator instance 1)
+19:59:43 SECOND INSTANCE appeared: i-030c8d0c0d286f2b7 16.176.6.67
+19:59:47 WARNING instance2 is NOT on the new database
+20:01:32 runner finished
+20:02:27 saga summary captured
+20:02:30 drain check 1: running sagas=6816
+20:02:47 drain check 2: running sagas=3171
+20:03:05 drain check 3: running sagas=0
+20:03:33 dead-letter after=28178 (before=28178, new=0)
+20:03:36 db size after=391.5MB (before=411.4MB)
+payment error lines=0
+i-0ae82f6d32c295f4f error lines=0
+i-0ae82f6d32c295f4f restarts=0 started=2026-11-10T19:52:14.253409809Z
+20:04:04 == r130 DONE

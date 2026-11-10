@@ -1,0 +1,5 @@
+run | offered/s | accepted/s | completed/s | srv saga p50 | p95 | max | peak RUNNING sagas | peak webhook backlog | oldest saga age max | drain after offering stops (s, runner finish) | unfinished
+s20 | 20 | 20.0 | 20.0 | 6.5s | 15.8s | 25.1s | 260 | 277 | 21s | 13 | 0
+s30 | 30 | 30.0 | 30.0 | 6.3s | 11.0s | 23.5s | 223 | 33 | 19s | 17 | 0
+s40 | 40 | 40.0 | 40.0 | 6.6s | 11.3s | 27.9s | 361 | 342 | 25s | 13 | 0
+o60 | 60 | 60.0 | 60.0 | 43.6s | 80.1s | 92.3s | 3380 | 9005 | 88s | 87 | 0

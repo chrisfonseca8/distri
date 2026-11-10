@@ -1,0 +1,5 @@
+== dyn50 rate=50  2026-11-09T16:40:31Z
+c4-rate-050: offered=9000 accepted=9000 completed=9000 accepted/s=50.00 completed/s=50.00 e2e-p95=15040.04ms server-p95=10790.81ms
+exit=0
+end 2026-11-09T16:45:16Z
+ALLDONE

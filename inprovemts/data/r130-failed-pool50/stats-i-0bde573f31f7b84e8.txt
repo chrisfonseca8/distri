@@ -1,0 +1,63 @@
+ssh: connect to host 15.135.79.208 port 22: Connection timed out
+ssh: connect to host 15.135.79.208 port 22: Connection timed out
+2026-11-10T19:31:11Z
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+hostcpu_busy%=45
+2026-11-10T19:31:17Z
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+hostcpu_busy%=49
+2026-11-10T19:31:23Z
+hostcpu_busy%=63
+2026-11-10T19:31:30Z
+hostcpu_busy%=31
+2026-11-10T19:31:37Z
+Read from remote host 15.135.79.208: Connection reset by peer
+client_loop: send disconnect: Broken pipe
+2026-11-10T19:31:58Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:05Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:12Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=13
+2026-11-10T19:33:19Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=1
+2026-11-10T19:33:25Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:32Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:38Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:45Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:51Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:33:58Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:34:04Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:34:11Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:34:17Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:34:24Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=1
+2026-11-10T19:34:30Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0
+2026-11-10T19:34:37Z
+distri-orchestrator-orchestrator-1 cpu=0.00%
+hostcpu_busy%=0

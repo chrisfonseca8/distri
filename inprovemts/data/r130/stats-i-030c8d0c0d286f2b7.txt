@@ -1,0 +1,112 @@
+2026-11-10T19:59:47Z
+sudo: docker: command not found
+hostcpu_busy%=50
+2026-11-10T19:59:53Z
+sudo: docker: command not found
+hostcpu_busy%=50
+2026-11-10T19:59:59Z
+sudo: docker: command not found
+hostcpu_busy%=52
+2026-11-10T20:00:05Z
+sudo: docker: command not found
+hostcpu_busy%=54
+2026-11-10T20:00:11Z
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+hostcpu_busy%=41
+2026-11-10T20:00:17Z
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+hostcpu_busy%=47
+2026-11-10T20:00:23Z
+hostcpu_busy%=71
+2026-11-10T20:00:29Z
+hostcpu_busy%=51
+2026-11-10T20:00:36Z
+hostcpu_busy%=0
+2026-11-10T20:00:42Z
+distri-orchestrator-orchestrator-1 cpu=9.47%
+hostcpu_busy%=4
+2026-11-10T20:00:50Z
+distri-orchestrator-orchestrator-1 cpu=8.96%
+hostcpu_busy%=12
+2026-11-10T20:00:58Z
+distri-orchestrator-orchestrator-1 cpu=9.82%
+hostcpu_busy%=6
+2026-11-10T20:01:05Z
+distri-orchestrator-orchestrator-1 cpu=9.07%
+hostcpu_busy%=9
+2026-11-10T20:01:13Z
+distri-orchestrator-orchestrator-1 cpu=8.64%
+hostcpu_busy%=7
+2026-11-10T20:01:20Z
+distri-orchestrator-orchestrator-1 cpu=10.34%
+hostcpu_busy%=10
+2026-11-10T20:01:28Z
+distri-orchestrator-orchestrator-1 cpu=10.19%
+hostcpu_busy%=8
+2026-11-10T20:01:35Z
+distri-orchestrator-orchestrator-1 cpu=12.13%
+hostcpu_busy%=11
+2026-11-10T20:01:43Z
+distri-orchestrator-orchestrator-1 cpu=12.41%
+hostcpu_busy%=8
+2026-11-10T20:01:50Z
+distri-orchestrator-orchestrator-1 cpu=13.48%
+hostcpu_busy%=11
+2026-11-10T20:01:58Z
+distri-orchestrator-orchestrator-1 cpu=13.34%
+hostcpu_busy%=4
+2026-11-10T20:02:05Z
+distri-orchestrator-orchestrator-1 cpu=7.98%
+hostcpu_busy%=6
+2026-11-10T20:02:13Z
+distri-orchestrator-orchestrator-1 cpu=11.84%
+hostcpu_busy%=4
+2026-11-10T20:02:20Z
+distri-orchestrator-orchestrator-1 cpu=7.92%
+hostcpu_busy%=4
+2026-11-10T20:02:28Z
+distri-orchestrator-orchestrator-1 cpu=7.91%
+hostcpu_busy%=3
+2026-11-10T20:02:36Z
+distri-orchestrator-orchestrator-1 cpu=5.87%
+hostcpu_busy%=1
+2026-11-10T20:02:43Z
+distri-orchestrator-orchestrator-1 cpu=9.42%
+hostcpu_busy%=5
+2026-11-10T20:02:51Z
+distri-orchestrator-orchestrator-1 cpu=6.17%
+hostcpu_busy%=6
+2026-11-10T20:02:58Z
+distri-orchestrator-orchestrator-1 cpu=8.93%
+hostcpu_busy%=3
+2026-11-10T20:03:06Z
+distri-orchestrator-orchestrator-1 cpu=1.60%
+hostcpu_busy%=1
+2026-11-10T20:03:13Z
+distri-orchestrator-orchestrator-1 cpu=3.35%
+hostcpu_busy%=1
+2026-11-10T20:03:21Z
+distri-orchestrator-orchestrator-1 cpu=1.26%
+hostcpu_busy%=2
+2026-11-10T20:03:28Z
+distri-orchestrator-orchestrator-1 cpu=3.60%
+hostcpu_busy%=0
+2026-11-10T20:03:36Z
+distri-orchestrator-orchestrator-1 cpu=1.31%
+hostcpu_busy%=0
+2026-11-10T20:03:43Z
+distri-orchestrator-orchestrator-1 cpu=3.29%
+hostcpu_busy%=1
+2026-11-10T20:03:51Z
+distri-orchestrator-orchestrator-1 cpu=1.32%
+hostcpu_busy%=1
+2026-11-10T20:03:59Z
+distri-orchestrator-orchestrator-1 cpu=3.54%
+hostcpu_busy%=1
+2026-11-10T20:04:06Z
+distri-orchestrator-orchestrator-1 cpu=1.44%
+hostcpu_busy%=0
+2026-11-10T20:04:14Z
+distri-orchestrator-orchestrator-1 cpu=3.06%
+Read from remote host 16.176.6.67: Connection reset by peer
+client_loop: send disconnect: Broken pipe

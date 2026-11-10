@@ -1,0 +1,5 @@
+run | offered | accepted/s | completed/s | saga p50 | p95 | max | peak RUNNING | peak webhook ready backlog* | oldest ready/pending age | drain after offering (s) | unfinished
+o60 fixed (1 worker, pool 10; 2 s polling) | 10801 | 60.0 | 60.0 | 43.6s | 80.1s | 92.3s | 3380 | 9005 | 76.7s | 87 | 0
+dyn50 autoscale both | 9000 | 50.0 | 50.0 | 6.2s | 10.8s | 22.4s | 367 | 27 | 0.1s | 20 | 0
+dyn60 autoscale both | 10801 | 60.0 | 60.0 | 6.4s | 10.9s | 20.9s | 491 | 20 | 0.1s | 18 | 0
+* o60 column is all pending events (payment_webhook_backlog); dyn columns are claimable events (payment_webhook_ready_backlog)

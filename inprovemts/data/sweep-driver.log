@@ -1,0 +1,16 @@
+== s20 rate=20  2026-11-09T14:59:50Z
+ssh: connect to host 3.27.207.44 port 22: Connection timed out
+c4-rate-020: offered=3600 accepted=3600 completed=3600 accepted/s=20.00 completed/s=20.00 e2e-p95=17594.47ms server-p95=15767.80ms
+exit=0
+end 2026-11-09T15:04:25Z
+== s30 rate=30  2026-11-09T15:04:57Z
+ssh: connect to host 3.27.207.44 port 22: Connection timed out
+scp: Connection closed
+c4-rate-030: offered=5401 accepted=5401 completed=5401 accepted/s=30.01 completed/s=30.01 e2e-p95=12058.12ms server-p95=10951.83ms
+exit=0
+end 2026-11-09T15:09:51Z
+== s40 rate=40  2026-11-09T15:10:30Z
+c4-rate-040: offered=7200 accepted=7200 completed=7200 accepted/s=40.00 completed/s=40.00 e2e-p95=12062.91ms server-p95=11330.91ms
+exit=0
+end 2026-11-09T15:15:08Z
+ALLDONE

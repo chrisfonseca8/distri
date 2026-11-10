@@ -1,0 +1,5 @@
+== o60 rate=60  2026-11-09T15:19:07Z
+c4-rate-060: offered=10801 accepted=10801 completed=10801 accepted/s=60.01 completed/s=60.01 e2e-p95=80440.67ms server-p95=80060.37ms
+exit=0
+end 2026-11-09T15:25:23Z
+ALLDONE

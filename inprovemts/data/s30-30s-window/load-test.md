@@ -1,0 +1,81 @@
+# Local load-test results
+
+C1 is a smoke test; C2 is the repeated baseline; C3/C4 sweep concurrency and offered rate; C5–C7 exercise hot-row, skewed, and multi-item contention; C9–C12 exercise duplicate checkouts, concurrent double pay, all-decline, and random-outcome behaviour; C13 sweeps simulated gateway latency; C14 sweeps the database pool size and idle connections. When a case is run again, earlier runs are kept in the Repeat history table. Everything in this file is written by the runner. Each run starts from an isolated transactional fixture, uses the configured gateway simulator, and finishes with the database invariant audit.
+
+Updated: `2026-11-09T14:47:16Z`
+
+## C4 rate sweep
+
+| Offered/s | Accepted/s | Completed/s | End-to-end p99 ms | Max in-flight | 5xx | Transport errors |
+|---:|---:|---:|---:|---:|---:|---:|
+| 30.03 | 30.03 | 30.03 | 14068.05 | 247 | 0 | 0 |
+
+No knee/saturation candidate was detected in the recorded steps.
+
+## c4-rate-030
+
+**What it does:** an open-loop scheduler offers 30 workflows/s for 30s across all 50 products without waiting for earlier workflows
+
+**Result:** PASS — 901 offered, 901 accepted, 901 completed (901 paid, 0 cancelled, 0 pending at drain).
+
+**Environment:** 2 logical CPUs, 3999809536 bytes memory (the host running the runner); gateway `success` with 200ms simulator latency; warm-up 1m0s; measurement 30s.
+
+**Deployment:** inprovemts-s30
+
+**Completion observation:** `poll` every 2s.
+
+### Client metrics
+
+| Metric | Value |
+|---|---:|
+| Offered rate | 30.03/s |
+| Accepted rate | 30.03/s |
+| Completed rate | 30.03/s |
+| Mean/max in-flight requests | 1.40 / 11 |
+| Mean/max in-flight workflows | 233.07 / 247 |
+| Little's law observed / expected | 233.07 / 233.07 (0.00% difference) |
+| Load generator CPU (percent of one core, measured window) | 3.3% |
+| Load generator memory at end | 9.0 MB |
+
+| Latency | Samples | p50 ms | p95 ms | p99 ms | max ms |
+|---|---:|---:|---:|---:|---:|
+| Checkout | 901 | 31.28 | 41.91 | 73.88 | 129.03 |
+| Pay | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| End to end | 901 | 8042.29 | 12056.85 | 14068.05 | 20068.46 |
+| Server saga completion | 901 | 6386.51 | 10704.86 | 14003.72 | 18775.67 |
+
+Checkout status mix: `HTTP 202=901, transport=0, decode=0, 5xx=0`  
+Pay status mix: `transport=0, decode=0, 5xx=0`
+
+### Service metrics
+
+| Service | Requests | Errors | In-flight max | Handler p95 ms | Goroutines | Heap alloc | DB open/in-use/idle | DB waits | DB wait duration | CPU mean/max | Memory mean/max |
+|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---|---|
+| orchestrator | 4375 | 0 | 11 | 34.40 | 67 | 7000600 | 10/0/10 | 34 | 166.185207ms | 21.20% / 37.26% | 14724002 / 17022976 |
+| order | 0 | 0 | 0 | 0.00 | 34 | 5948552 | 6/1/5 | 0 | 0s | 6.50% / 12.53% | 12382301 / 13307904 |
+| inventory | 901 | 0 | 3 | 20.15 | 27 | 4493600 | 5/0/5 | 0 | 0s | 7.39% / 15.61% | 12195653 / 13996032 |
+| payment | 2703 | 0 | 4 | 6.90 | 45 | 7552152 | 10/1/9 | 0 | 0s | 11.70% / 20.59% | 14830498 / 20267008 |
+
+### PostgreSQL metrics
+
+Samples: 89. Connections mean/max: 1.00/1. Active mean/max: 0.00/0. Idle-in-transaction max: 0. Lock-waiting sessions max: 0. Ungranted locks max: 0. Deadlocks before/after: 0/0. Database bytes before/after: 8003584/8003584. New PostgreSQL sessions opened during the run: 0.
+
+`pg_stat_statements`: unavailable — pg_stat_statements is not enabled in the local PostgreSQL image.
+
+### Invariants
+
+- PASS — inventory counters stay within bounds (violations: 0)
+- PASS — one reservation per order (violations: 0)
+- PASS — one payment per order (violations: 0)
+- PASS — no duplicate product line per order (violations: 0)
+- PASS — paid orders have successful payment (violations: 0)
+- PASS — cancelled orders have failed payment (violations: 0)
+- PASS — paid reservations are confirmed (violations: 0)
+- PASS — cancelled reservations are released (violations: 0)
+- PASS — unknown payments retain pending orders (violations: 0)
+- PASS — payment amounts match order totals in paise (violations: 0)
+
+### Telemetry limitations
+
+- PostgreSQL container: Get "http://docker/containers/json?filters=%7B%22label%22%3A%5B%22com.docker.compose.service%3Dpostgres%22%2C%22com.docker.compose.oneoff%3DFalse%22%5D%7D": dial unix /var/run/docker.sock: connect: no such file or directory.
+

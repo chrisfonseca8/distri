@@ -1,0 +1,6 @@
+== dyn60 rate=60  2026-11-09T16:47:00Z
+ssh: connect to host 3.27.207.44 port 22: Connection timed out
+c4-rate-060: offered=10801 accepted=10801 completed=10801 accepted/s=60.01 completed/s=60.01 e2e-p95=15038.90ms server-p95=10926.63ms
+exit=0
+end 2026-11-09T16:51:45Z
+ALLDONE

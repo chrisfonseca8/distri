@@ -1,0 +1,5 @@
+2026-11-10T17:53:19Z
+distri-orchestrator-orchestrator-1 cpu=28.53% mem=11.82MiB / 3.726GiB
+2026-11-10T17:53:25Z
+Read from remote host 54.66.25.9: Connection reset by peer
+client_loop: send disconnect: Broken pipe

@@ -1,0 +1,5 @@
+  status   | current_step  | count 
+-----------+---------------+-------
+ COMPLETED | CONFIRM_STOCK | 10801
+(1 row)
+

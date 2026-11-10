@@ -1,0 +1,13 @@
+                                      name                                       |   n   | avg_ms |  p50   |  p95   | max_ms 
+---------------------------------------------------------------------------------+-------+--------+--------+--------+--------
+ 1 accept -> stock reserved                                                      | 28800 |    -16 |     -3 |     -1 |     -1
+ 2 reserved -> order created (CREATE_ORDER done)                                 | 28800 |  17727 |   4095 |  60895 |  62325
+ 3 order created -> TAKE_PAYMENT started                                         | 28800 |      0 |      0 |      0 |      0
+ 4a TAKE_PAYMENT started -> payment attempt row created                          | 28800 |  18268 |   3538 |  56876 |  61641
+ 4b attempt created -> capture observed (gateway pay delay + polling)            | 28800 |  27577 |  27415 |  52538 |  70435
+ 5a capture observed -> TAKE_PAYMENT finished (result handling + reply delivery) | 28800 |   2985 |   2899 |   6893 |  10103
+ 5b TAKE_PAYMENT done -> MARK_ORDER_PAID done (order update)                     | 28800 |  22497 |  11557 |  60081 |  62118
+ 5c MARK_ORDER_PAID done -> CONFIRM_STOCK done (stock confirm)                   | 28800 |  23106 |  24253 |  54150 |  62123
+ 6 accept -> saga terminal (total)                                               | 28800 | 112145 | 165898 | 174388 | 182981
+(9 rows)
+

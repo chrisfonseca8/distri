@@ -20,6 +20,7 @@ import (
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/messaging"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/outbox"
+	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/poolscaler"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/orchestrator-service/pkg/services/checkout"
@@ -65,6 +66,27 @@ func run() error {
 	var telemetryRecorder *telemetry.Recorder
 	if telemetry.Enabled() {
 		telemetryRecorder = telemetry.New(sqlDB)
+	}
+
+	// Optional: resize the database/sql pool at runtime (off unless
+	// ORCHESTRATOR_DB_POOL_AUTOSCALE=true). Built here so a bad setting fails the start.
+	poolScalerConfig, err := config.LoadPoolScalerConfig()
+	if err != nil {
+		return fmt.Errorf("load database pool autoscaler configuration: %w", err)
+	}
+	var poolScaler *poolscaler.Scaler
+	if poolScalerConfig.Enabled {
+		probeDB, err := config.OpenProbeDB()
+		if err != nil {
+			return fmt.Errorf("open database probe: %w", err)
+		}
+		defer probeDB.Close()
+		guard := poolscaler.NewDBGuard(probeDB, poolScalerConfig, poolscaler.ConnectionErrorCounter(observability.Registry))
+		poolScaler, err = poolscaler.New(sqlDB, guard, poolScalerConfig)
+		if err != nil {
+			return fmt.Errorf("set up database pool autoscaler: %w", err)
+		}
+		poolscaler.RegisterMetrics()
 	}
 
 	inventoryClient, err := clients.NewHTTPInventoryClientFromEnv()
@@ -211,6 +233,13 @@ func run() error {
 		return fmt.Errorf("load retention configuration: %w", err)
 	}
 	purger := retention.New(applicationConfig.DB, retentionConfig, retention.Rules())
+	if poolScaler != nil {
+		backgroundWorkers.Add(1)
+		go func() {
+			defer backgroundWorkers.Done()
+			poolScaler.Run(shutdownSignal)
+		}()
+	}
 	backgroundWorkers.Add(4 + len(outboxRelays))
 	go func() {
 		defer backgroundWorkers.Done()

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -58,6 +59,27 @@ func OpenDB() (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(connectionLifetime)
 
 	return db, nil
+}
+
+// OpenProbeDB opens a separate single-connection handle to the same database. The
+// pool autoscaler's health guard uses it, so its probes never wait in (or add load
+// to) the application pool it is measuring.
+func OpenProbeDB() (*sql.DB, error) {
+	if err := loadEnvFile(); err != nil {
+		return nil, fmt.Errorf("load .env: %w", err)
+	}
+	dsn := os.Getenv("DATABASE_TEST_URL")
+	if dsn == "" {
+		return nil, errors.New("DATABASE_TEST_URL is not set")
+	}
+	probe, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open probe connection: %w", err)
+	}
+	probe.SetMaxOpenConns(1)
+	probe.SetMaxIdleConns(1)
+	probe.SetConnMaxLifetime(defaultConnectionLifetime)
+	return probe, nil
 }
 
 // envInt reads an integer environment variable, or returns fallback when it is unset.

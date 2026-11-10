@@ -35,9 +35,36 @@ var (
 		Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5}})
 )
 
+// WebhookClaimable is the exact eligibility test of the webhook claim query
+// (services.claimWebhookQuery): pending, due, and not under a live lease. The ready
+// backlog and the scaler's samples use it so they count what a worker could claim.
+const WebhookClaimable = `status = 'PENDING' AND next_attempt_at <= now() AND (locked_until IS NULL OR locked_until < now())`
+
+// SQL for the claimable backlog and the wait of its oldest event (measured from the
+// time it became claimable, the same ordering key the claim uses).
+const (
+	WebhookReadyBacklogSQL   = `SELECT count(*)::float8 FROM payments.webhook_events WHERE ` + WebhookClaimable
+	WebhookOldestReadyAgeSQL = `SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(next_attempt_at)), 0)::float8 FROM payments.webhook_events WHERE ` + WebhookClaimable
+)
+
+// WebhookReadySampleSQL returns both numbers in one statement, for the autoscaler.
+const WebhookReadySampleSQL = `SELECT count(*)::float8 AS ready, COALESCE(EXTRACT(EPOCH FROM now() - min(next_attempt_at)), 0)::float8 AS oldest_age_seconds FROM payments.webhook_events WHERE ` + WebhookClaimable
+
+var (
+	WebhookWorkersActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "payment_webhook_workers_active", Help: "Webhook worker goroutines currently claiming batches in this process."})
+	WebhookBusyRatio = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "payment_webhook_workers_busy_ratio", Help: "Seconds spent applying webhook events per wall second over the last scaler sample (all workers; above 1 means more than one worker was busy)."})
+	WebhookScaleEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "payment_webhook_scale_events_total", Help: "Webhook worker autoscaler decisions that changed the worker count."}, []string{"direction"})
+	WebhookScaleSampleErrors = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "payment_webhook_scale_sample_errors_total", Help: "Autoscaler samples that failed; the worker count was left unchanged."})
+)
+
 // Register adds the payment metrics and the PostgreSQL-backed gauges.
 func Register(db *sql.DB) {
-	observability.Registry.MustRegister(GatewayCalls, GatewayDuration, Unconfirmed, RefundsRequired, WebhookResults, WebhookDuration)
+	observability.Registry.MustRegister(GatewayCalls, GatewayDuration, Unconfirmed, RefundsRequired, WebhookResults, WebhookDuration,
+		WebhookWorkersActive, WebhookBusyRatio, WebhookScaleEvents, WebhookScaleSampleErrors)
 
 	specs := []observability.GaugeSpec{
 		{
@@ -60,6 +87,14 @@ func Register(db *sql.DB) {
 		{
 			Name: "payment_webhook_oldest_pending_age_seconds", Help: "Age of the oldest webhook event waiting to be applied; 0 when none.",
 			SQL: `SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(received_at)), 0)::float8 FROM payments.webhook_events WHERE status = 'PENDING'`,
+		},
+		{
+			Name: "payment_webhook_ready_backlog", Help: "Webhook events a worker could claim right now (pending, due, not leased).",
+			SQL: WebhookReadyBacklogSQL,
+		},
+		{
+			Name: "payment_webhook_oldest_ready_age_seconds", Help: "How long the oldest claimable webhook event has been claimable; 0 when none.",
+			SQL: WebhookOldestReadyAgeSQL,
 		},
 		{
 			Name: "payment_webhook_parked", Help: "Webhook events parked for an operator.",

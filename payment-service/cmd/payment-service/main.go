@@ -25,6 +25,7 @@ import (
 	"github.com/chrisfonseca08/distri/payment-service/pkg/observability"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/outbox"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/payment_gateway"
+	"github.com/chrisfonseca08/distri/payment-service/pkg/poolscaler"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/retention"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/routes"
 	"github.com/chrisfonseca08/distri/payment-service/pkg/services"
@@ -121,6 +122,32 @@ func run(roleValue string) error {
 			}
 		}
 	}()
+
+	// Optional: resize the database/sql pool at runtime (off unless
+	// PAYMENT_DB_POOL_AUTOSCALE=true). Built here so a bad setting fails the start.
+	poolScalerConfig, err := config.LoadPoolScalerConfig()
+	if err != nil {
+		return fmt.Errorf("load database pool autoscaler configuration: %w", err)
+	}
+	if poolScalerConfig.Enabled {
+		probeDB, err := config.OpenProbeDB()
+		if err != nil {
+			return fmt.Errorf("open database probe: %w", err)
+		}
+		guard := poolscaler.NewDBGuard(probeDB, poolScalerConfig, poolscaler.ConnectionErrorCounter(observability.Registry))
+		poolScaler, err := poolscaler.New(sqlDB, guard, poolScalerConfig)
+		if err != nil {
+			probeDB.Close()
+			return fmt.Errorf("set up database pool autoscaler: %w", err)
+		}
+		poolscaler.RegisterMetrics()
+		workerWaitGroup.Add(1)
+		go func() {
+			defer workerWaitGroup.Done()
+			defer probeDB.Close()
+			poolScaler.Run(shutdownContext)
+		}()
+	}
 
 	if role == roleWorker || role == roleAll {
 		rabbitMQConfig, err := config.LoadRabbitMQConfig()
@@ -286,7 +313,7 @@ func run(roleValue string) error {
 		}
 
 		if webhookConfig.Enabled() {
-			processor, err := services.NewWebhookProcessor(applicationConfig.DB, services.WebhookProcessorConfig{
+			processorConfig := services.WebhookProcessorConfig{
 				Interval:      webhookConfig.Interval,
 				Batch:         webhookConfig.Batch,
 				Lease:         webhookConfig.Lease,
@@ -295,15 +322,48 @@ func run(roleValue string) error {
 				BackoffCap:    webhookConfig.BackoffCap,
 				PaymentWindow: gatewayConfig.PaymentWindow,
 				GatewayName:   applicationConfig.GatewayName,
-			})
-			if err != nil {
+			}
+			// Validate the processor settings once, before any worker starts.
+			if _, err := services.NewWebhookProcessor(applicationConfig.DB, processorConfig); err != nil {
 				return fmt.Errorf("set up webhook processor: %w", err)
 			}
-			processor.WithCompensation(compensationWorker)
+			webhookPool := services.NewWebhookWorkerPool(func() (*services.WebhookProcessor, error) {
+				processor, err := services.NewWebhookProcessor(applicationConfig.DB, processorConfig)
+				if err != nil {
+					return nil, err
+				}
+				return processor.WithCompensation(compensationWorker), nil
+			})
+			initialWorkers := webhookConfig.Workers
+			var webhookScaler *services.WebhookScaler
+			if webhookConfig.Autoscale {
+				scale := webhookConfig.Scale
+				effectiveMax := services.EffectiveWebhookMaxWorkers(scale.Max, sqlDB.Stats().MaxOpenConnections, scale.PoolReserve)
+				if effectiveMax < scale.Max {
+					slog.Warn("webhook worker cap lowered to leave database connections for the rest of the service",
+						"configured_max", scale.Max, "effective_max", effectiveMax,
+						"db_max_open_conns", sqlDB.Stats().MaxOpenConnections, "pool_reserve", scale.PoolReserve)
+				}
+				if initialWorkers > effectiveMax {
+					initialWorkers = effectiveMax
+				}
+				webhookScaler, err = services.NewWebhookScaler(webhookPool, services.NewWebhookSampler(applicationConfig.DB), services.WebhookScaleConfig{
+					Min: scale.Min, Max: scale.Max, Interval: scale.Interval,
+					UpAge: scale.UpAge, UpMinBacklog: scale.UpMinBacklog, UpSamples: scale.UpSamples, UpCooldown: scale.UpCooldown,
+					DownAge: scale.DownAge, DownBacklog: scale.DownBacklog, DownSamples: scale.DownSamples,
+					DownCooldown: scale.DownCooldown, DownUtilization: scale.DownUtilization,
+				}, effectiveMax)
+				if err != nil {
+					return fmt.Errorf("set up webhook autoscaler: %w", err)
+				}
+				// The cap follows the pool as the pool autoscaler grows or shrinks it.
+				webhookScaler.WithPoolLimit(func() int { return sqlDB.Stats().MaxOpenConnections }, scale.PoolReserve)
+			}
+			slog.Info("webhook workers configured", "workers", initialWorkers, "autoscale", webhookConfig.Autoscale)
 			workerWaitGroup.Add(1)
 			go func() {
 				defer workerWaitGroup.Done()
-				processor.Run(shutdownContext)
+				webhookPool.Run(shutdownContext, initialWorkers, webhookScaler)
 			}()
 		}
 

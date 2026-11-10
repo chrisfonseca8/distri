@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -43,6 +44,9 @@ type WebhookProcessor struct {
 	now      func() time.Time
 	// compensation applies refund events; nil when the gateway cannot refund.
 	compensation *CompensationWorker
+	// onHandled, when set, is told how long each event took to apply. The worker
+	// pool uses it to measure how busy the workers are.
+	onHandled func(time.Duration)
 }
 
 // WithCompensation lets the processor apply refund webhooks to compensation records.
@@ -72,12 +76,51 @@ func NewWebhookProcessor(db *gorm.DB, config WebhookProcessorConfig) (*WebhookPr
 
 const webhookIdleDelay = 100 * time.Millisecond
 
+// NewWebhookProcessors builds `workers` independent processors over one database
+// pool. Each has its own workerID, so the lease guard in finish and reschedule
+// ("locked_by = my id") still tells one worker's claim from another's even
+// inside one process. Rows are handed out by the claim query's SKIP LOCKED, and
+// events for one payment are serialised by the row lock apply takes on the attempt.
+func NewWebhookProcessors(db *gorm.DB, config WebhookProcessorConfig, workers int) ([]*WebhookProcessor, error) {
+	if workers <= 0 {
+		return nil, errors.New("webhook workers must be greater than zero")
+	}
+	processors := make([]*WebhookProcessor, 0, workers)
+	for i := 0; i < workers; i++ {
+		processor, err := NewWebhookProcessor(db, config)
+		if err != nil {
+			return nil, err
+		}
+		processors = append(processors, processor)
+	}
+	return processors, nil
+}
+
+// RunWebhookWorkers runs every processor's loop in its own goroutine and returns
+// only after all of them have stopped, which happens when ctx is cancelled.
+func RunWebhookWorkers(ctx context.Context, processors []*WebhookProcessor) {
+	runWebhookWorkers(ctx, len(processors), func(ctx context.Context, i int) { processors[i].Run(ctx) })
+}
+
+func runWebhookWorkers(ctx context.Context, workers int, run func(ctx context.Context, worker int)) {
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			run(ctx, worker)
+		}(i)
+	}
+	wg.Wait()
+}
+
 // Run drains consecutive batches without sleeping while events are available.
 // When the inbox is empty it polls at a modest rate; pass-level failures use an
 // exponential backoff capped by the configured interval. Event-level failures
 // retain their existing durable retry schedule in reschedule.
 func (p *WebhookProcessor) Run(ctx context.Context) {
 	slog.Info("webhook processor started",
+		"worker_id", p.workerID,
 		"idle_delay", webhookIdleDelay,
 		"error_backoff_cap", p.config.Interval,
 		"batch", p.config.Batch,
@@ -88,15 +131,28 @@ func (p *WebhookProcessor) Run(ctx context.Context) {
 }
 
 func runWebhookProcessor(ctx context.Context, idleDelay, errorBackoffCap time.Duration, process func(context.Context) (int, error)) {
+	runWebhookWorker(ctx, nil, idleDelay, errorBackoffCap, process)
+}
+
+// runWebhookWorker is the processing loop. stop retires this one worker: it is
+// checked before every claim, so a retiring worker finishes the batch it already
+// holds (process runs under ctx, not stop) and then claims nothing more. A nil
+// stop never fires, which is the fixed-size behaviour.
+func runWebhookWorker(ctx context.Context, stop <-chan struct{}, idleDelay, errorBackoffCap time.Duration, process func(context.Context) (int, error)) {
 	errorDelay := idleDelay
 	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
 		claimed, err := process(ctx)
 		if ctx.Err() != nil {
 			return
 		}
 		if err != nil {
 			slog.Error("webhook processor pass failed", "error", err)
-			if !waitForWebhookPass(ctx, errorDelay) {
+			if !waitForWebhookPassOrStop(ctx, stop, errorDelay) {
 				return
 			}
 			errorDelay = nextWebhookErrorDelay(errorDelay, errorBackoffCap)
@@ -110,9 +166,22 @@ func runWebhookProcessor(ctx context.Context, idleDelay, errorBackoffCap time.Du
 			// was being applied.
 			continue
 		}
-		if !waitForWebhookPass(ctx, idleDelay) {
+		if !waitForWebhookPassOrStop(ctx, stop, idleDelay) {
 			return
 		}
+	}
+}
+
+func waitForWebhookPassOrStop(ctx context.Context, stop <-chan struct{}, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-stop:
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -239,7 +308,13 @@ var errLeaseLost = errors.New("webhook event lease was lost")
 // handle applies one event in a transaction together with its PROCESSED mark, or parks or retries it.
 func (p *WebhookProcessor) handle(ctx context.Context, event models.WebhookEvent) {
 	started := time.Now()
-	defer func() { businessmetrics.WebhookDuration.Observe(time.Since(started).Seconds()) }()
+	defer func() {
+		elapsed := time.Since(started)
+		businessmetrics.WebhookDuration.Observe(elapsed.Seconds())
+		if p.onHandled != nil {
+			p.onHandled(elapsed)
+		}
+	}()
 	var result webhookResult
 	err := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error

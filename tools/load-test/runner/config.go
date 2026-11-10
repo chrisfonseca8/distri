@@ -178,6 +178,16 @@ func loadConfig() (config, error) {
 			}
 		}
 	}
+	// C4 defaults to a 30 s measured window; LOAD_DURATION lengthens it, for example for a
+	// 3-minute open-loop run. Such a run is not the canonical C4.
+	if c.CaseName == "C4" {
+		if raw := os.Getenv("LOAD_DURATION"); raw != "" {
+			c.Duration, err = time.ParseDuration(raw)
+			if err != nil || c.Duration <= 0 {
+				return c, fmt.Errorf("LOAD_DURATION must be a positive duration")
+			}
+		}
+	}
 	c.Environment = strings.TrimSpace(os.Getenv("LOAD_TEST_ENVIRONMENT"))
 	// Cap on simultaneous connections from the runner to the order service. Past the
 	// saturation point more requests are in flight than the default cap allows, which
